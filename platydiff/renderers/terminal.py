@@ -9,6 +9,10 @@ from platydiff.core.models import (
     TextHunk,
 )
 
+_BIDI_CONTROLS = frozenset(
+    (0x061C, 0x200E, 0x200F, *range(0x202A, 0x202F), *range(0x2066, 0x206A))
+)
+
 
 def _escape_terminal_text(value: str) -> str:
     escaped: list[str] = []
@@ -20,6 +24,8 @@ def _escape_terminal_text(value: str) -> str:
             escaped.append("\\t")
         elif codepoint == 0xFEFF:
             escaped.append("\\ufeff")
+        elif codepoint in _BIDI_CONTROLS:
+            escaped.append(f"\\u{codepoint:04x}")
         elif codepoint < 0x20 or 0x7F <= codepoint <= 0x9F:
             escaped.append(f"\\x{codepoint:02x}")
         else:

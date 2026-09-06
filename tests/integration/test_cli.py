@@ -15,7 +15,11 @@ from platydiff import CompletedOutcome, TextCompareSpec, TextSource, compare
 from platydiff.cli.main import exit_code
 from platydiff.core.models import (
     CapabilityProblem,
+    Diagnostic,
+    DiagnosticSeverity,
+    ExecutionProblem,
     ExecutionRecord,
+    FailedOutcome,
     PipelineStage,
     PolicyEvaluation,
     StageDisposition,
@@ -249,7 +253,10 @@ def test_unknown_exception_is_safe_and_suppresses_traceback(
 
 
 def test_terminal_renderer_escapes_untrusted_controls_without_changing_json() -> None:
-    hostile = "\x1b]0;spoofed-title\x07\t\ufeff\\literal"
+    bidi_controls = (
+        "\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069"
+    )
+    hostile = "\x1b]0;spoofed-title\x07\t\ufeff\\literal" + bidi_controls + "猫"
     outcome = compare(TextSource(hostile), TextSource("safe"), TextCompareSpec())
     assert isinstance(outcome, CompletedOutcome)
 
@@ -263,7 +270,51 @@ def test_terminal_renderer_escapes_untrusted_controls_without_changing_json() ->
     assert r"\t" in rendered
     assert r"\ufeff" in rendered
     assert r"\\literal" in rendered
+    assert "猫" in rendered
+    for control in bidi_controls:
+        assert control not in rendered
+        assert f"\\u{ord(control):04x}" in rendered
     assert loads_outcome(dumps_outcome(outcome)) == outcome
+
+    diagnostic_outcome = replace(
+        outcome,
+        execution=replace(
+            outcome.execution,
+            diagnostics=(
+                Diagnostic(
+                    "unsafe_message",
+                    DiagnosticSeverity.WARNING,
+                    PipelineStage.COMPARING,
+                    bidi_controls,
+                ),
+            ),
+        ),
+    )
+    diagnostic_rendered = render_terminal(diagnostic_outcome)
+    assert all(control not in diagnostic_rendered for control in bidi_controls)
+
+    stamp = "2026-09-07T00:00:00Z"
+    failed = FailedOutcome(
+        execution=ExecutionRecord(
+            stamp,
+            stamp,
+            0,
+            (
+                StageRecord(
+                    PipelineStage.VALIDATING,
+                    stamp,
+                    stamp,
+                    0,
+                    StageDisposition.FAILED,
+                ),
+            ),
+        ),
+        problem=ExecutionProblem(
+            "internal_error", 500, PipelineStage.VALIDATING, bidi_controls
+        ),
+    )
+    problem_rendered = render_terminal(failed)
+    assert all(control not in problem_rendered for control in bidi_controls)
 
 
 @pytest.mark.parametrize(
