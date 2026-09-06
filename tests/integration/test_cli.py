@@ -23,6 +23,8 @@ from platydiff.core.models import (
     UnavailableOutcome,
     Verdict,
 )
+from platydiff.core.serialization import dumps_outcome, loads_outcome
+from platydiff.renderers.terminal import render_terminal
 
 
 def run_module(*arguments: str) -> subprocess.CompletedProcess[str]:
@@ -244,6 +246,49 @@ def test_unknown_exception_is_safe_and_suppresses_traceback(
     assert "internal_error" in captured.out
     assert str(tmp_path) not in captured.out
     assert "Traceback" not in captured.err
+
+
+def test_terminal_renderer_escapes_untrusted_controls_without_changing_json() -> None:
+    hostile = "\x1b]0;spoofed-title\x07\t\ufeff\\literal"
+    outcome = compare(TextSource(hostile), TextSource("safe"), TextCompareSpec())
+    assert isinstance(outcome, CompletedOutcome)
+
+    rendered = render_terminal(outcome)
+    assert "\x1b" not in rendered
+    assert "\x07" not in rendered
+    assert "\t" not in rendered
+    assert "\ufeff" not in rendered
+    assert r"\x1b" in rendered
+    assert r"\x07" in rendered
+    assert r"\t" in rendered
+    assert r"\ufeff" in rendered
+    assert r"\\literal" in rendered
+    assert loads_outcome(dumps_outcome(outcome)) == outcome
+
+
+@pytest.mark.parametrize(
+    ("output_format", "renderer_name"),
+    [("terminal", "render_terminal"), ("json", "render_json")],
+)
+def test_renderer_failure_uses_stderr_and_leaves_stdout_empty(
+    output_format: str,
+    renderer_name: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    before, after = write_pair(tmp_path, b"same\n", b"same\n")
+    module = importlib.import_module("platydiff.cli.main")
+
+    def explode(_outcome: object) -> str:
+        raise RuntimeError(f"sensitive path: {tmp_path}")
+
+    monkeypatch.setattr(module, renderer_name, explode)
+    status = module.main(["text", "--format", output_format, str(before), str(after)])
+    captured = capsys.readouterr()
+    assert status == 3
+    assert captured.out == ""
+    assert captured.err == "platydiff: rendering failed safely\n"
 
 
 def test_memory_error_is_not_swallowed(

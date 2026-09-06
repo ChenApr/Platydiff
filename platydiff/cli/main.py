@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -74,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     except MemoryError:
         raise
     except Exception:
-        print("platydiff: rendering failed safely")
+        print("platydiff: rendering failed safely", file=sys.stderr)
         return 3
     print(rendered)
     return exit_code(outcome)
