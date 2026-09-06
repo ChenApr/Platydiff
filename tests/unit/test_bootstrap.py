@@ -1,5 +1,6 @@
 """Bootstrap contract tests."""
 
+import platydiff
 from platydiff import __version__
 from platydiff.cli.main import main
 
@@ -15,3 +16,17 @@ def test_help_loads() -> None:
         assert error.code == 0
     else:
         raise AssertionError("argparse help must exit successfully")
+
+
+def test_package_root_does_not_export_prohibited_internals() -> None:
+    prohibited = {
+        "InternalRegistry",
+        "MyersResult",
+        "PipelineStage",
+        "StageRunner",
+        "compare_text",
+        "render_json",
+        "render_terminal",
+    }
+    assert prohibited.isdisjoint(platydiff.__all__)
+    assert all(not hasattr(platydiff, name) for name in prohibited)
