@@ -200,6 +200,13 @@ def test_unavailable_outcome_maps_to_exit_three() -> None:
                 StageDisposition.COMPLETED,
             ),
             StageRecord(
+                PipelineStage.SOURCING,
+                stamp,
+                stamp,
+                0,
+                StageDisposition.COMPLETED,
+            ),
+            StageRecord(
                 PipelineStage.RESOLVING,
                 stamp,
                 stamp,
@@ -207,7 +214,7 @@ def test_unavailable_outcome_maps_to_exit_three() -> None:
                 StageDisposition.UNAVAILABLE,
             ),
         ),
-        last_completed_stage=PipelineStage.VALIDATING,
+        last_completed_stage=PipelineStage.SOURCING,
     )
     outcome = UnavailableOutcome(
         execution=execution,

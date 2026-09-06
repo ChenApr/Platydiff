@@ -19,6 +19,15 @@ _IDENTIFIER = re.compile(r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
+def _unicode_scalar(value: str, field_name: str) -> None:
+    try:
+        value.encode("utf-8", errors="strict")
+    except UnicodeEncodeError as error:
+        raise ValueError(
+            f"{field_name} must contain valid Unicode scalar values"
+        ) from error
+
+
 def _identifier(value: str, *, namespaced: bool | None = None) -> None:
     if not _IDENTIFIER.fullmatch(value):
         raise ValueError(f"invalid stable identifier: {value!r}")
@@ -37,12 +46,7 @@ def _json_safe(value: JsonValue) -> None:
             raise ValueError("generic JSON data must not contain non-finite numbers")
         return
     if isinstance(value, str):
-        try:
-            value.encode("utf-8", errors="strict")
-        except UnicodeEncodeError as error:
-            raise ValueError(
-                "JSON strings must contain valid Unicode scalar values"
-            ) from error
+        _unicode_scalar(value, "JSON strings")
         return
     if isinstance(value, list):
         for item in value:
@@ -52,18 +56,13 @@ def _json_safe(value: JsonValue) -> None:
         for key, item in value.items():
             if not isinstance(key, str):
                 raise ValueError("JSON object keys must be strings")
-            try:
-                key.encode("utf-8", errors="strict")
-            except UnicodeEncodeError as error:
-                raise ValueError(
-                    "JSON object keys must contain valid Unicode scalar values"
-                ) from error
+            _unicode_scalar(key, "JSON object keys")
             _json_safe(item)
         return
     raise ValueError("value is not JSON-safe")
 
 
-def _utc_timestamp(value: str) -> None:
+def _utc_timestamp(value: str) -> datetime:
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as error:
@@ -73,6 +72,7 @@ def _utc_timestamp(value: str) -> None:
         raise ValueError("timestamps must include a UTC offset")
     if offset.total_seconds() != 0:
         raise ValueError("timestamps must be UTC")
+    return parsed
 
 
 class Relation(StrEnum):
@@ -162,6 +162,10 @@ class BytesSource:
     data: bytes
     label: str | None = None
 
+    def __post_init__(self) -> None:
+        if self.label is not None:
+            _unicode_scalar(self.label, "source label")
+
 
 @dataclass(frozen=True, slots=True)
 class TextSource:
@@ -169,6 +173,11 @@ class TextSource:
 
     text: str
     label: str | None = None
+
+    def __post_init__(self) -> None:
+        _unicode_scalar(self.text, "source text")
+        if self.label is not None:
+            _unicode_scalar(self.label, "source label")
 
 
 type Source = PathSource | BytesSource | TextSource
@@ -218,8 +227,10 @@ class StageRecord:
     disposition: StageDisposition
 
     def __post_init__(self) -> None:
-        _utc_timestamp(self.started_at)
-        _utc_timestamp(self.finished_at)
+        started = _utc_timestamp(self.started_at)
+        finished = _utc_timestamp(self.finished_at)
+        if finished < started:
+            raise ValueError("a stage must not finish before it starts")
         if self.duration_ns < 0:
             raise ValueError("duration_ns must be non-negative")
 
@@ -249,6 +260,7 @@ class Diagnostic:
 
     def __post_init__(self) -> None:
         _identifier(self.code)
+        _unicode_scalar(self.message, "diagnostic message")
         _json_safe(self.details)
 
 
@@ -263,14 +275,42 @@ class ExecutionRecord:
     last_completed_stage: PipelineStage | None = None
 
     def __post_init__(self) -> None:
-        _utc_timestamp(self.started_at)
-        _utc_timestamp(self.finished_at)
+        started = _utc_timestamp(self.started_at)
+        finished = _utc_timestamp(self.finished_at)
+        if finished < started:
+            raise ValueError("an execution must not finish before it starts")
         if self.duration_ns < 0:
             raise ValueError("duration_ns must be non-negative")
-        stage_order = list(PipelineStage)
-        positions = [stage_order.index(record.stage) for record in self.stages]
-        if positions != sorted(positions) or len(positions) != len(set(positions)):
-            raise ValueError("execution stages must be unique and lifecycle ordered")
+        lifecycle_with_detection = tuple(PipelineStage)
+        lifecycle_without_detection = tuple(
+            stage for stage in PipelineStage if stage is not PipelineStage.DETECTING
+        )
+        actual = tuple(record.stage for record in self.stages)
+        if not any(
+            actual == lifecycle[: len(actual)]
+            for lifecycle in (lifecycle_with_detection, lifecycle_without_detection)
+        ):
+            raise ValueError("execution stages must form a contiguous lifecycle prefix")
+        terminal_indexes = [
+            index
+            for index, record in enumerate(self.stages)
+            if record.disposition is not StageDisposition.COMPLETED
+        ]
+        if len(terminal_indexes) > 1 or (
+            terminal_indexes and terminal_indexes[0] != len(self.stages) - 1
+        ):
+            raise ValueError("an execution may have only one final terminal stage")
+        previous_finished = started
+        for record in self.stages:
+            record_started = _utc_timestamp(record.started_at)
+            record_finished = _utc_timestamp(record.finished_at)
+            if record_started < previous_finished:
+                raise ValueError("execution stage intervals must not overlap")
+            previous_finished = record_finished
+        if previous_finished > finished:
+            raise ValueError("execution stage intervals must be contained by execution")
+        if sum(record.duration_ns for record in self.stages) > self.duration_ns:
+            raise ValueError("stage durations must fit within execution duration")
         completed = [
             record.stage
             for record in self.stages
@@ -315,6 +355,7 @@ class ExecutionProblem:
         expected = _PROBLEM_CODES.get(self.code)
         if expected != (self.status_code, "failed"):
             raise ValueError("invalid schema-v1 failed problem mapping")
+        _unicode_scalar(self.message, "problem message")
         _json_safe(self.details)
 
 
@@ -333,6 +374,7 @@ class CapabilityProblem:
             raise ValueError("invalid schema-v1 unavailable problem mapping")
         if self.stage not in (PipelineStage.DETECTING, PipelineStage.RESOLVING):
             raise ValueError("unavailable outcomes are legal only while resolving")
+        _unicode_scalar(self.message, "problem message")
         _json_safe(self.details)
 
 
@@ -349,6 +391,8 @@ class InputProvenance:
             raise ValueError("size_bytes must be non-negative")
         if not _SHA256.fullmatch(self.sha256):
             raise ValueError("sha256 must be 64 lowercase hexadecimal characters")
+        if self.label is not None:
+            _unicode_scalar(self.label, "input label")
 
 
 @dataclass(frozen=True, slots=True)
@@ -392,6 +436,8 @@ class ComparisonProvenance:
         _json_safe(self.spec)
         _identifier(self.comparator_id)
         _identifier(self.algorithm_id)
+        _unicode_scalar(self.comparator_version, "comparator version")
+        _unicode_scalar(self.implementation_version, "implementation version")
         names = [item.name for item in self.resources]
         if len(names) != len(set(names)):
             raise ValueError("resource usage names must be unique")
@@ -406,8 +452,15 @@ class FiniteValue:
     value: float = 0.0
 
     def __post_init__(self) -> None:
-        if not math.isfinite(self.value):
+        if isinstance(self.value, bool) or not isinstance(self.value, (int, float)):
             raise ValueError("FiniteValue must contain a finite number")
+        try:
+            normalized = float(self.value)
+        except (OverflowError, TypeError, ValueError) as error:
+            raise ValueError("FiniteValue must contain a finite number") from error
+        if not math.isfinite(normalized):
+            raise ValueError("FiniteValue must contain a finite number")
+        object.__setattr__(self, "value", normalized)
 
 
 @dataclass(frozen=True, slots=True)
@@ -505,6 +558,13 @@ class HunkLine:
     after_line: int | None
 
     def __post_init__(self) -> None:
+        if self.kind not in ("equal", "delete", "insert"):
+            raise ValueError("unknown hunk line kind")
+        if self.terminator not in ("", "\n", "\r\n", "\r"):
+            raise ValueError("unknown line terminator")
+        _json_safe(self.content)
+        if "\n" in self.content or "\r" in self.content:
+            raise ValueError("hunk line content must not contain line terminators")
         if self.kind == "equal" and (
             self.before_line is None or self.after_line is None
         ):
@@ -544,6 +604,28 @@ class TextHunk:
             self.after_line_count,
         ):
             raise ValueError("hunk spans must match their line payload")
+        if not any(line.kind != "equal" for line in self.lines):
+            raise ValueError("a text hunk must contain at least one changed line")
+        expected_before = self.before_start_line
+        expected_after = self.after_start_line
+        insert_seen = False
+        for line in self.lines:
+            if line.before_line is not None:
+                if line.before_line != expected_before:
+                    raise ValueError("before line numbers must be contiguous")
+                expected_before += 1
+            if line.after_line is not None:
+                if line.after_line != expected_after:
+                    raise ValueError("after line numbers must be contiguous")
+                expected_after += 1
+            if line.kind == "equal":
+                insert_seen = False
+            elif line.kind == "insert":
+                insert_seen = True
+            elif insert_seen:
+                raise ValueError(
+                    "delete lines must precede insert lines in a change run"
+                )
 
 
 @dataclass(frozen=True, slots=True)

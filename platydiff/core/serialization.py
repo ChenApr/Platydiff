@@ -223,7 +223,10 @@ def _numeric_from_data(value: JsonValue) -> NumericValue:
         raw = _required(data, "value")
         if isinstance(raw, bool) or not isinstance(raw, (int, float)):
             raise SerializationError("finite numeric value must be a number")
-        return FiniteValue(float(raw))
+        try:
+            return FiniteValue(raw)
+        except ValueError as error:
+            raise SerializationError(str(error)) from error
     if kind == "nan":
         return NaNValue()
     if kind == "positive_infinity":
@@ -813,6 +816,10 @@ def outcome_from_data(value: JsonValue) -> CompareOutcome:
     if schema_version != SCHEMA_VERSION:
         raise SerializationError(f"unknown schema version: {schema_version}")
     kind = _string(_required(data, "kind"), "outcome kind")
+    if kind == "completed" and "problem" in data:
+        raise SerializationError("completed outcome has an incompatible field: problem")
+    if kind in ("failed", "unavailable") and "result" in data:
+        raise SerializationError(f"{kind} outcome has an incompatible field: result")
     execution = _execution_from_data(_required(data, "execution"))
     try:
         if kind == "completed":

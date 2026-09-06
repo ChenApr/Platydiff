@@ -26,7 +26,7 @@ from platydiff.renderers.terminal import render_terminal
 def _internal_error_outcome() -> FailedOutcome:
     stamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     stage = StageRecord(
-        PipelineStage.COMPARING,
+        PipelineStage.VALIDATING,
         stamp,
         stamp,
         0,
@@ -38,7 +38,7 @@ def _internal_error_outcome() -> FailedOutcome:
         problem=ExecutionProblem(
             "internal_error",
             500,
-            PipelineStage.COMPARING,
+            PipelineStage.VALIDATING,
             "An unexpected internal error prevented comparison.",
         ),
     )

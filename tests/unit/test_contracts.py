@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import cast
+from typing import Literal, cast
 
 import pytest
 
@@ -43,6 +43,7 @@ from platydiff.core.models import (
     SummaryCount,
     TextCompareSpec,
     TextHunk,
+    TextSource,
     UnavailableOutcome,
     Verdict,
 )
@@ -57,6 +58,7 @@ from platydiff.core.serialization import (
 )
 
 STAMP = "2026-09-06T00:00:00Z"
+LATER_STAMP = "2026-09-06T00:00:01Z"
 ZERO_SHA = "0" * 64
 
 
@@ -167,9 +169,10 @@ def test_all_three_outcomes_round_trip() -> None:
         0,
         (
             stage(PipelineStage.VALIDATING),
+            stage(PipelineStage.SOURCING),
             stage(PipelineStage.RESOLVING, StageDisposition.UNAVAILABLE),
         ),
-        last_completed_stage=PipelineStage.VALIDATING,
+        last_completed_stage=PipelineStage.SOURCING,
     )
     unavailable = UnavailableOutcome(
         execution=unavailable_execution,
@@ -228,6 +231,74 @@ def test_unknown_optional_fields_are_ignored() -> None:
     data = outcome_to_data(completed_outcome())
     data["future_optional"] = {"safe": True}
     assert outcome_from_data(data) == completed_outcome()
+
+
+@pytest.mark.parametrize(
+    ("kind", "incompatible_field"),
+    [("completed", "problem"), ("failed", "result"), ("unavailable", "result")],
+)
+def test_outcome_union_rejects_known_fields_from_other_variants(
+    kind: str, incompatible_field: str
+) -> None:
+    completed_data = outcome_to_data(completed_outcome())
+    if kind == "completed":
+        completed_data["problem"] = {
+            "code": "internal_error",
+            "status_code": 500,
+            "stage": "validating",
+            "message": "Unexpected.",
+            "details": {},
+            "retryable": False,
+        }
+    else:
+        completed_data["kind"] = kind
+        variant: FailedOutcome | UnavailableOutcome
+        if kind == "failed":
+            variant = FailedOutcome(
+                execution=ExecutionRecord(
+                    STAMP,
+                    STAMP,
+                    0,
+                    (stage(PipelineStage.VALIDATING, StageDisposition.FAILED),),
+                ),
+                problem=ExecutionProblem(
+                    "internal_error", 500, PipelineStage.VALIDATING, "Unexpected."
+                ),
+            )
+        else:
+            variant = UnavailableOutcome(
+                execution=ExecutionRecord(
+                    STAMP,
+                    STAMP,
+                    0,
+                    (
+                        stage(PipelineStage.VALIDATING),
+                        stage(PipelineStage.SOURCING),
+                        stage(PipelineStage.RESOLVING, StageDisposition.UNAVAILABLE),
+                    ),
+                    last_completed_stage=PipelineStage.SOURCING,
+                ),
+                problem=CapabilityProblem(
+                    "capability_unavailable",
+                    501,
+                    PipelineStage.RESOLVING,
+                    "Unavailable.",
+                ),
+            )
+        completed_data["execution"] = outcome_to_data(variant)["execution"]
+        completed_data["problem"] = {
+            "code": (
+                "capability_unavailable" if kind == "unavailable" else "internal_error"
+            ),
+            "status_code": 501 if kind == "unavailable" else 500,
+            "stage": "validating" if kind == "failed" else "resolving",
+            "message": "Unexpected.",
+            "details": {},
+            "retryable": False,
+        }
+    assert incompatible_field in completed_data
+    with pytest.raises(SerializationError, match="incompatible field"):
+        outcome_from_data(completed_data)
 
 
 def test_extension_change_is_preserved_and_unknown_builtin_is_rejected() -> None:
@@ -311,6 +382,39 @@ def test_non_json_extension_data_and_surrogates_are_rejected() -> None:
         loads_outcome('{"value":"\\ud800"}')
 
 
+@pytest.mark.parametrize(
+    "construct",
+    [
+        lambda: TextSource("safe", "\ud800"),
+        lambda: Diagnostic(
+            "unsafe_message", DiagnosticSeverity.WARNING, None, "\ud800"
+        ),
+        lambda: ExecutionProblem(
+            "internal_error", 500, PipelineStage.VALIDATING, "\ud800"
+        ),
+        lambda: InputProvenance("before", SourceKind.TEXT, 0, ZERO_SHA, "\ud800"),
+    ],
+)
+def test_public_model_strings_reject_surrogates(construct: object) -> None:
+    assert callable(construct)
+    with pytest.raises(ValueError, match="Unicode scalar"):
+        construct()
+
+
+def test_hostile_huge_finite_integer_is_a_validation_error() -> None:
+    huge = 10**10000
+    with pytest.raises(ValueError, match="finite number"):
+        FiniteValue(huge)
+
+    data = outcome_to_data(completed_outcome())
+    result_data = cast(JsonObject, data["result"])
+    metrics = cast(list[JsonObject], result_data["metrics"])
+    numeric = cast(JsonObject, metrics[0]["value"])
+    numeric["value"] = huge
+    with pytest.raises(SerializationError, match="finite number"):
+        outcome_from_data(data)
+
+
 def test_change_set_invariants() -> None:
     with pytest.raises(ValueError, match="invalid complete"):
         ChangeSet(
@@ -342,6 +446,71 @@ def test_change_set_invariants() -> None:
         5,
     )
     assert partial.total_count is None
+
+
+def test_hunk_requires_a_change_and_contiguous_line_numbers() -> None:
+    with pytest.raises(ValueError, match="at least one changed"):
+        TextHunk(
+            before_start_line=1,
+            before_line_count=1,
+            after_start_line=1,
+            after_line_count=1,
+            lines=(HunkLine("equal", "same", "\n", 1, 1),),
+        )
+    with pytest.raises(ValueError, match="contiguous"):
+        TextHunk(
+            before_start_line=1,
+            before_line_count=2,
+            after_start_line=1,
+            after_line_count=1,
+            lines=(
+                HunkLine("equal", "same", "\n", 1, 1),
+                HunkLine("delete", "changed", "\n", 3, None),
+            ),
+        )
+
+
+def test_hunk_rejects_invalid_tags_content_and_edit_order() -> None:
+    with pytest.raises(ValueError, match="hunk line kind"):
+        HunkLine(
+            cast(Literal["equal", "delete", "insert"], "replace"),
+            "x",
+            "",
+            1,
+            None,
+        )
+    with pytest.raises(ValueError, match="terminator"):
+        HunkLine(
+            "delete",
+            "x",
+            cast(Literal["", "\n", "\r\n", "\r"], "\v"),
+            1,
+            None,
+        )
+    with pytest.raises(ValueError, match="must not contain"):
+        HunkLine("delete", "x\ny", "", 1, None)
+    with pytest.raises(ValueError, match="delete lines must precede insert"):
+        TextHunk(
+            before_start_line=1,
+            before_line_count=1,
+            after_start_line=1,
+            after_line_count=1,
+            lines=(
+                HunkLine("insert", "new", "\n", None, 1),
+                HunkLine("delete", "old", "\n", 1, None),
+            ),
+        )
+
+
+def test_deserialized_hunk_is_checked_by_domain_invariants() -> None:
+    data = outcome_to_data(completed_outcome())
+    result_data = cast(JsonObject, data["result"])
+    changes_data = cast(JsonObject, result_data["changes"])
+    hunk_data = cast(JsonObject, cast(list[object], changes_data["items"])[0])
+    lines = cast(list[JsonObject], hunk_data["lines"])
+    lines[0]["content"] = "embedded\nnewline"
+    with pytest.raises(SerializationError, match="must not contain"):
+        outcome_from_data(data)
 
 
 @pytest.mark.parametrize(
@@ -433,4 +602,60 @@ def test_invalid_outcome_and_result_states_are_rejected() -> None:
         result(
             verdict=Verdict.PASS,
             evaluations=(PolicyEvaluation("strict_equality", Verdict.FAIL),),
+        )
+
+
+def test_execution_lifecycle_is_a_contiguous_prefix_with_one_terminal_stage() -> None:
+    with pytest.raises(ValueError, match="contiguous"):
+        ExecutionRecord(
+            STAMP,
+            STAMP,
+            0,
+            (stage(PipelineStage.VALIDATING), stage(PipelineStage.DECODING)),
+            last_completed_stage=PipelineStage.DECODING,
+        )
+    with pytest.raises(ValueError, match="terminal stage"):
+        ExecutionRecord(
+            STAMP,
+            STAMP,
+            0,
+            (
+                stage(PipelineStage.VALIDATING, StageDisposition.FAILED),
+                stage(PipelineStage.SOURCING),
+            ),
+            last_completed_stage=PipelineStage.SOURCING,
+        )
+
+
+def test_execution_intervals_must_be_ordered_and_contained() -> None:
+    with pytest.raises(ValueError, match="finish before"):
+        StageRecord(
+            PipelineStage.VALIDATING,
+            LATER_STAMP,
+            STAMP,
+            0,
+            StageDisposition.COMPLETED,
+        )
+    with pytest.raises(ValueError, match="overlap"):
+        ExecutionRecord(
+            STAMP,
+            LATER_STAMP,
+            1_000_000_000,
+            (
+                StageRecord(
+                    PipelineStage.VALIDATING,
+                    STAMP,
+                    LATER_STAMP,
+                    1_000_000_000,
+                    StageDisposition.COMPLETED,
+                ),
+                StageRecord(
+                    PipelineStage.SOURCING,
+                    STAMP,
+                    LATER_STAMP,
+                    1_000_000_000,
+                    StageDisposition.FAILED,
+                ),
+            ),
+            last_completed_stage=PipelineStage.VALIDATING,
         )
