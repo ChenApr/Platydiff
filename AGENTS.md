@@ -18,7 +18,11 @@ Primary technical direction:
 - Pillow, OpenCV, scikit-image, Tree-sitter, FFmpeg, and PDF backends are optional plugins or external backends.
 - Performance-critical paths may use Rust extensions after interfaces stabilize, but the core API must not depend on a particular FFI.
 
-The project is still in its documentation and architecture phase. The repository does not yet contain a `pyproject.toml`, Python package, or automated tests. Never claim that commands which do not yet exist have passed.
+The repository now contains a Python project scaffold, the `platydiff` package,
+and automated tests for the Phase 1 explicit-text implementation candidate in
+PR #3. Treat that work as unshipped until it is merged. Later modalities,
+public plugin discovery, and richer renderers remain planned; never describe
+them as implemented, and report only verification commands actually run.
 
 ## Repository structure
 
@@ -26,6 +30,9 @@ Currently present:
 
 - `README.md`: project goals, scope, and design principles. `README_zh.md` is its Chinese translation.
 - `docs/architecture.md`: authoritative architecture, interface direction, modality fundamentals, milestones, and compliance boundaries. `docs/architecture_zh.md` is its Chinese translation.
+- `pyproject.toml`: Python packaging metadata and the standard development-tool configuration.
+- `platydiff/`: the Phase 1 library and CLI implementation candidate.
+- `tests/`: unit, integration, contract, algorithm, CLI, and packaging regression tests.
 
 Target structure:
 
@@ -51,9 +58,9 @@ CLI / renderers / comparators / plugins
 
 ## Development commands
 
-### Current repository
+### Documentation-only changes
 
-Before the Python project scaffold exists, documentation changes must run at least:
+Documentation changes must run at least:
 
 ```bash
 git diff --check
@@ -61,9 +68,9 @@ git diff --check
 
 Also verify manually that relative Markdown links resolve and that documented commands match the repository's actual state.
 
-### Required baseline after Python bootstrap
+### Required Python baseline
 
-The first `pyproject.toml` must make the following commands the repository's standard development interface. Do not create overlapping helper scripts.
+`pyproject.toml` makes the following commands the repository's standard development interface. Do not create overlapping helper scripts.
 
 Install the development environment:
 

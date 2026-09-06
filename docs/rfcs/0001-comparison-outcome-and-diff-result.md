@@ -2,7 +2,7 @@
 
 [Chinese documentation](0001-comparison-outcome-and-diff-result_zh.md)
 
-- Status: Implemented
+- Status: Accepted
 - Date: 2026-09-06
 - Owners: Platydiff maintainers
 

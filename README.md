@@ -3,9 +3,10 @@
 [Chinese documentation](README_zh.md)
 
 `platydiff` is an extensible multimodal diff engine for scientific data,
-experimental regression testing, and competition workflows. The implemented
-Phase 1 slice compares explicitly selected text sources through a typed Python
-API or CLI and emits terminal output or the schema-v1 JSON outcome contract.
+experimental regression testing, and competition workflows. PR #3 contains a
+Phase 1 implementation candidate that compares explicitly selected text
+sources through a typed Python API or CLI and emits terminal output or the
+schema-v1 JSON outcome contract. It is not shipped until merged and released.
 
 Other modalities and automatic detection remain planned. Platydiff never
 guesses that an input is text from its extension, content, or Python type.
@@ -73,9 +74,9 @@ resource limits, result semantics, and failure behavior. The authoritative
 contracts are [RFC 0001](docs/rfcs/0001-comparison-outcome-and-diff-result.md)
 and [RFC 0002](docs/rfcs/0002-development-phases-and-text-slice.md).
 
-## Implemented and planned capabilities
+## Candidate and planned capabilities
 
-Implemented in Phase 1:
+Included in the Phase 1 candidate in PR #3:
 
 - Python 3.12+ library and `platydiff` CLI;
 - schema-v1 `CompareOutcome` and `DiffResult` JSON serialization;

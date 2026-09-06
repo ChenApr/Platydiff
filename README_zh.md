@@ -3,8 +3,9 @@
 [English documentation](README.md)
 
 `platydiff` 是一个面向科研数据、实验回归测试与竞赛工作流的可扩展多模态
-Diff 引擎。已实现的 Phase 1 纵向切片通过类型化 Python API 或 CLI 比较显式
-指定的文本来源，并输出终端结果或 schema-v1 JSON outcome 契约。
+Diff 引擎。PR #3 包含一个 Phase 1 实现候选：它通过类型化 Python API 或 CLI
+比较显式指定的文本来源，并输出终端结果或 schema-v1 JSON outcome 契约。在合并
+并发布前，该候选尚未交付。
 
 其他模态和自动探测仍是计划能力。Platydiff 不会根据扩展名、内容或 Python 类型
 猜测输入是文本。
@@ -68,9 +69,9 @@ LF、CRLF、CR 和末尾缺少换行会保持不同。Unicode、空白、tab、�
 权威契约见 [RFC 0001](docs/rfcs/0001-comparison-outcome-and-diff-result_zh.md)
 和 [RFC 0002](docs/rfcs/0002-development-phases-and-text-slice_zh.md)。
 
-## 已实现与计划能力
+## 候选与计划能力
 
-Phase 1 已实现：
+PR #3 的 Phase 1 候选包含：
 
 - Python 3.12+ 库与 `platydiff` CLI；
 - schema-v1 `CompareOutcome` 和 `DiffResult` JSON 序列化；

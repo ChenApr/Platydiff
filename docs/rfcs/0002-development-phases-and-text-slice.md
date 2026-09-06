@@ -2,7 +2,7 @@
 
 [Chinese documentation](0002-development-phases-and-text-slice_zh.md)
 
-- Status: Implemented
+- Status: Accepted
 - Date: 2026-09-06
 - Owners: Platydiff maintainers
 
@@ -10,7 +10,7 @@
 
 This RFC defines the delivery order, commit boundaries, public API gate, file layout, CLI behavior, text semantics, resource limits, and verification requirements for Platydiff's first executable vertical slice. That slice is a Python 3.12+ library and CLI that compare explicitly selected text inputs and return the contracts in [RFC 0001](0001-comparison-outcome-and-diff-result.md).
 
-This document defined the implementation plan now delivered by the Phase 1 pull request from `feat/python-text-diff`.
+This document defines the implementation contract exercised by the Phase 1 candidate in PR #3 from `feat/python-text-diff`. The candidate is not delivered until it is merged and released.
 
 Automatic format detection, binary comparison, third-party plugin discovery, and other modalities are later phases. Their appearance in the roadmap does not authorize implementation. Each phase must return to the contract gates in this RFC before development starts.
 

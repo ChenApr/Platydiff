@@ -18,7 +18,10 @@ Platydiff 是面向科研数据、实验回归和竞赛工作流的可扩展多�
 - Pillow、OpenCV、scikit-image、Tree-sitter、FFmpeg 和 PDF 后端均为可选插件或外部后端。
 - 性能热点可在接口稳定后使用 Rust 扩展，但不得让核心 API 依赖具体 FFI。
 
-项目当前仍处于文档和架构阶段。仓库尚无 `pyproject.toml`、Python 包或自动化测试；不要声称尚不存在的命令已经通过。
+仓库现已包含 Python 工程脚手架、`platydiff` 包，以及 PR #3 中 Phase 1
+显式文本实现候选的自动化测试。在合并前应将该工作视为尚未交付。后续模态、
+公共插件发现和更丰富的 renderer 仍处于计划阶段；不得描述为已实现，且只报告
+实际运行过的验证命令。
 
 ## 仓库结构
 
@@ -26,6 +29,9 @@ Platydiff 是面向科研数据、实验回归和竞赛工作流的可扩展多�
 
 - `README.md`：英文权威版，说明项目目标、覆盖范围和设计原则；`README_zh.md` 为中文翻译。
 - `docs/architecture.md`：英文权威架构文档；`docs/architecture_zh.md` 为中文翻译。
+- `pyproject.toml`：Python 打包元数据与标准开发工具配置。
+- `platydiff/`：Phase 1 库与 CLI 的实现候选。
+- `tests/`：单元、集成、契约、算法、CLI 与打包回归测试。
 
 目标结构：
 
@@ -51,9 +57,9 @@ CLI / renderers / comparators / plugins
 
 ## 开发命令
 
-### 当前仓库
+### 仅文档修改
 
-在 Python 工程脚手架落地前，文档修改至少运行：
+文档修改至少运行：
 
 ```bash
 git diff --check
@@ -61,9 +67,9 @@ git diff --check
 
 同时手动确认 Markdown 相对链接存在、命令与仓库当前状态一致。
 
-### Python 脚手架完成后的基线
+### Python 基线
 
-首次创建 `pyproject.toml` 时，必须让以下命令成为仓库的标准开发接口；不要另造功能重叠的脚本：
+`pyproject.toml` 规定以下命令为仓库的标准开发接口；不要另造功能重叠的脚本：
 
 安装开发环境：
 

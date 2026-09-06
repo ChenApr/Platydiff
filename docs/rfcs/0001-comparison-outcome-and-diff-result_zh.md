@@ -2,7 +2,7 @@
 
 [English documentation](0001-comparison-outcome-and-diff-result.md)
 
-- 状态：Implemented
+- 状态：Accepted
 - 日期：2026-09-06
 - 负责人：Platydiff 维护者
 
