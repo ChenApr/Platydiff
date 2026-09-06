@@ -22,6 +22,7 @@ dependencies = []
 [project.optional-dependencies]
 dev = [
   "build>=1.2",
+  "hatchling>=1.27",
   "mypy>=1.15",
   "pytest>=8.3",
   "ruff>=0.9",
@@ -32,6 +33,20 @@ platydiff = "platydiff.cli.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["platydiff"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/.github/workflows/ci.yml",
+  "/CHANGELOG.md",
+  "/LICENSE",
+  "/README.md",
+  "/README_zh.md",
+  "/pyproject.toml",
+  "/docs/**/*.md",
+  "/platydiff/**/*.py",
+  "/platydiff/py.typed",
+  "/tests/**/*.py",
+]
 
 [tool.ruff]
 target-version = "py312"
