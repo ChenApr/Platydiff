@@ -1,5 +1,7 @@
 """Curated public API for Platydiff."""
 
+from platydiff._version import __version__
+from platydiff.api import compare
 from platydiff.core.models import (
     BytesSource,
     ChangeCompleteness,
@@ -26,8 +28,6 @@ from platydiff.core.models import (
     Verdict,
 )
 
-__version__ = "0.1.0.dev0"
-
 __all__ = [
     "BytesSource",
     "ChangeCompleteness",
@@ -53,4 +53,5 @@ __all__ = [
     "UnavailableOutcome",
     "Verdict",
     "__version__",
+    "compare",
 ]
