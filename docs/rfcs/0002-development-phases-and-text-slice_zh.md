@@ -2,7 +2,7 @@
 
 [English documentation](0002-development-phases-and-text-slice.md)
 
-- 状态：Accepted
+- 状态：Implemented
 - 日期：2026-09-06
 - 负责人：Platydiff 维护者
 
@@ -10,7 +10,7 @@
 
 本 RFC 定义 Platydiff 首个可执行纵向切片的交付顺序、commit 边界、公共 API 门禁、文件布局、CLI 行为、文本语义、资源限制和验证要求。该切片是 Python 3.12+ 库和 CLI，用于比较显式指定的文本输入，并返回 [RFC 0001](0001-comparison-outcome-and-diff-result_zh.md) 定义的契约。
 
-本文接受的是计划；它并不声称 Python 包或命令已经存在。实现必须等本 RFC PR 合并后，在独立分支 `codex/python-text-diff` 和独立 PR 中进行。
+本文定义的实现计划现已由 `feat/python-text-diff` 分支上的 Phase 1 PR 交付。
 
 自动格式探测、二进制比较、第三方插件发现和其他模态属于后续阶段。它们出现在路线图中并不表示已授权实现。每个阶段开始开发前都必须回到本 RFC 的契约门禁。
 

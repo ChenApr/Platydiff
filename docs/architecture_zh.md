@@ -235,6 +235,10 @@ PDF 同时包含文本、绘制指令、字体、图片和页面布局。应提�
 
 分阶段交付计划及实现门禁由 [RFC 0002](rfcs/0002-development-phases-and-text-slice_zh.md) 定义。下方版本分组描述产品方向；它们不覆盖 RFC 中更狭窄且需要显式授权的阶段，也不表示相关能力已经实现。
 
+Phase 1 已实现：Python 包、schema-v1 契约、显式文本流水线、线性空间 Myers
+算法、CLI 以及 terminal/JSON renderer 已可用。下列其他模态与 renderer 仍为
+计划能力。
+
 ### v0.1：核心闭环
 
 - 插件注册、`CompareSpec`、`DiffResult` 和来源记录。

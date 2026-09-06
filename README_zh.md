@@ -2,42 +2,93 @@
 
 [English documentation](README.md)
 
-`platydiff` 是一个面向科研、数据分析与竞赛工作流的多模态 Diff 引擎。它希望用统一的命令、配置和结果协议，比较二进制、文本、源代码、结构化配置、图片、音频、视频、PDF、表格与统计数据，同时允许用户按任务定制规范化、对齐、容差、比较指标和输出形式。
+`platydiff` 是一个面向科研数据、实验回归测试与竞赛工作流的可扩展多模态
+Diff 引擎。已实现的 Phase 1 纵向切片通过类型化 Python API 或 CLI 比较显式
+指定的文本来源，并输出终端结果或 schema-v1 JSON outcome 契约。
 
-## 项目目标
+其他模态和自动探测仍是计划能力。Platydiff 不会根据扩展名、内容或 Python 类型
+猜测输入是文本。
 
-- 用一套稳定的流水线组织不同模态的比较，而不是把所有文件强行转换为文本。
-- 同时支持严格相等、结构相等、感知相似和统计等价等不同意义的“相同”。
-- 让比较规则可配置、可复现，并适合命令行、Python、Notebook 和 CI 使用。
-- 输出机器可读结果与人类可读报告，包括 JSON、终端、HTML、JUnit、热图和时间区间。
-- 通过插件扩展新的文件格式、算法、解码器和渲染器。
-- 明确记录输入哈希、工具版本和参数，满足科研复现与比赛审计需要。
+## 开发环境安装
 
-## 计划覆盖的格式
+Platydiff 要求 Python 3.12 或更高版本，并且没有第三方运行时依赖。
 
-| 类别 | 首要比较能力 |
-| --- | --- |
-| 二进制 | 哈希、逐字节和分块差异 |
-| 文本 | 行级、词级、字符级 Diff 与 Unified Diff |
-| 源代码 | 语法树感知的结构变化 |
-| 配置文件 | JSON、YAML、TOML、XML 的路径级变化 |
-| 图片 | 像素热图、MAE、RMSE、PSNR、SSIM 与感知指标 |
-| 音频 | 时间对齐、波形、频谱与感知质量比较 |
-| 视频 | 帧对齐、逐帧指标、时间聚合和镜头变化 |
-| PDF | 文本、对象结构和页面渲染的混合比较 |
-| 统计数据 | Schema、索引、数值容差、分布和效应量比较 |
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
+```
 
-## 设计原则
+## 从 CLI 比较文本
 
-1. **统一流水线，保留模态语义**：共享检测、规范化、对齐、比较、聚合和渲染阶段，但使用模态专用中间表示。
-2. **策略与实现解耦**：用户描述“比较什么”，插件决定“如何比较”。
-3. **可复现优先**：结果必须携带输入摘要、运行参数、后端和版本信息。
-4. **结果可组合**：所有比较器输出共同的 `DiffResult`，便于终端、报告和 CI 复用。
-5. **安全默认值**：不执行配置中的任意代码；对解析器、媒体解码器和不可信文件施加资源限制。
-6. **合规可审计**：核心代码、可选后端、测试数据和生成物分别管理许可证与来源。
+下面两个命令等价：
 
-详细设计见 [docs/architecture_zh.md](docs/architecture_zh.md)。
+```bash
+platydiff compare --type text before.txt after.txt
+platydiff text before.txt after.txt
+```
 
-## 当前状态
+使用 `--format json` 选择精确的 schema-v1 JSON 输出：
 
-项目处于架构设计阶段。首个实现里程碑将优先覆盖二进制、文本、结构化配置、表格/数组和图片，随后扩展代码、PDF、音频与视频比较。
+```bash
+platydiff text --format json before.txt after.txt
+```
+
+退出码 `0` 表示 completed 且 verdict 为 `pass` 或 `warn`，`1` 表示 completed
+且 verdict 为 `fail`，`2` 表示没有产生 outcome 的命令行用法错误，`3` 表示
+`unavailable` 或 `failed` outcome。结构化消费者应读取 outcome 和 problem code，
+而不是从 shell 退出码猜测具体错误。
+
+## 从 Python 比较文本
+
+specification 是必填项；provenance 会记录全部生效默认值：
+
+```python
+from platydiff import TextCompareSpec, TextSource, compare
+
+outcome = compare(
+    TextSource("alpha\nbeta\n", label="before"),
+    TextSource("alpha\ngamma\n", label="after"),
+    TextCompareSpec(),
+)
+
+if outcome.kind == "completed":
+    print(outcome.result.relation, outcome.result.verdict)
+else:
+    print(outcome.problem.code)
+```
+
+支持 `PathSource`、`BytesSource` 和 `TextSource`。字节和路径来源默认使用 strict
+UTF-8；只有显式选择 `utf-8-sig` 才移除 BOM。除非显式选择 `normalize_lf`，
+LF、CRLF、CR 和末尾缺少换行会保持不同。Unicode、空白、tab、大小写和 locale
+不会被隐式规范化。
+
+全部选项、资源限制、结果语义和失败行为见[文本比较指南](docs/text-comparison_zh.md)。
+权威契约见 [RFC 0001](docs/rfcs/0001-comparison-outcome-and-diff-result_zh.md)
+和 [RFC 0002](docs/rfcs/0002-development-phases-and-text-slice_zh.md)。
+
+## 已实现与计划能力
+
+Phase 1 已实现：
+
+- Python 3.12+ 库与 `platydiff` CLI；
+- schema-v1 `CompareOutcome` 和 `DiffResult` JSON 序列化；
+- strict 行级文本比较；
+- 确定性、线性辅助空间的 Myers insert/delete 编辑脚本；
+- 具有有界 change 明细的 terminal 与 JSON renderer。
+
+计划中、尚未实现：
+
+- 自动格式或编码探测与二进制比较；
+- 公共插件发现或 SDK；
+- JSON/YAML、表格、数组、图片、源代码、PDF、音频和视频；
+- stdin、目录、递归比较和配置文件；
+- color、HTML、JUnit 和 patch artifact。
+
+更广泛的设计方向见[架构文档](docs/architecture_zh.md)。
+算法来源与已知限制记录在[算法来源文档](docs/algorithm-references_zh.md)中。
+
+## 许可证
+
+Platydiff 使用 Apache License 2.0。参见 [LICENSE](LICENSE)。
