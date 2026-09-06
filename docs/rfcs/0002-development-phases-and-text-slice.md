@@ -10,7 +10,7 @@
 
 This RFC defines the delivery order, commit boundaries, public API gate, file layout, CLI behavior, text semantics, resource limits, and verification requirements for Platydiff's first executable vertical slice. That slice is a Python 3.12+ library and CLI that compare explicitly selected text inputs and return the contracts in [RFC 0001](0001-comparison-outcome-and-diff-result.md).
 
-This document accepts a plan; it does not claim that the package or commands already exist. Implementation requires a separate pull request from `codex/python-text-diff` after the RFC pull request is merged.
+This document defines the implementation contract exercised by the Phase 1 candidate in PR #3 from `feat/python-text-diff`. The candidate is not delivered until it is merged and released.
 
 Automatic format detection, binary comparison, third-party plugin discovery, and other modalities are later phases. Their appearance in the roadmap does not authorize implementation. Each phase must return to the contract gates in this RFC before development starts.
 
@@ -164,13 +164,13 @@ Shell exit codes are:
 | `0` | A completed outcome with verdict `pass` or `warn` |
 | `1` | A completed outcome with verdict `fail` |
 | `2` | CLI syntax, option, or pre-execution usage error for which no comparison outcome is emitted |
-| `3` | An `unavailable` or `failed` outcome, including a safely mapped `internal_error` |
+| `3` | An `unavailable` or `failed` outcome, including a safely mapped `internal_error`, or failure to render an already produced outcome |
 
-Machine consumers must use the stable problem string and HTTP-style status code from RFC 0001 rather than inferring a detailed cause from the shell exit code.
+Every successfully rendered outcome, including `failed` and `unavailable`, is written to stdout so JSON remains one complete machine-readable envelope. Parser errors and renderer failures use stderr. Machine consumers must use the stable problem string and HTTP-style status code from RFC 0001 rather than inferring a detailed cause from the shell exit code.
 
 ## Text decoding and normalization
 
-Byte and path inputs decode as strict UTF-8 by default. Invalid input produces `failed/unsupported_encoding` or `failed/decode_error` as appropriate; it is never silently replaced. A UTF-8 BOM is data under `utf-8` and is removed only when the caller explicitly selects `utf-8-sig`.
+Byte and path inputs decode as strict UTF-8 by default. Invalid bytes produce `failed/decode_error` and are never silently replaced. Phase 1 exposes only the closed `utf-8` and `utf-8-sig` selectors, so an unknown selector is a CLI usage or API construction error; `unsupported_encoding` remains reserved for a future phase with dynamically resolved encodings. A UTF-8 BOM is data under `utf-8` and is removed only when the caller explicitly selects `utf-8-sig`.
 
 The decoded input is split into immutable `TextLine` values:
 
@@ -186,9 +186,9 @@ Input SHA-256 covers the original bytes. For `TextSource`, the digest covers its
 
 ## Edit and hunk semantics
 
-The internal edit script contains `equal`, `delete`, and `insert`. A replacement is represented canonically as deletion followed by insertion. This ordering also governs hunk serialization and terminal rendering.
+The internal edit script contains `equal`, `delete`, and `insert`. A replacement is represented canonically as deletion followed by insertion. A shortest edit script is not required to emit that order, so the pipeline reorders every maximal run of changed lines into deletions followed by insertions before building hunks. Deletions consume before-lines and insertions produce after-lines independently, so the reordering preserves both the script length and the reconstruction. This ordering also governs hunk serialization and terminal rendering.
 
-`TextHunk` is the Phase 1 built-in change with `kind="text_hunk"`. Locations use one-based line numbers and half-open spans expressed as `start_line + line_count`. A zero-length insertion or deletion anchor may point one position after the last line. Hunk context is presentation data selected only after the full edit script is known; changing context does not change relation, verdict, metrics, or total change count.
+`TextHunk` is the Phase 1 built-in change with `kind="text_hunk"`. Locations use one-based line numbers and half-open spans expressed as `start_line + line_count`. A zero-length insertion or deletion anchor may point one position after the last line. Hunk context is presentation data selected only after the full edit script is known; changing context does not change relation, verdict, metrics, or total change count. Separate change blocks remain separate hunks. When their requested context would overlap, the shared equal-line gap is divided deterministically without duplication; the earlier hunk receives the extra line when the gap is odd.
 
 The strict default policy yields `equal/pass` when the script contains no insertion or deletion and `different/fail` otherwise. Phase 1 has no policy that yields `warn` or `degraded` fidelity, but it implements and serializes those schema-v1 values for compatibility.
 
@@ -226,7 +226,7 @@ Phase 1 defaults are:
 | Serialized change payload | 4 MiB |
 | Hunk context | 3 lines |
 
-Input limits are checked while reading so path inputs are not loaded without bounds. Line limits are checked during splitting. The encoded-line limit is measured after the selected newline normalization using strict UTF-8. Change-item and payload limits are applied only after the full script and total counts are known; reaching either produces deterministic source-order truncation with complete item boundaries.
+Input limits are checked while reading so path inputs are not loaded without bounds. Line limits are checked during splitting. The encoded-line limit is measured after the selected newline normalization using strict UTF-8. Change-item and payload limits are applied only after the full script and total counts are known; reaching either produces deterministic source-order truncation with complete item boundaries. A truncated `ChangeSet` records `limit_reason="change_items"` or `"change_payload_bytes"`, which determines whether `limit` is measured in items or bytes. Payload usage is the sum of each retained complete change encoded independently as canonical compact schema-v1 JSON: `ensure_ascii=false`, `allow_nan=false`, sorted keys, and compact separators. The surrounding array, outcome envelope, and pretty-printing whitespace are excluded.
 
 ## Verification contract
 
