@@ -1,19 +1,21 @@
-# Platydiff 设计架构
+# Platydiff Architecture
 
-## 1. 产品定位
+[Chinese documentation](architecture_zh.md)
 
-`platydiff` 是一个面向科研可视化数据、实验回归和竞赛工作流的多模态差异分析框架。它不是单一算法的封装，也不把每种输入都退化为字节或文本，而是为不同模态提供共同的执行模型、配置协议和结果协议。
+## 1. Product positioning
 
-项目需要回答四类不同问题：
+`platydiff` is a multimodal difference-analysis framework for scientific visualization data, experimental regression testing, and competition workflows. It is neither a wrapper around a single algorithm nor a system that reduces every input to bytes or text. Instead, it gives different modalities a shared execution model, configuration protocol, and result protocol.
 
-1. **严格相等**：两个对象的字节、样本或元素是否完全一致。
-2. **可变换性**：如何用插入、删除、替换或复制操作从 A 构造 B。
-3. **结构变化**：字段、语法节点、页面对象或镜头结构发生了什么变化。
-4. **感知或统计差异**：变化是否能被人感知，或是否超过科研任务定义的实际容差。
+The project must answer four distinct kinds of questions:
 
-项目主要交付形态为 Python 库和命令行工具，后续可增加 Notebook 组件、桌面/网页报告和 CI 集成。核心应保持轻量；高成本解析与多媒体处理通过可选插件或外部后端完成。
+1. **Exact equality**: Are two objects identical at the byte, sample, or element level?
+2. **Transformability**: Which insert, delete, replace, or copy operations transform A into B?
+3. **Structural change**: Which fields, syntax nodes, page objects, or shot structures changed?
+4. **Perceptual or statistical difference**: Is a change perceptible, or does it exceed the practical tolerance defined by a scientific task?
 
-## 2. 总体流水线
+The primary deliverables are a Python library and a command-line tool. Notebook components, desktop or web reports, and CI integrations may follow. The core must remain lightweight; expensive parsing and multimedia processing belong in optional plugins or external backends.
+
+## 2. Overall pipeline
 
 ```text
 Input A / Input B
@@ -38,30 +40,30 @@ Common DiffResult
         └── Heatmap / Waveform / Frames
 ```
 
-流水线各阶段的职责如下：
+Each stage has a distinct responsibility:
 
-| 阶段 | 职责 | 示例 |
+| Stage | Responsibility | Examples |
 | --- | --- | --- |
-| Detect | 识别格式与候选插件 | 扩展名、MIME、magic bytes、内容探测 |
-| Decode | 转换为模态专用中间表示 | 文本行、AST、RGBA、PCM、视频帧、数据表 |
-| Normalize | 消除任务不关心的变化 | 换行、键顺序、元数据、色彩空间、采样率 |
-| Align | 建立可比较的对应关系 | 行、字段、主键、坐标、时间戳、帧、页面 |
-| Compare | 产生局部差异和指标 | 编辑脚本、字段变化、误差矩阵、质量分数 |
-| Aggregate | 汇总并执行规则 | 最大误差、分位数、失败阈值、告警 |
-| Render | 表达人或机器需要的结果 | hunk、热图、HTML、JSON、JUnit |
+| Detect | Identify the format and candidate plugins | File extension, MIME type, magic bytes, content probing |
+| Decode | Convert input into a modality-specific intermediate representation | Text lines, AST, RGBA pixels, PCM samples, video frames, data tables |
+| Normalize | Remove differences that are irrelevant to the task | Line endings, key order, metadata, color space, sample rate |
+| Align | Establish comparable correspondences | Lines, fields, primary keys, coordinates, timestamps, frames, pages |
+| Compare | Produce local differences and metrics | Edit scripts, field changes, error matrices, quality scores |
+| Aggregate | Summarize results and evaluate rules | Maximum error, quantiles, failure thresholds, warnings |
+| Render | Present results to people or machines | Hunks, heatmaps, HTML, JSON, JUnit |
 
-不存在唯一的万能中间表示。框架应定义 `TextIR`、`TreeIR`、`ImageIR`、`AudioIR`、`VideoIR`、`DocumentIR` 和 `TableIR` 等带类型的数据结构，并让它们共享元数据、来源与生命周期约定。
+There is no single universal intermediate representation. The framework should define typed structures such as `TextIR`, `TreeIR`, `ImageIR`, `AudioIR`, `VideoIR`, `DocumentIR`, and `TableIR`, while giving them shared metadata, provenance, and lifecycle conventions.
 
-## 3. 模块结构
+## 3. Module structure
 
 ```text
 platydiff/
 ├── core/
-│   ├── models.py          # CompareSpec、DiffResult 和通用类型
-│   ├── registry.py        # 插件发现、能力声明和优先级
-│   ├── pipeline.py        # 阶段调度、缓存、取消与错误边界
-│   ├── policies.py        # 容差、忽略和通过/失败规则
-│   └── provenance.py      # 输入哈希、参数、环境和版本记录
+│   ├── models.py          # CompareSpec, DiffResult, and shared types
+│   ├── registry.py        # Plugin discovery, capability declarations, and priority
+│   ├── pipeline.py        # Stage scheduling, caching, cancellation, and error boundaries
+│   ├── policies.py        # Tolerance, ignore, and pass/fail rules
+│   └── provenance.py      # Input hashes, parameters, environment, and version records
 ├── comparators/
 │   ├── binary.py
 │   ├── text.py
@@ -77,16 +79,16 @@ platydiff/
 │   ├── json.py
 │   ├── html.py
 │   └── junit.py
-├── plugins/               # 内置插件与第三方扩展入口
-├── cli/                   # 命令解析、配置加载和退出码
-└── tests/corpus/          # 自建和许可明确的测试样例
+├── plugins/               # Built-in extension entry points and third-party adapters
+├── cli/                   # Argument parsing, configuration loading, and exit codes
+└── tests/corpus/          # Synthetic and explicitly licensed test samples
 ```
 
-核心层不直接依赖重量级媒体或 PDF 引擎。比较器声明额外能力与依赖，缺少后端时返回结构化的 `capability_unavailable`，而不是静默降级或产生不可复现结果。
+The core layer must not depend directly on heavyweight media or PDF engines. Comparators declare additional capabilities and dependencies. When a backend is unavailable, the system returns a structured `capability_unavailable` result instead of silently degrading or producing irreproducible output.
 
-## 4. 抽象接口
+## 4. Abstract interfaces
 
-下面的 Python 伪代码描述插件边界，不约束最终具体类库：
+The following Python pseudocode describes the plugin boundary without prescribing a final class hierarchy or framework:
 
 ```python
 class DiffPlugin(Protocol):
@@ -111,7 +113,7 @@ class DiffPlugin(Protocol):
 
 ### 4.1 CompareSpec
 
-`CompareSpec` 描述需求，而不是绑定某个算法实现：
+`CompareSpec` describes user intent rather than binding the request to a particular algorithm implementation:
 
 ```yaml
 type: table
@@ -140,18 +142,18 @@ output:
   formats: [terminal, json, html]
 ```
 
-配置表达式必须使用受限规则语言，不得通过 `eval` 或模板注入执行任意 Python 代码。
+Configuration expressions must use a restricted rule language. They must never execute arbitrary Python through `eval`, executable templates, or similar mechanisms.
 
 ### 4.2 DiffResult
 
 ```text
 DiffResult
-├── equal               # 在当前规则下是否相等
+├── equal               # Whether the inputs are equal under the active rules
 ├── status              # pass / warn / fail / error
-├── summary             # 跨模态的简要摘要
-├── changes[]           # 行、字段、区域、页面或时间区间
-├── metrics[]           # 数值、单位、方向和阈值
-├── artifacts[]         # patch、热图、波形、帧截图等
+├── summary             # Short cross-modality summary
+├── changes[]           # Lines, fields, regions, pages, or time intervals
+├── metrics[]           # Values, units, directions, and thresholds
+├── artifacts[]         # Patches, heatmaps, waveforms, frame captures, and similar outputs
 ├── warnings[]
 └── provenance
     ├── input hashes
@@ -161,141 +163,141 @@ DiffResult
     └── timestamps and duration
 ```
 
-比较器还应声明结果性质：是否对称、是否满足距离度量、是否可生成可逆 patch、是否确定性，以及对齐和规范化是否有损。
+Comparators should also declare result properties: whether the comparison is symmetric, whether it satisfies metric-space properties, whether it can produce a reversible patch, whether it is deterministic, and whether alignment or normalization is lossy.
 
-## 5. 底层框架与实现路线
+## 5. Foundation and implementation path
 
-### 5.1 技术栈
+### 5.1 Technology stack
 
-首个版本采用 Python，原因是科研与数据生态成熟，并能快速接入 Notebook 和比赛脚本：
+The first version will use Python because of its mature scientific and data ecosystem and its ability to integrate quickly with Notebook and competition scripts:
 
-- 标准库负责文件、哈希、文本和基础并发。
-- NumPy/SciPy 负责数组、信号与统计计算。
-- pandas/xarray 负责表格、坐标化和多维科研数据。
-- Pillow/OpenCV/scikit-image 作为可选图片后端。
-- Tree-sitter 作为可选代码解析后端。
-- FFmpeg/ffprobe 作为可选外部音视频后端。
-- PDF 使用可替换的文本提取与页面渲染后端。
+- The standard library handles files, hashes, text, and basic concurrency.
+- NumPy and SciPy handle arrays, signals, and statistical computations.
+- pandas and xarray handle tables, labeled coordinates, and multidimensional scientific data.
+- Pillow, OpenCV, and scikit-image are optional image backends.
+- Tree-sitter is an optional source-code parsing backend.
+- FFmpeg and ffprobe are optional external audio/video backends.
+- PDF support uses replaceable text-extraction and page-rendering backends.
 
-性能热点可以在接口稳定后用 Rust 扩展，包括大文件分块、Myers 编辑路径、二进制块索引和并行指标计算。核心 API 不应提前绑定某个 FFI 实现。
+After interfaces stabilize, performance-critical paths may use Rust extensions, including large-file chunking, Myers edit paths, binary block indexes, and parallel metric computation. The core API must not depend prematurely on a particular FFI implementation.
 
-### 5.2 执行与缓存
+### 5.2 Execution and caching
 
-- 大文件使用流式读取、内存映射或分块计算，避免无界内存占用。
-- 中间产物缓存键由输入哈希、规范化参数、插件版本和后端版本共同组成。
-- 媒体和 PDF 解析运行在有超时、内存、磁盘和进程限制的工作单元中。
-- 任何自动降采样、裁剪、重采样或颜色转换都必须出现在结果来源信息中。
-- 比较任务支持取消和阶段级错误，单个渲染器失败不应破坏已有核心结果。
+- Use streaming reads, memory mapping, or chunked computation for large files to avoid unbounded memory usage.
+- Build intermediate-artifact cache keys from input hashes, normalization parameters, plugin versions, and backend versions.
+- Run media and PDF parsing in bounded workers with time, memory, disk, and process limits.
+- Record every automatic downsampling, crop, resampling operation, or color conversion in result provenance.
+- Support cancellation and stage-level errors. A renderer failure must not invalidate an already produced core result.
 
-## 6. 各模态基本原理
+## 6. Modality fundamentals
 
-### 6.1 二进制
+### 6.1 Binary
 
-严格比较包括整体哈希、逐字节扫描和分块摘要。需要生成补丁时，使用滚动哈希、后缀索引或公共字节块搜索，将结果表达为 `COPY`、`ADD` 等指令。二进制比较不理解文件的内容语义；重新压缩后即使感知内容相同，字节差异也可能很大。
+Exact comparison includes whole-file hashes, byte-by-byte scanning, and block digests. When patch generation is required, rolling hashes, suffix indexes, or common-block searches can express the result with instructions such as `COPY` and `ADD`. Binary comparison does not understand content semantics: recompression can produce a large byte-level difference even when the perceptual content is unchanged.
 
-### 6.2 文本
+### 6.2 Text
 
-文本先统一编码和换行策略，再按行、词或字符切分。核心使用 LCS/Myers 一类序列算法生成插入与删除编辑脚本，并将相邻变化组成 hunk。Patience/Histogram 可作为可选策略，利用唯一或低频行作为锚点，提高代码重排时的可读性。
+Text processing first applies explicit encoding and line-ending policies, then tokenizes by line, word, or character. The core uses an LCS/Myers-family sequence algorithm to generate insert/delete edit scripts and groups adjacent changes into hunks. Patience or Histogram diff can be optional strategies that use unique or low-frequency lines as anchors to improve readability when code is reordered.
 
-### 6.3 源代码和配置
+### 6.3 Source code and configuration
 
-源代码解析为语法树后匹配节点，可弱化排版变化并表达节点插入、删除、更新和移动。JSON、YAML、TOML、XML 应解析为带类型的树或映射，再依据字段路径比较；键排序、数字表示和无关元数据属于可配置的规范化阶段。
+Source code can be parsed into syntax trees and matched by node, reducing the weight of formatting-only changes while expressing node insertion, deletion, update, and movement. JSON, YAML, TOML, and XML should be parsed into typed trees or mappings and compared by field path. Key ordering, numeric representation, and irrelevant metadata belong to the configurable normalization stage.
 
-语法相同不等于运行语义相同。AST 比较需要明确其解析器版本、错误恢复策略和宏/预处理边界。
+Syntactic equality does not imply runtime semantic equality. AST comparison must state its parser version, error-recovery behavior, and macro or preprocessing boundaries.
 
-### 6.4 图片
+### 6.4 Images
 
-严格模式将双方解码到统一尺寸、方向、色彩空间和 Alpha 表示，然后逐像素计算差异。可输出不同像素数、MAE、RMSE、PSNR 和热图。结构或感知模式使用 SSIM、MS-SSIM、LPIPS 或感知哈希。
+In exact mode, both images are decoded to an explicitly selected size, orientation, color space, and alpha representation before pixel-level comparison. Outputs can include changed-pixel count, MAE, RMSE, PSNR, and heatmaps. Structural or perceptual modes can use SSIM, MS-SSIM, LPIPS, or perceptual hashes.
 
-平移一个像素可能制造大面积差异，因此配准、裁剪和缩放属于独立的对齐阶段，不能隐藏在指标内部。
+A one-pixel translation can create a large apparent difference. Registration, cropping, and scaling therefore belong to a separate alignment stage and must never be hidden inside a metric implementation.
 
-### 6.5 音频
+### 6.5 Audio
 
-音频先统一采样率、声道与样本格式，通过时间戳或互相关对齐，再比较 PCM 波形、STFT/Mel 频谱、SNR 或感知质量。毫秒级延迟、增益或重采样都会破坏严格样本比较，因此必须区分“信号相同”和“听感接近”。ViSQOL、PESQ/POLQA 等可作为可选后端，而不是核心依赖。
+Audio comparison first applies explicit sample-rate, channel, and sample-format policies, then aligns by timestamp or cross-correlation. It can compare PCM waveforms, STFT or Mel spectra, SNR, or perceptual quality. Millisecond delays, gain changes, and resampling can all break exact sample comparison, so the system must distinguish “identical signal” from “perceptually similar.” ViSQOL, PESQ/POLQA, and comparable systems belong in optional backends rather than core dependencies.
 
-### 6.6 视频
+### 6.6 Video
 
-视频比较需要解封装、解码、时间轴对齐、帧率和分辨率统一、颜色空间规范化，再执行逐帧 PSNR、SSIM、VMAF 等指标并沿时间聚合。检测剪辑、插帧和镜头重排时，需要镜头切分、帧指纹或特征序列匹配，不能只依赖视频质量指标。音轨应作为独立模态比较并与视频时间线关联。
+Video comparison requires demuxing, decoding, timeline alignment, explicit frame-rate and resolution policies, and color-space normalization before computing per-frame metrics such as PSNR, SSIM, or VMAF and aggregating them over time. Detecting edits, inserted frames, and reordered shots requires shot segmentation, frame fingerprints, or feature-sequence matching; quality metrics alone are insufficient. Audio tracks should be compared as a separate modality and associated with the video timeline.
 
 ### 6.7 PDF
 
-PDF 同时包含文本、绘制指令、字体、图片和页面布局。应提供三种可组合视角：提取文本比较、PDF 对象/元数据比较、页面渲染后的图片比较。不同生成器可能产生完全不同的内部对象但视觉页面一致，因此不能只做二进制 Diff。
+A PDF contains text, drawing instructions, fonts, images, and page layout. The system should provide three composable views: extracted-text comparison, PDF object and metadata comparison, and image comparison of rendered pages. Different generators can create radically different internal objects while producing visually identical pages, so binary diff alone is insufficient.
 
-### 6.8 表格、数组和统计数据
+### 6.8 Tables, arrays, and statistical data
 
-比较顺序为 schema、维度、坐标/主键对齐、元素容差、汇总误差和分布差异。必须定义 dtype、单位、缺失值、NaN/Inf、绝对/相对误差和浮点 ULP 策略。
+The comparison order is schema, dimensions, coordinate or primary-key alignment, element tolerances, aggregate errors, and distribution differences. Policies must define dtype, units, missing values, NaN/Inf handling, absolute and relative error, and floating-point ULP behavior.
 
-统计比较可以包含 KS、Wasserstein、卡方、置信区间和效应量。p-value 不可单独决定是否存在实际差异；结果应同时报告效应量、样本量、多重比较校正和科研任务定义的实际容差。
+Statistical comparison can include KS tests, Wasserstein distance, chi-squared tests, confidence intervals, and effect sizes. A p-value alone must not determine whether a practically meaningful difference exists. Results should also report effect size, sample size, multiple-comparison correction, and the practical tolerance defined by the scientific task.
 
-## 7. 里程碑
+## 7. Milestones
 
-### v0.1：核心闭环
+### v0.1: Core loop
 
-- 插件注册、`CompareSpec`、`DiffResult` 和来源记录。
-- 二进制、文本、JSON/YAML、CSV/数组和图片比较。
-- Terminal、JSON 和静态 HTML 输出。
-- 可复现测试语料与确定性 CI。
+- Plugin registration, `CompareSpec`, `DiffResult`, and provenance records.
+- Binary, text, JSON/YAML, CSV/array, and image comparison.
+- Terminal, JSON, and static HTML output.
+- Reproducible test corpora and deterministic CI.
 
-### v0.2：结构和文档
+### v0.2: Structure and documents
 
-- Tree-sitter 代码比较。
-- XML/TOML 和复杂表格对齐。
-- PDF 文本与页面渲染双视角。
-- JUnit 和基准结果管理。
+- Tree-sitter-based source comparison.
+- XML/TOML support and complex table alignment.
+- Combined PDF text and rendered-page comparison.
+- JUnit output and benchmark-result management.
 
-### v0.3：时序媒体
+### v0.3: Time-based media
 
-- 音频时间/频谱比较。
-- 视频帧、时间线和质量指标。
-- 可选 FFmpeg、ViSQOL、VMAF 后端。
-- 插件 SDK 和第三方能力清单。
+- Audio temporal and spectral comparison.
+- Video frame, timeline, and quality metrics.
+- Optional FFmpeg, ViSQOL, and VMAF backends.
+- A plugin SDK and third-party capability catalog.
 
-## 8. 合规与安全清单
+## 8. Compliance and security checklist
 
-### 8.1 源码与算法
+### 8.1 Source code and algorithms
 
-- 核心实现保持独立编写，不复制其他项目的源码、注释、测试和文档表达。
-- 为来自论文、标准或公开资料的算法维护 `doc/algorithm-references.md`。
-- 引入代码前确认许可证兼容性，不把“公开可见”误认为“允许使用”。
-- 若计划商业化，对目标司法辖区和多媒体算法进行专利风险评估。
+- Implement core code independently; do not copy source code, comments, tests, or documentation wording from other projects.
+- Maintain `docs/algorithm-references.md` for algorithms derived from papers, standards, or other public sources.
+- Confirm license compatibility before introducing code. Public visibility does not imply permission to reuse.
+- If commercialization is planned, assess multimedia algorithm patent risks in every target jurisdiction.
 
-### 8.2 开源许可证与依赖
+### 8.2 Open-source licenses and dependencies
 
-- 项目许可证候选为 Apache-2.0，以获得宽松使用条件和明确的贡献者专利授权；正式发布前完成选择。
-- 每个依赖记录 SPDX 标识符、版本、来源、用途和分发方式。
-- 提供 `LICENSE`、`NOTICE`、`THIRD_PARTY_NOTICES` 和 SBOM。
-- 将 GPL/AGPL、商业双重许可和许可证不明的实现隔离为可选后端，并单独评估组合与分发义务。
-- 调用外部 CLI 不代表自动免责；捆绑其二进制时仍需履行对应许可证。
+- Apache-2.0 is the candidate project license because it offers permissive usage terms and an explicit contributor patent grant. Finalize the choice before the first release.
+- Record the SPDX identifier, version, source, purpose, and distribution method of every dependency.
+- Provide `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES`, and an SBOM.
+- Isolate GPL/AGPL, commercial dual-licensed, and license-unclear implementations behind optional backends, then assess their combination and distribution obligations separately.
+- Invoking an external CLI does not automatically remove compliance obligations. Bundling its binary still requires compliance with its license.
 
-### 8.3 音视频与 PDF
+### 8.3 Audio, video, and PDF
 
-- 默认不捆绑 FFmpeg 或编解码器二进制；优先发现用户安装的外部工具。
-- 记录 FFmpeg 构建配置，避免分发启用了 `nonfree` 的组合。
-- 将开源许可证合规和 H.264/H.265/AAC 等潜在专利许可分开评估。
-- PDF 渲染后端逐一审查许可证，避免无意把强 Copyleft 依赖并入宽松许可核心。
+- Do not bundle FFmpeg or codec binaries by default; prefer discovering tools installed by the user.
+- Record the FFmpeg build configuration and avoid distributing combinations built with `nonfree` components.
+- Assess open-source license compliance separately from potential H.264, H.265, AAC, and similar patent-license obligations.
+- Review PDF rendering backends individually to avoid unintentionally incorporating a strong-copyleft dependency into a permissively licensed core.
 
-### 8.4 数据和比赛规则
+### 8.4 Data and competition rules
 
-- 测试仓库只包含自行生成、公有领域或明确允许再分发的数据。
-- 对受限数据使用下载脚本、哈希或本地 fixture，不上传原始文件。
-- 遵守比赛对测试集、隐藏标签、模型输出、派生数据和外部工具的限制。
-- 默认不在报告中嵌入完整输入；缩略图、文本摘录和媒体片段由用户显式启用。
-- 对个人信息、未公开科研数据和文件元数据提供脱敏与本地处理策略。
+- Keep only self-generated, public-domain, or explicitly redistributable data in the test repository.
+- For restricted data, use download scripts, hashes, or local fixtures rather than uploading original files.
+- Follow competition rules concerning test sets, hidden labels, model outputs, derived data, and external tools.
+- Do not embed complete inputs in reports by default. Require users to opt in before including thumbnails, text excerpts, or media clips.
+- Provide redaction and local-processing policies for personal information, unpublished research data, and file metadata.
 
-### 8.5 项目治理
+### 8.5 Project governance
 
-- 确认代码是否属于学校、实验室、资助项目或雇主的职务成果。
-- 外部贡献采用 DCO 或 CLA，并明确贡献的许可证和来源声明。
-- 项目名称、Logo 和文档不得暗示与 Git、FFmpeg 或其他项目存在官方关联。
-- 发布流程执行许可证扫描、秘密扫描、SBOM 生成和测试数据来源检查。
+- Determine whether the code constitutes work owned by a school, laboratory, grant-funded project, or employer.
+- Use a DCO or CLA for external contributions and require clear declarations of contribution license and provenance.
+- The project name, logo, and documentation must not imply an official relationship with Git, FFmpeg, or other projects.
+- The release process must run license scanning, secret scanning, SBOM generation, and test-data provenance checks.
 
-## 9. 完成标准
+## 9. Definition of done
 
-一个比较器只有在满足以下条件时才被视为可发布：
+A comparator is releasable only when it meets all of the following requirements:
 
-1. 定义支持的格式、语义和不支持场景。
-2. 规范化与对齐步骤可以被关闭、配置和审计。
-3. 指标具有单位、方向、阈值和解释。
-4. 对空文件、损坏文件、超大文件和恶意输入有明确行为。
-5. 结果可序列化，并在相同环境中确定性复现。
-6. 测试数据来源和所有运行时依赖的许可证已经记录。
+1. Its supported formats, semantics, and unsupported scenarios are documented.
+2. Its normalization and alignment steps can be disabled, configured, and audited.
+3. Its metrics define units, direction, thresholds, and interpretation.
+4. Its behavior for empty, corrupt, oversized, and malicious inputs is explicit.
+5. Its results are serializable and reproducible within the same environment.
+6. The provenance of test data and the licenses of all runtime dependencies are recorded.
