@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Literal, cast
 
 from platydiff._version import __version__
-from platydiff.comparators.text.models import EditOperation, TextLine
+from platydiff.comparators.text.models import EditOperation, MyersResult, TextLine
 from platydiff.comparators.text.myers import ALGORITHM_ID, shortest_edit_script
 from platydiff.core.models import (
-    BytesSource,
     ChangeCompleteness,
     ChangeSelection,
     ChangeSet,
@@ -29,88 +26,25 @@ from platydiff.core.models import (
     Metric,
     MetricDirection,
     NewlinePolicy,
-    PathSource,
     PipelineStage,
     PolicyEvaluation,
     Relation,
     ResourceUsage,
-    Source,
-    SourceKind,
     SummaryCount,
     TextCompareSpec,
     TextHunk,
     TransformationRecord,
     Verdict,
 )
-from platydiff.core.pipeline import ComparisonCompletion
+from platydiff.core.pipeline import ComparisonCompletion, SourcedInput, StageRunner
 from platydiff.core.problems import (
     DecodeError,
-    InputOutputError,
     ResourceLimitError,
-    SourceNotFoundError,
-    SourcePermissionError,
 )
 from platydiff.core.serialization import spec_to_data
 
 
-@dataclass(frozen=True, slots=True)
-class _SourcedText:
-    data: bytes
-    source_kind: SourceKind
-    label: str | None
-    decoded_text: str | None
-
-
-def _read_path(path: Path, max_bytes: int) -> bytes:
-    try:
-        with path.open("rb") as stream:
-            data = stream.read(max_bytes + 1)
-    except FileNotFoundError as error:
-        raise SourceNotFoundError("A source file was not found.") from error
-    except PermissionError as error:
-        raise SourcePermissionError(
-            "Permission was denied while reading a source."
-        ) from error
-    except OSError as error:
-        raise InputOutputError("A source could not be read.") from error
-    if len(data) > max_bytes:
-        raise ResourceLimitError(
-            "A source exceeded the configured byte limit.",
-            stage=PipelineStage.SOURCING,
-        )
-    return data
-
-
-def _source(source: Source, max_bytes: int) -> _SourcedText:
-    if isinstance(source, PathSource):
-        return _SourcedText(
-            _read_path(source.path, max_bytes),
-            SourceKind.PATH,
-            source.path.name,
-            None,
-        )
-    if isinstance(source, BytesSource):
-        if len(source.data) > max_bytes:
-            raise ResourceLimitError(
-                "A source exceeded the configured byte limit.",
-                stage=PipelineStage.SOURCING,
-            )
-        return _SourcedText(source.data, SourceKind.BYTES, source.label, None)
-    try:
-        data = source.text.encode("utf-8", errors="strict")
-    except UnicodeEncodeError as error:
-        raise DecodeError(
-            "An in-memory text source is not strict UTF-8 encodable."
-        ) from error
-    if len(data) > max_bytes:
-        raise ResourceLimitError(
-            "A source exceeded the configured byte limit.",
-            stage=PipelineStage.SOURCING,
-        )
-    return _SourcedText(data, SourceKind.TEXT, source.label, source.text)
-
-
-def _decode(source: _SourcedText, spec: TextCompareSpec) -> str:
+def _decode(source: SourcedInput, spec: TextCompareSpec) -> str:
     if source.decoded_text is not None:
         return source.decoded_text
     try:
@@ -358,7 +292,7 @@ def _limit_hunks(
 
 
 def _input_provenance(
-    source: _SourcedText, role: Literal["before", "after"]
+    source: SourcedInput, role: Literal["before", "after"]
 ) -> InputProvenance:
     return InputProvenance(
         role,
@@ -370,7 +304,7 @@ def _input_provenance(
 
 
 def _transformations(
-    before: _SourcedText, after: _SourcedText, spec: TextCompareSpec
+    before: SourcedInput, after: SourcedInput, spec: TextCompareSpec
 ) -> tuple[TransformationRecord, ...]:
     records: list[TransformationRecord] = []
     if before.decoded_text is None or after.decoded_text is None:
@@ -389,24 +323,14 @@ def _transformations(
     return tuple(records)
 
 
-def compare_text(
-    before: Source, after: Source, generic_spec: CompareSpec
+def _aggregate(
+    sourced_before: SourcedInput,
+    sourced_after: SourcedInput,
+    lines_before: tuple[TextLine, ...],
+    lines_after: tuple[TextLine, ...],
+    myers: MyersResult,
+    spec: TextCompareSpec,
 ) -> ComparisonCompletion:
-    """Execute the complete strict Phase 1 text comparison."""
-    spec = generic_spec
-    sourced_before = _source(before, spec.limits.max_input_bytes)
-    sourced_after = _source(after, spec.limits.max_input_bytes)
-    decoded_before = _decode(sourced_before, spec)
-    decoded_after = _decode(sourced_after, spec)
-    lines_before = _normalize(
-        _split_lines(decoded_before, spec.limits.max_input_lines), spec
-    )
-    lines_after = _normalize(
-        _split_lines(decoded_after, spec.limits.max_input_lines), spec
-    )
-    myers = shortest_edit_script(
-        lines_before, lines_after, max_work=spec.limits.max_myers_work
-    )
     hunks = _build_hunks(myers.operations, spec.context_lines)
     change_set, payload_bytes, diagnostics = _limit_hunks(hunks, spec)
     deleted = sum(item.kind == "delete" for item in myers.operations)
@@ -505,3 +429,49 @@ def compare_text(
         ),
     )
     return ComparisonCompletion(result, diagnostics)
+
+
+def compare_text(
+    sourced_before: SourcedInput,
+    sourced_after: SourcedInput,
+    generic_spec: CompareSpec,
+    stages: StageRunner,
+) -> ComparisonCompletion:
+    """Execute the staged strict Phase 1 text comparison."""
+    spec = generic_spec
+    lines_before, lines_after = stages.run(
+        PipelineStage.DECODING,
+        lambda: (
+            _split_lines(_decode(sourced_before, spec), spec.limits.max_input_lines),
+            _split_lines(_decode(sourced_after, spec), spec.limits.max_input_lines),
+        ),
+    )
+    normalized_before, normalized_after = stages.run(
+        PipelineStage.NORMALIZING,
+        lambda: (
+            _normalize(lines_before, spec),
+            _normalize(lines_after, spec),
+        ),
+    )
+    aligned_before, aligned_after = stages.run(
+        PipelineStage.ALIGNING, lambda: (normalized_before, normalized_after)
+    )
+    myers = stages.run(
+        PipelineStage.COMPARING,
+        lambda: shortest_edit_script(
+            aligned_before,
+            aligned_after,
+            max_work=spec.limits.max_myers_work,
+        ),
+    )
+    return stages.run(
+        PipelineStage.AGGREGATING,
+        lambda: _aggregate(
+            sourced_before,
+            sourced_after,
+            aligned_before,
+            aligned_after,
+            myers,
+            spec,
+        ),
+    )

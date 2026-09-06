@@ -13,5 +13,4 @@ _REGISTRY.register("text", compare_text)
 
 def compare(before: Source, after: Source, spec: CompareSpec) -> CompareOutcome:
     """Compare two sources using the caller's explicit specification."""
-    executor = _REGISTRY.resolve(spec)
-    return run_comparison(before, after, spec, executor)
+    return run_comparison(before, after, spec, _REGISTRY.resolve)

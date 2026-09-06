@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-
-from platydiff.core.models import CompareSpec, Source
-from platydiff.core.pipeline import ComparisonCompletion
-
-type ComparisonExecutor = Callable[[Source, Source, CompareSpec], ComparisonCompletion]
+from platydiff.core.models import CompareSpec
+from platydiff.core.pipeline import ComparisonExecutor
 
 
 class InternalRegistry:
