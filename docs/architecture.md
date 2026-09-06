@@ -233,6 +233,8 @@ Statistical comparison can include KS tests, Wasserstein distance, chi-squared t
 
 ## 7. Milestones
 
+The staged delivery plan and its implementation gates are defined by [RFC 0002](rfcs/0002-development-phases-and-text-slice.md). The version groupings below describe product direction; they do not override the RFC's narrower, explicitly authorized phases or imply that a capability is implemented.
+
 ### v0.1: Core loop
 
 - Plugin registration, `CompareSpec`, `DiffResult`, and provenance records.
