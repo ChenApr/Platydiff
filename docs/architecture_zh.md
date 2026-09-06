@@ -146,6 +146,8 @@ output:
 
 ### 4.2 DiffResult
 
+执行终态与已完成结果的权威契约见 [RFC 0001](rfcs/0001-comparison-outcome-and-diff-result_zh.md)。下方结构是早期架构草图；如与 RFC 不一致，实现必须以 RFC 为准。
+
 ```text
 DiffResult
 ├── equal               # 在当前规则下是否相等

@@ -146,6 +146,8 @@ Configuration expressions must use a restricted rule language. They must never e
 
 ### 4.2 DiffResult
 
+The authoritative execution-outcome and completed-result contract is [RFC 0001](rfcs/0001-comparison-outcome-and-diff-result.md). The structure below is an earlier architectural sketch; implementations must follow the RFC where the two differ.
+
 ```text
 DiffResult
 ├── equal               # Whether the inputs are equal under the active rules
