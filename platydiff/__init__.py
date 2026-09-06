@@ -1,5 +1,56 @@
-"""Platydiff public package."""
+"""Curated public API for Platydiff."""
+
+from platydiff.core.models import (
+    BytesSource,
+    ChangeCompleteness,
+    ChangeSelection,
+    CompareOutcome,
+    CompareSpec,
+    CompletedOutcome,
+    DiagnosticSeverity,
+    DiffResult,
+    FailedOutcome,
+    Fidelity,
+    MetricDirection,
+    NewlinePolicy,
+    PathSource,
+    PipelineStage,
+    Relation,
+    ResourceLimits,
+    Source,
+    SourceKind,
+    TextCompareSpec,
+    TextEncoding,
+    TextSource,
+    UnavailableOutcome,
+    Verdict,
+)
 
 __version__ = "0.1.0.dev0"
 
-__all__ = ["__version__"]
+__all__ = [
+    "BytesSource",
+    "ChangeCompleteness",
+    "ChangeSelection",
+    "CompareOutcome",
+    "CompareSpec",
+    "CompletedOutcome",
+    "DiagnosticSeverity",
+    "DiffResult",
+    "FailedOutcome",
+    "Fidelity",
+    "MetricDirection",
+    "NewlinePolicy",
+    "PathSource",
+    "PipelineStage",
+    "Relation",
+    "ResourceLimits",
+    "Source",
+    "SourceKind",
+    "TextCompareSpec",
+    "TextEncoding",
+    "TextSource",
+    "UnavailableOutcome",
+    "Verdict",
+    "__version__",
+]
