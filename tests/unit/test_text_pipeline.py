@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import time
 import tracemalloc
 from pathlib import Path
 
@@ -66,6 +68,22 @@ def test_path_source_is_bounded_and_records_safe_provenance(tmp_path: Path) -> N
         "after.txt",
     ]
     assert str(tmp_path) not in dumps_outcome(outcome)
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFO files are unavailable")
+def test_fifo_source_is_rejected_without_blocking(tmp_path: Path) -> None:
+    fifo = tmp_path / "blocking-input"
+    os.mkfifo(fifo)
+
+    started = time.monotonic()
+    outcome = compare(PathSource(fifo), TextSource("same\n"), TextCompareSpec())
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 1.0
+    assert isinstance(outcome, FailedOutcome)
+    assert outcome.problem.code == "io_error"
+    assert outcome.problem.stage.value == "sourcing"
+    assert str(fifo) not in dumps_outcome(outcome)
 
 
 def test_different_lines_build_one_based_delete_then_insert_hunk() -> None:
