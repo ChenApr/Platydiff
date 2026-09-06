@@ -393,6 +393,9 @@ def test_non_json_extension_data_and_surrogates_are_rejected() -> None:
             "internal_error", 500, PipelineStage.VALIDATING, "\ud800"
         ),
         lambda: InputProvenance("before", SourceKind.TEXT, 0, ZERO_SHA, "\ud800"),
+        lambda: ArtifactRef(
+            "report", "text_report", "\ud800", "report.txt", ZERO_SHA, 0
+        ),
     ],
 )
 def test_public_model_strings_reject_surrogates(construct: object) -> None:
@@ -516,17 +519,45 @@ def test_deserialized_hunk_is_checked_by_domain_invariants() -> None:
 @pytest.mark.parametrize(
     "uri",
     [
+        "",
         "/absolute/report.txt",
+        "//server/report.txt",
+        "report.txt?download=1",
+        "report.txt#fragment",
+        "a//report.txt",
+        "./report.txt",
         "../report.txt",
         "a/../../report.txt",
         "a\\b",
         "C:/report.txt",
         "https://example.test/report.txt",
+        "%2e%2e/report.txt",
+        "a/%2F/report.txt",
+        "a/%5c/report.txt",
+        "a/%00/report.txt",
+        "a/%1f/report.txt",
+        "a/%C2%80/report.txt",
+        "%43%3a/report.txt",
+        "%252e%252e/report.txt",
+        "a/%",
+        "a/%2",
+        "a/%GG",
     ],
 )
 def test_artifact_uri_rejects_unsafe_paths(uri: str) -> None:
     with pytest.raises(ValueError, match="safe relative"):
         ArtifactRef("report", "text_report", "text/plain", uri, ZERO_SHA, 0)
+
+
+def test_artifact_uri_decodes_each_segment_once_as_strict_utf8() -> None:
+    artifact = ArtifactRef(
+        "report", "text_report", "text/plain", "reports/%E7%8C%AB.txt", ZERO_SHA, 0
+    )
+    assert artifact.uri == "reports/%E7%8C%AB.txt"
+    with pytest.raises(ValueError, match="safe relative"):
+        ArtifactRef(
+            "report", "text_report", "text/plain", "reports/%FF.txt", ZERO_SHA, 0
+        )
 
 
 def test_serialization_order_is_stable() -> None:

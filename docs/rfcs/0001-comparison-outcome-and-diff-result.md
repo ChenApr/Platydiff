@@ -247,7 +247,7 @@ JSON serialization must never emit non-standard bare `NaN` or `Infinity` tokens.
 
 A metric records a stable name, value, unit, direction, and optional aggregation method. A policy evaluation records a rule ID, verdict, and, when applicable, the metric, operator, threshold, and observed value used by the rule. Thresholds do not live inside metrics because one observation may participate in multiple policies.
 
-`ArtifactRef` contains an artifact ID, stable kind, media type, relative URI, SHA-256 digest, and byte size. URIs must be relative to an explicit artifact root, use portable forward slashes, and contain no absolute prefix or `..` segment. Artifacts are never embedded in the result by default.
+`ArtifactRef` contains an artifact ID, stable kind, media type, relative URI, SHA-256 digest, and byte size. URIs must be relative to an explicit artifact root and use portable forward slashes. Each literal path segment is percent-decoded exactly once as strict UTF-8 before validation. Empty, `.` and `..` segments; decoded slash, backslash, NUL, C0/C1 controls, URI delimiters, scheme aliases, and nested percent-escape aliases are rejected, as are malformed escapes and any scheme, authority, query, or fragment. The stored URI remains in its supplied encoded form. Artifacts are never embedded in the result by default.
 
 ## JSON compatibility
 

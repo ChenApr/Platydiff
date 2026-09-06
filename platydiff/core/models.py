@@ -7,8 +7,9 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Literal
+from urllib.parse import unquote_to_bytes, urlsplit
 
 type JsonPrimitive = bool | int | float | str | None
 type JsonValue = JsonPrimitive | list[JsonValue] | dict[str, JsonValue]
@@ -17,6 +18,8 @@ type JsonObject = dict[str, JsonValue]
 SCHEMA_VERSION: Literal[1] = 1
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_PERCENT_ESCAPE = re.compile(r"%[0-9a-fA-F]{2}")
+_INVALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9a-fA-F]{2})")
 
 
 def _unicode_scalar(value: str, field_name: str) -> None:
@@ -73,6 +76,49 @@ def _utc_timestamp(value: str) -> datetime:
     if offset.total_seconds() != 0:
         raise ValueError("timestamps must be UTC")
     return parsed
+
+
+def _safe_artifact_uri(value: str) -> None:
+    _unicode_scalar(value, "artifact URI")
+    if not value or _INVALID_PERCENT_ESCAPE.search(value):
+        raise ValueError("artifact URI must be a safe relative POSIX path")
+    try:
+        parsed = urlsplit(value)
+    except ValueError as error:
+        raise ValueError("artifact URI must be a safe relative POSIX path") from error
+    if (
+        parsed.scheme
+        or parsed.netloc
+        or parsed.query
+        or parsed.fragment
+        or parsed.path != value
+        or parsed.path.startswith("/")
+        or "\\" in parsed.path
+    ):
+        raise ValueError("artifact URI must be a safe relative POSIX path")
+    raw_segments = parsed.path.split("/")
+    for index, raw_segment in enumerate(raw_segments):
+        try:
+            segment = unquote_to_bytes(raw_segment).decode("utf-8", errors="strict")
+        except UnicodeDecodeError as error:
+            raise ValueError(
+                "artifact URI must be a safe relative POSIX path"
+            ) from error
+        if (
+            not segment
+            or segment in (".", "..")
+            or "/" in segment
+            or "\\" in segment
+            or "?" in segment
+            or "#" in segment
+            or any(
+                ord(character) < 0x20 or 0x7F <= ord(character) <= 0x9F
+                for character in segment
+            )
+            or (index == 0 and ":" in segment)
+            or _PERCENT_ESCAPE.search(segment)
+        ):
+            raise ValueError("artifact URI must be a safe relative POSIX path")
 
 
 class Relation(StrEnum):
@@ -698,17 +744,8 @@ class ArtifactRef:
     def __post_init__(self) -> None:
         _identifier(self.artifact_id)
         _identifier(self.kind)
-        path = PurePosixPath(self.uri)
-        first_part = path.parts[0] if path.parts else ""
-        if (
-            not self.uri
-            or path.is_absolute()
-            or "\\" in self.uri
-            or ".." in path.parts
-            or self.uri.startswith("/")
-            or ":" in first_part
-        ):
-            raise ValueError("artifact URI must be a safe relative POSIX path")
+        _unicode_scalar(self.media_type, "artifact media type")
+        _safe_artifact_uri(self.uri)
         if not _SHA256.fullmatch(self.sha256):
             raise ValueError("sha256 must be 64 lowercase hexadecimal characters")
         if self.size_bytes < 0:

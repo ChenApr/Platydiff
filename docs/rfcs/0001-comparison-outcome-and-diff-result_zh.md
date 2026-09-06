@@ -247,7 +247,7 @@ JSON 序列化绝不能输出非标准的裸 `NaN` 或 `Infinity` token。
 
 Metric 记录稳定名称、数值、单位、方向和可选的聚合方法。PolicyEvaluation 记录规则 ID、verdict，以及在适用时记录规则使用的指标、操作符、阈值和观察值。阈值不放在 Metric 内，因为同一观察值可能参与多项策略。
 
-`ArtifactRef` 包含 artifact ID、稳定 kind、媒体类型、相对 URI、SHA-256 和字节大小。URI 必须相对于显式 artifact root，使用可移植的正斜杠，并且不得包含绝对前缀或 `..` 路径段。默认不在结果中内嵌 artifact。
+`ArtifactRef` 包含 artifact ID、稳定 kind、媒体类型、相对 URI、SHA-256 和字节大小。URI 必须相对于显式 artifact root，并使用可移植的正斜杠。验证前，每个字面路径段恰好执行一次 percent decode，并按 strict UTF-8 解码。空段、`.` 与 `..` 段、解码后的正斜杠、反斜杠、NUL、C0/C1 控制字符、URI 分隔符、scheme 别名与嵌套 percent-escape 别名均被拒绝；非法转义以及任何 scheme、authority、query 或 fragment 也被拒绝。保存的 URI 保持调用方提供的编码形式。默认不在结果中内嵌 artifact。
 
 ## JSON 兼容性
 
