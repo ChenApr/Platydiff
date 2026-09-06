@@ -226,7 +226,7 @@ Phase 1 defaults are:
 | Serialized change payload | 4 MiB |
 | Hunk context | 3 lines |
 
-Input limits are checked while reading so path inputs are not loaded without bounds. Line limits are checked during splitting. The encoded-line limit is measured after the selected newline normalization using strict UTF-8. Change-item and payload limits are applied only after the full script and total counts are known; reaching either produces deterministic source-order truncation with complete item boundaries.
+Input limits are checked while reading so path inputs are not loaded without bounds. Line limits are checked during splitting. The encoded-line limit is measured after the selected newline normalization using strict UTF-8. Change-item and payload limits are applied only after the full script and total counts are known; reaching either produces deterministic source-order truncation with complete item boundaries. Payload usage is the sum of each retained complete change encoded independently as canonical compact schema-v1 JSON: `ensure_ascii=false`, `allow_nan=false`, sorted keys, and compact separators. The surrounding array, outcome envelope, and pretty-printing whitespace are excluded.
 
 ## Verification contract
 

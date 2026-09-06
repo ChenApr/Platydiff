@@ -48,7 +48,7 @@ platydiff text [OPTIONS] BEFORE AFTER
 | `--max-encoded-line-bytes` | 每个规范化行的 strict UTF-8 字节数 | `1048576` |
 | `--max-myers-work` | 确定性 work unit | `5000000` |
 | `--max-change-items` | 返回的完整 hunk 数 | `10000` |
-| `--max-change-payload-bytes` | 返回 hunk 的序列化字节数 | `4194304` |
+| `--max-change-payload-bytes` | 返回 hunk 的 schema-v1 规范 JSON 字节数 | `4194304` |
 
 所有限制都接受零。非法值属于用法错误，退出码为 `2`，且不输出 outcome。
 
@@ -70,6 +70,10 @@ hunk 使用一基行号和 `start_line + line_count` span。context 只属于明
 它不会改变 relation、verdict、metric 或 hunk 总数。item 与 payload 限制只在
 完整编辑脚本和总数已知后应用。截断仅按来源顺序保留完整 hunk，添加
 `change_details_truncated`，且不改变结果的 relation、verdict 或 fidelity。
+
+Payload 限制是每个保留的完整 change 独立编码为 schema-v1 规范紧凑 JSON 后的
+UTF-8 字节数之和：直接输出 Unicode、拒绝非有限数、对象键排序，且分隔符不含
+空白。外围 changes 数组、outcome envelope 和 renderer 专用空白均不计入。
 
 ## 失败与 provenance
 

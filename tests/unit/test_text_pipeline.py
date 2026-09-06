@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tracemalloc
 from pathlib import Path
 
 import pytest
@@ -22,7 +23,7 @@ from platydiff import (
     compare,
 )
 from platydiff.core.models import TextHunk
-from platydiff.core.serialization import dumps_outcome
+from platydiff.core.serialization import dumps_outcome, serialized_change_size
 
 
 def completed(
@@ -210,6 +211,83 @@ def test_payload_limit_never_cuts_a_hunk() -> None:
     assert outcome.result.changes.completeness is ChangeCompleteness.TRUNCATED
     assert outcome.result.changes.returned_count == 0
     assert outcome.result.changes.items == ()
+
+
+def test_payload_limit_uses_exact_canonical_utf8_change_sizes() -> None:
+    before = TextSource("before-猫\nsame\nbefore-犬\n")
+    after = TextSource("after-猫\nsame\nafter-犬\n")
+    unlimited = completed(before, after, TextCompareSpec(context_lines=0))
+    sizes = tuple(
+        serialized_change_size(item) for item in unlimited.result.changes.items
+    )
+    assert len(sizes) == 2
+
+    exact_first = completed(
+        before,
+        after,
+        TextCompareSpec(
+            context_lines=0,
+            limits=ResourceLimits(max_change_payload_bytes=sizes[0]),
+        ),
+    )
+    assert exact_first.result.changes.returned_count == 1
+    assert any(
+        resource.name == "change_payload_bytes" and resource.used == sizes[0]
+        for resource in exact_first.result.provenance.resources
+    )
+
+    exact_minus_one = completed(
+        before,
+        after,
+        TextCompareSpec(
+            context_lines=0,
+            limits=ResourceLimits(max_change_payload_bytes=sizes[0] - 1),
+        ),
+    )
+    assert exact_minus_one.result.changes.returned_count == 0
+
+    exact_both = completed(
+        before,
+        after,
+        TextCompareSpec(
+            context_lines=0,
+            limits=ResourceLimits(max_change_payload_bytes=sum(sizes)),
+        ),
+    )
+    assert exact_both.result.changes.completeness is ChangeCompleteness.COMPLETE
+    assert exact_both.result.changes.returned_count == 2
+
+
+def test_zero_detail_limits_do_not_materialize_quadratic_context() -> None:
+    before_lines = [
+        f"same-{index}" if index % 2 == 0 else f"before-{index}"
+        for index in range(1_000)
+    ]
+    after_lines = [
+        f"same-{index}" if index % 2 == 0 else f"after-{index}"
+        for index in range(1_000)
+    ]
+    spec = TextCompareSpec(
+        context_lines=200_000,
+        limits=ResourceLimits(
+            max_change_items=0,
+            max_change_payload_bytes=0,
+        ),
+    )
+    tracemalloc.start()
+    outcome = completed(
+        TextSource("\n".join(before_lines)),
+        TextSource("\n".join(after_lines)),
+        spec,
+    )
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    assert outcome.result.summary.change_count == 500
+    assert outcome.result.changes.total_count == 500
+    assert outcome.result.changes.returned_count == 0
+    assert outcome.result.changes.completeness is ChangeCompleteness.TRUNCATED
+    assert peak < 16 * 1024 * 1024
 
 
 def test_context_changes_details_but_not_semantics_or_total_count() -> None:

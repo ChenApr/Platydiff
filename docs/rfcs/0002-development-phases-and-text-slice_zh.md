@@ -226,7 +226,7 @@ Phase 1 的默认值是：
 | 序列化 change payload | 4 MiB |
 | Hunk context | 3 行 |
 
-读取时检查输入限制，确保 path input 不会无界加载。拆分时检查行数限制。编码后单行限制按所选换行规范化完成后的 strict UTF-8 计算。Change item 和 payload 限制只在完整脚本和总数已知后应用；触及任何一个限制都按确定性来源顺序在完整 item 边界截断。
+读取时检查输入限制，确保 path input 不会无界加载。拆分时检查行数限制。编码后单行限制按所选换行规范化完成后的 strict UTF-8 计算。Change item 和 payload 限制只在完整脚本和总数已知后应用；触及任何一个限制都按确定性来源顺序在完整 item 边界截断。Payload 用量是每个保留的完整 change 独立编码为 schema-v1 规范紧凑 JSON 后的字节数之和：`ensure_ascii=false`、`allow_nan=false`、对象键排序且使用紧凑分隔符。外围数组、outcome envelope 和 pretty-print 空白不计入。
 
 ## 验证契约
 

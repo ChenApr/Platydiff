@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from typing import Literal, cast
 
 from platydiff._version import __version__
@@ -41,7 +40,7 @@ from platydiff.core.problems import (
     DecodeError,
     ResourceLimitError,
 )
-from platydiff.core.serialization import spec_to_data
+from platydiff.core.serialization import serialized_change_size, spec_to_data
 
 
 def _decode(source: SourcedInput, spec: TextCompareSpec) -> str:
@@ -166,95 +165,67 @@ def _hunk_ranges(
     return tuple(ranges)
 
 
-def _build_hunks(
-    operations: tuple[EditOperation, ...], context_lines: int
-) -> tuple[TextHunk, ...]:
-    cursors = _operation_cursors(operations)
-    hunks: list[TextHunk] = []
-    for start, end in _hunk_ranges(operations, context_lines):
-        before_start, after_start = cursors[start]
-        lines: list[HunkLine] = []
-        for operation in operations[start:end]:
-            lines.append(
-                HunkLine(
-                    kind=operation.kind,
-                    content=operation.line.content,
-                    terminator=operation.line.terminator,
-                    before_line=(
-                        None
-                        if operation.before_index is None
-                        else operation.before_index + 1
-                    ),
-                    after_line=(
-                        None
-                        if operation.after_index is None
-                        else operation.after_index + 1
-                    ),
-                )
-            )
-        hunks.append(
-            TextHunk(
-                before_start_line=before_start + 1,
-                before_line_count=sum(line.kind != "insert" for line in lines),
-                after_start_line=after_start + 1,
-                after_line_count=sum(line.kind != "delete" for line in lines),
-                lines=tuple(lines),
-            )
+def _build_hunk(
+    operations: tuple[EditOperation, ...],
+    cursors: tuple[tuple[int, int], ...],
+    start: int,
+    end: int,
+) -> TextHunk:
+    before_start, after_start = cursors[start]
+    lines = tuple(
+        HunkLine(
+            kind=operation.kind,
+            content=operation.line.content,
+            terminator=operation.line.terminator,
+            before_line=(
+                None if operation.before_index is None else operation.before_index + 1
+            ),
+            after_line=(
+                None if operation.after_index is None else operation.after_index + 1
+            ),
         )
-    return tuple(hunks)
-
-
-def _hunk_payload_size(hunk: TextHunk) -> int:
-    data = {
-        "kind": hunk.kind,
-        "before_start_line": hunk.before_start_line,
-        "before_line_count": hunk.before_line_count,
-        "after_start_line": hunk.after_start_line,
-        "after_line_count": hunk.after_line_count,
-        "lines": [
-            {
-                "kind": line.kind,
-                "content": line.content,
-                "terminator": line.terminator,
-                "before_line": line.before_line,
-                "after_line": line.after_line,
-            }
-            for line in hunk.lines
-        ],
-    }
-    return len(
-        json.dumps(
-            data,
-            ensure_ascii=False,
-            allow_nan=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
+        for operation in operations[start:end]
+    )
+    return TextHunk(
+        before_start_line=before_start + 1,
+        before_line_count=sum(line.kind != "insert" for line in lines),
+        after_start_line=after_start + 1,
+        after_line_count=sum(line.kind != "delete" for line in lines),
+        lines=lines,
     )
 
 
-def _limit_hunks(
-    hunks: tuple[TextHunk, ...], spec: TextCompareSpec
-) -> tuple[ChangeSet, int, tuple[Diagnostic, ...]]:
+def _select_hunks(
+    operations: tuple[EditOperation, ...], spec: TextCompareSpec
+) -> tuple[ChangeSet, int, tuple[Diagnostic, ...], int]:
+    ranges = _hunk_ranges(operations, spec.context_lines)
+    total_count = len(ranges)
     retained: list[TextHunk] = []
     payload_bytes = 0
     limiting_value: int | None = None
-    for hunk in hunks:
-        size = _hunk_payload_size(hunk)
+    cursors: tuple[tuple[int, int], ...] | None = None
+    for start, end in ranges:
         if len(retained) >= spec.limits.max_change_items:
             limiting_value = spec.limits.max_change_items
             break
+        if spec.limits.max_change_payload_bytes == 0:
+            limiting_value = 0
+            break
+        if cursors is None:
+            cursors = _operation_cursors(operations)
+        hunk = _build_hunk(operations, cursors, start, end)
+        size = serialized_change_size(hunk)
         if payload_bytes + size > spec.limits.max_change_payload_bytes:
             limiting_value = spec.limits.max_change_payload_bytes
             break
         retained.append(hunk)
         payload_bytes += size
-    if len(retained) == len(hunks):
+    if len(retained) == total_count:
         return (
             ChangeSet(
                 ChangeCompleteness.COMPLETE,
                 tuple(retained),
-                len(hunks),
+                total_count,
                 len(retained),
                 0,
                 ChangeSelection.ALL,
@@ -262,15 +233,16 @@ def _limit_hunks(
             ),
             payload_bytes,
             (),
+            total_count,
         )
-    omitted = len(hunks) - len(retained)
+    omitted = total_count - len(retained)
     diagnostic = Diagnostic(
         "change_details_truncated",
         DiagnosticSeverity.WARNING,
         PipelineStage.AGGREGATING,
         "Complete change details were truncated by configured output limits.",
         {
-            "total_count": len(hunks),
+            "total_count": total_count,
             "returned_count": len(retained),
             "max_change_items": spec.limits.max_change_items,
             "max_change_payload_bytes": spec.limits.max_change_payload_bytes,
@@ -280,7 +252,7 @@ def _limit_hunks(
         ChangeSet(
             ChangeCompleteness.TRUNCATED,
             tuple(retained),
-            len(hunks),
+            total_count,
             len(retained),
             omitted,
             ChangeSelection.SOURCE_ORDER_PREFIX,
@@ -288,6 +260,7 @@ def _limit_hunks(
         ),
         payload_bytes,
         (diagnostic,),
+        total_count,
     )
 
 
@@ -331,8 +304,9 @@ def _aggregate(
     myers: MyersResult,
     spec: TextCompareSpec,
 ) -> ComparisonCompletion:
-    hunks = _build_hunks(myers.operations, spec.context_lines)
-    change_set, payload_bytes, diagnostics = _limit_hunks(hunks, spec)
+    change_set, payload_bytes, diagnostics, total_hunks = _select_hunks(
+        myers.operations, spec
+    )
     deleted = sum(item.kind == "delete" for item in myers.operations)
     inserted = sum(item.kind == "insert" for item in myers.operations)
     distance = deleted + inserted
@@ -343,9 +317,9 @@ def _aggregate(
         verdict=verdict,
         fidelity=Fidelity.FULL,
         summary=DiffSummary(
-            len(hunks),
+            total_hunks,
             (
-                SummaryCount("changed_hunks", len(hunks), "hunks"),
+                SummaryCount("changed_hunks", total_hunks, "hunks"),
                 SummaryCount("deleted_lines", deleted, "lines"),
                 SummaryCount("inserted_lines", inserted, "lines"),
             ),

@@ -12,6 +12,7 @@ from platydiff.core.models import (
     ArtifactRef,
     CapabilityAttempt,
     CapabilityProblem,
+    Change,
     ChangeCompleteness,
     ChangeSelection,
     ChangeSet,
@@ -522,6 +523,31 @@ def _hunk_to_data(hunk: TextHunk) -> JsonObject:
     }
 
 
+def _change_to_data(change: Change) -> JsonObject:
+    if isinstance(change, TextHunk):
+        return _hunk_to_data(change)
+    return {
+        "kind": change.kind,
+        "plugin_id": change.plugin_id,
+        "schema_version": change.schema_version,
+        "payload": change.payload,
+    }
+
+
+def serialized_change_size(change: Change) -> int:
+    """Return canonical compact schema-v1 JSON payload bytes for one change."""
+    data = _coerce_json(_change_to_data(change))
+    return len(
+        json.dumps(
+            data,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    )
+
+
 def _change_from_data(value: JsonValue) -> TextHunk | ExtensionChange:
     data = _object(value, "change")
     kind = _string(_required(data, "kind"), "change kind")
@@ -576,19 +602,7 @@ def _change_from_data(value: JsonValue) -> TextHunk | ExtensionChange:
 
 
 def _result_to_data(result: DiffResult) -> JsonObject:
-    changes: list[JsonValue] = []
-    for item in result.changes.items:
-        if isinstance(item, TextHunk):
-            changes.append(_hunk_to_data(item))
-        else:
-            changes.append(
-                {
-                    "kind": item.kind,
-                    "plugin_id": item.plugin_id,
-                    "schema_version": item.schema_version,
-                    "payload": item.payload,
-                }
-            )
+    changes: list[JsonValue] = [_change_to_data(item) for item in result.changes.items]
     return {
         "relation": result.relation.value,
         "verdict": result.verdict.value,

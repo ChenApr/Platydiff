@@ -51,7 +51,7 @@ rendering path. Options are:
 | `--max-encoded-line-bytes` | strict UTF-8 bytes per normalized line | `1048576` |
 | `--max-myers-work` | deterministic work units | `5000000` |
 | `--max-change-items` | returned complete hunks | `10000` |
-| `--max-change-payload-bytes` | serialized returned hunk bytes | `4194304` |
+| `--max-change-payload-bytes` | canonical schema-v1 JSON bytes of returned hunks | `4194304` |
 
 All limits accept zero. Invalid values are usage errors and exit with `2`
 without emitting an outcome.
@@ -80,6 +80,12 @@ total hunk count. Item and payload limits are applied after the complete edit
 script and all totals are known. Truncation retains only complete hunks in
 source order, adds `change_details_truncated`, and does not change the result's
 relation, verdict, or fidelity.
+
+The payload limit is the sum of the UTF-8 byte lengths of each retained,
+complete change encoded independently as canonical compact schema-v1 JSON:
+Unicode is emitted directly, non-finite numbers are rejected, object keys are
+sorted, and separators contain no whitespace. The surrounding changes array,
+outcome envelope, and renderer-specific whitespace are not counted.
 
 ## Failures and provenance
 
