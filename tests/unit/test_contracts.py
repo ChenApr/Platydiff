@@ -362,10 +362,16 @@ def test_non_finite_numeric_values_use_tags(
 
 
 def test_bare_non_finite_json_is_rejected() -> None:
-    with pytest.raises(SerializationError, match="non-standard JSON"):
+    with pytest.raises(SerializationError, match=r"^invalid JSON$"):
         loads_outcome('{"value": NaN}')
     with pytest.raises(ValueError, match="non-finite"):
         ExtensionChange("org.example.change", "example", 1, {"x": math.inf})
+
+
+def test_json_integer_digit_limit_is_reported_as_invalid_json() -> None:
+    payload = '{"schema_version":' + "9" * 5000 + ',"kind":"completed"}'
+    with pytest.raises(SerializationError, match=r"^invalid JSON$"):
+        loads_outcome(payload)
 
 
 def test_non_json_extension_data_and_surrogates_are_rejected() -> None:

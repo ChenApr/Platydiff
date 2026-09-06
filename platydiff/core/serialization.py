@@ -859,6 +859,6 @@ def loads_outcome(payload: str) -> CompareOutcome:
     """Parse untrusted JSON and construct a validated outcome."""
     try:
         raw: object = json.loads(payload, parse_constant=_reject_constant)
-    except (json.JSONDecodeError, UnicodeError) as error:
+    except (ValueError, UnicodeError) as error:
         raise SerializationError("invalid JSON") from error
     return outcome_from_data(_coerce_json(raw))
