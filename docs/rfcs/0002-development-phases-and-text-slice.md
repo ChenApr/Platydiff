@@ -186,7 +186,7 @@ Input SHA-256 covers the original bytes. For `TextSource`, the digest covers its
 
 ## Edit and hunk semantics
 
-The internal edit script contains `equal`, `delete`, and `insert`. A replacement is represented canonically as deletion followed by insertion. This ordering also governs hunk serialization and terminal rendering.
+The internal edit script contains `equal`, `delete`, and `insert`. A replacement is represented canonically as deletion followed by insertion. A shortest edit script is not required to emit that order, so the pipeline reorders every maximal run of changed lines into deletions followed by insertions before building hunks. Deletions consume before-lines and insertions produce after-lines independently, so the reordering preserves both the script length and the reconstruction. This ordering also governs hunk serialization and terminal rendering.
 
 `TextHunk` is the Phase 1 built-in change with `kind="text_hunk"`. Locations use one-based line numbers and half-open spans expressed as `start_line + line_count`. A zero-length insertion or deletion anchor may point one position after the last line. Hunk context is presentation data selected only after the full edit script is known; changing context does not change relation, verdict, metrics, or total change count. Separate change blocks remain separate hunks. When their requested context would overlap, the shared equal-line gap is divided deterministically without duplication; the earlier hunk receives the extra line when the gap is odd.
 

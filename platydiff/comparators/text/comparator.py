@@ -117,6 +117,40 @@ def _normalize(
     return tuple(normalized), maximum_encoded_size
 
 
+def _canonical_operations(
+    operations: tuple[EditOperation, ...],
+) -> tuple[EditOperation, ...]:
+    """Order every run of changed lines as deletions followed by insertions.
+
+    A shortest edit script may legitimately emit an insertion before a deletion
+    inside one run of changed lines. Deletions consume before-lines and
+    insertions produce after-lines independently, so reordering within a run
+    preserves both the script length and the reconstruction while giving
+    replacements the canonical delete-then-insert form the hunk contract
+    requires.
+    """
+    canonical: list[EditOperation] = []
+    deletions: list[EditOperation] = []
+    insertions: list[EditOperation] = []
+
+    def flush() -> None:
+        canonical.extend(deletions)
+        canonical.extend(insertions)
+        deletions.clear()
+        insertions.clear()
+
+    for operation in operations:
+        if operation.kind == "equal":
+            flush()
+            canonical.append(operation)
+        elif operation.kind == "delete":
+            deletions.append(operation)
+        else:
+            insertions.append(operation)
+    flush()
+    return tuple(canonical)
+
+
 def _operation_cursors(
     operations: tuple[EditOperation, ...],
 ) -> tuple[tuple[int, int], ...]:
@@ -315,11 +349,12 @@ def _aggregate(
     myers: MyersResult,
     spec: TextCompareSpec,
 ) -> ComparisonCompletion:
+    operations = _canonical_operations(myers.operations)
     change_set, payload_bytes, diagnostics, total_hunks = _select_hunks(
-        myers.operations, spec
+        operations, spec
     )
-    deleted = sum(item.kind == "delete" for item in myers.operations)
-    inserted = sum(item.kind == "insert" for item in myers.operations)
+    deleted = sum(item.kind == "delete" for item in operations)
+    inserted = sum(item.kind == "insert" for item in operations)
     distance = deleted + inserted
     relation = Relation.EQUAL if distance == 0 else Relation.DIFFERENT
     verdict = Verdict.PASS if relation is Relation.EQUAL else Verdict.FAIL

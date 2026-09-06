@@ -71,7 +71,9 @@ locale-dependent transformation.
 
 The algorithm `text.myers.linear_space.v1` emits a shortest insert/delete edit
 script with deletion-first ties. Replacements are always a deletion followed
-by an insertion. It uses linear auxiliary space, an explicit task stack, and a
+by an insertion: the pipeline reorders each run of changed lines into
+deletions then insertions, which changes neither the script length nor the
+reconstruction. It uses linear auxiliary space, an explicit task stack, and a
 deterministic work budget rather than a wall-clock timeout or semantic
 fallback.
 

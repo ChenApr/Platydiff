@@ -11,6 +11,8 @@ All notable changes to Platydiff are documented in this file.
   serialization from RFC 0001.
 - Explicit path, bytes, and text sources plus `TextCompareSpec`.
 - Deterministic linear-space Myers text comparison with resource accounting.
+- Canonical delete-then-insert ordering for every run of changed lines, so a
+  shortest edit script that emits an insertion first still produces valid hunks.
 - Equivalent `compare --type text` and `text` CLI routes with terminal and JSON
   output.
 - Non-overlapping deterministic hunk context and explicit change-truncation

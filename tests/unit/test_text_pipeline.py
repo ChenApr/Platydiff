@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import os
 import time
 import tracemalloc
@@ -24,7 +25,7 @@ from platydiff import (
     Verdict,
     compare,
 )
-from platydiff.core.models import TextHunk
+from platydiff.core.models import FiniteValue, TextHunk
 from platydiff.core.serialization import (
     dumps_outcome,
     loads_outcome,
@@ -402,3 +403,80 @@ def test_result_is_deterministic_across_runs() -> None:
     after = TextSource("b\na\nb\n")
     results = [completed(before, after).result for _ in range(10)]
     assert all(item == results[0] for item in results)
+
+
+def test_insert_before_delete_script_still_builds_canonical_hunks() -> None:
+    """A shortest script may emit an insertion before a deletion in one run.
+
+    ``a a`` to ``b a b`` has the shortest script ``insert b, equal a,
+    insert b, delete a``. The pipeline must reorder each change run into the
+    canonical delete-then-insert form instead of raising out of ``compare``.
+    """
+    outcome = completed(TextSource("a\na\n"), TextSource("b\na\nb\n"))
+    result = outcome.result
+    assert result.relation is Relation.DIFFERENT
+    distance = result.metrics[0].value
+    assert isinstance(distance, FiniteValue)
+    assert distance.value == 3.0
+    for hunk in result.changes.items:
+        assert isinstance(hunk, TextHunk)
+        insert_seen = False
+        for line in hunk.lines:
+            if line.kind == "equal":
+                insert_seen = False
+            elif line.kind == "insert":
+                insert_seen = True
+            else:
+                assert not insert_seen, "delete must precede insert in a run"
+
+
+@pytest.mark.parametrize("context_lines", [0, 1, 3])
+def test_public_api_never_raises_on_arbitrary_short_text(context_lines: int) -> None:
+    """Every short alphabet combination must return an outcome, not an exception."""
+    spec = TextCompareSpec(context_lines=context_lines)
+    for before_length in range(4):
+        for after_length in range(4):
+            for left in itertools.product("abc", repeat=before_length):
+                for right in itertools.product("abc", repeat=after_length):
+                    before = "".join(f"{item}\n" for item in left)
+                    after = "".join(f"{item}\n" for item in right)
+                    outcome = compare(TextSource(before), TextSource(after), spec)
+                    assert isinstance(outcome, CompletedOutcome)
+                    expected = Relation.EQUAL if before == after else Relation.DIFFERENT
+                    assert outcome.result.relation is expected
+
+
+def test_shortest_edit_distance_survives_run_canonicalization() -> None:
+    """Reordering a change run must not lengthen the edit script."""
+
+    def longest_common_subsequence(left: str, right: str) -> int:
+        previous = [0] * (len(right) + 1)
+        for left_index in range(1, len(left) + 1):
+            current = [0] * (len(right) + 1)
+            for right_index in range(1, len(right) + 1):
+                if left[left_index - 1] == right[right_index - 1]:
+                    current[right_index] = previous[right_index - 1] + 1
+                else:
+                    current[right_index] = max(
+                        previous[right_index], current[right_index - 1]
+                    )
+            previous = current
+        return previous[len(right)]
+
+    for before_length in range(5):
+        for after_length in range(5):
+            for left in itertools.product("ab", repeat=before_length):
+                for right in itertools.product("ab", repeat=after_length):
+                    before, after = "".join(left), "".join(right)
+                    outcome = completed(
+                        TextSource("".join(f"{item}\n" for item in left)),
+                        TextSource("".join(f"{item}\n" for item in right)),
+                    )
+                    expected = (
+                        len(before)
+                        + len(after)
+                        - 2 * longest_common_subsequence(before, after)
+                    )
+                    distance = outcome.result.metrics[0].value
+                    assert isinstance(distance, FiniteValue)
+                    assert distance.value == float(expected)

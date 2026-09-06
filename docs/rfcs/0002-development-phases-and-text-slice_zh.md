@@ -186,7 +186,7 @@ class TextLine:
 
 ## Edit 与 hunk 语义
 
-内部编辑脚本包含 `equal`、`delete` 和 `insert`。Replace 被规范化为先删除后插入；该顺序也控制 hunk 序列化和 terminal 渲染。
+内部编辑脚本包含 `equal`、`delete` 和 `insert`。Replace 被规范化为先删除后插入。最短编辑脚本本身并不保证这一顺序，因此流水线在构建 hunk 之前，会把每一段极大的变更行连续区重排为先全部删除、再全部插入。删除消费 before 行、插入产生 after 行，两者相互独立，因此该重排既不改变脚本长度，也不改变重建结果。该顺序同样控制 hunk 序列化与终端渲染。
 
 `TextHunk` 是 Phase 1 的内置 change，`kind="text_hunk"`。位置使用一基行号和以 `start_line + line_count` 表示的半开区间。零长度 insert/delete 锚点可以指向最后一行之后的位置。Hunk context 只是在完整编辑脚本已知后选取的展示数据；改变 context 不会改变 relation、verdict、metric 或 change 总数。不同 change block 始终保持为不同 hunk；请求的 context 若会重叠，则确定性地分配共享的 equal-line 间隔且不重复，间隔为奇数时由较早的 hunk 多获得一行。
 

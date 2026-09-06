@@ -63,7 +63,8 @@ platydiff text [OPTIONS] BEFORE AFTER
 展开或依赖 locale 的转换。
 
 算法 `text.myers.linear_space.v1` 产生最短 insert/delete 编辑脚本，并在平局时
-优先 deletion。replacement 始终表示为 deletion 后接 insertion。实现使用线性
+优先 deletion。replacement 始终表示为 deletion 后接 insertion：流水线会把每一段
+变更行连续区重排为先删除后插入，这既不改变脚本长度，也不改变重建结果。实现使用线性
 辅助空间、显式任务栈和确定性工作预算，不使用墙钟超时或语义 fallback。
 
 hunk 使用一基行号和 `start_line + line_count` span。context 只属于明细：改变
