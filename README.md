@@ -1,41 +1,43 @@
 # Platydiff
 
-`platydiff` 是一个面向科研、数据分析与竞赛工作流的多模态 Diff 引擎。它希望用统一的命令、配置和结果协议，比较二进制、文本、源代码、结构化配置、图片、音频、视频、PDF、表格与统计数据，同时允许用户按任务定制规范化、对齐、容差、比较指标和输出形式。
+[Chinese documentation](README_zh.md)
 
-## 项目目标
+`platydiff` is a multimodal diff engine for scientific research, data analysis, and competition workflows. It aims to compare binary data, text, source code, structured configuration, images, audio, video, PDFs, tables, and statistical data through a unified command, configuration format, and result protocol, while allowing users to customize normalization, alignment, tolerances, comparison metrics, and output formats for each task.
 
-- 用一套稳定的流水线组织不同模态的比较，而不是把所有文件强行转换为文本。
-- 同时支持严格相等、结构相等、感知相似和统计等价等不同意义的“相同”。
-- 让比较规则可配置、可复现，并适合命令行、Python、Notebook 和 CI 使用。
-- 输出机器可读结果与人类可读报告，包括 JSON、终端、HTML、JUnit、热图和时间区间。
-- 通过插件扩展新的文件格式、算法、解码器和渲染器。
-- 明确记录输入哈希、工具版本和参数，满足科研复现与比赛审计需要。
+## Project goals
 
-## 计划覆盖的格式
+- Organize comparisons across modalities with one stable pipeline instead of forcing every file into text.
+- Support distinct meanings of “equal,” including exact equality, structural equality, perceptual similarity, and statistical equivalence.
+- Make comparison rules configurable and reproducible, with first-class support for command-line, Python, Notebook, and CI workflows.
+- Produce both machine-readable results and human-readable reports, including JSON, terminal output, HTML, JUnit, heatmaps, and time intervals.
+- Extend file formats, algorithms, decoders, and renderers through plugins.
+- Record input hashes, tool versions, and parameters explicitly for scientific reproducibility and competition audits.
 
-| 类别 | 首要比较能力 |
+## Planned format coverage
+
+| Category | Primary comparison capabilities |
 | --- | --- |
-| 二进制 | 哈希、逐字节和分块差异 |
-| 文本 | 行级、词级、字符级 Diff 与 Unified Diff |
-| 源代码 | 语法树感知的结构变化 |
-| 配置文件 | JSON、YAML、TOML、XML 的路径级变化 |
-| 图片 | 像素热图、MAE、RMSE、PSNR、SSIM 与感知指标 |
-| 音频 | 时间对齐、波形、频谱与感知质量比较 |
-| 视频 | 帧对齐、逐帧指标、时间聚合和镜头变化 |
-| PDF | 文本、对象结构和页面渲染的混合比较 |
-| 统计数据 | Schema、索引、数值容差、分布和效应量比较 |
+| Binary | Hashing, byte-by-byte comparison, and block-level differences |
+| Text | Line-, word-, and character-level diffs and unified diff output |
+| Source code | Syntax-tree-aware structural changes |
+| Configuration | Path-level changes in JSON, YAML, TOML, and XML |
+| Images | Pixel heatmaps, MAE, RMSE, PSNR, SSIM, and perceptual metrics |
+| Audio | Temporal alignment, waveform, spectral, and perceptual-quality comparison |
+| Video | Frame alignment, per-frame metrics, temporal aggregation, and shot changes |
+| PDF | Combined text, object-structure, and rendered-page comparison |
+| Statistical data | Schema, index, numeric tolerance, distribution, and effect-size comparison |
 
-## 设计原则
+## Design principles
 
-1. **统一流水线，保留模态语义**：共享检测、规范化、对齐、比较、聚合和渲染阶段，但使用模态专用中间表示。
-2. **策略与实现解耦**：用户描述“比较什么”，插件决定“如何比较”。
-3. **可复现优先**：结果必须携带输入摘要、运行参数、后端和版本信息。
-4. **结果可组合**：所有比较器输出共同的 `DiffResult`，便于终端、报告和 CI 复用。
-5. **安全默认值**：不执行配置中的任意代码；对解析器、媒体解码器和不可信文件施加资源限制。
-6. **合规可审计**：核心代码、可选后端、测试数据和生成物分别管理许可证与来源。
+1. **One pipeline, modality-specific semantics**: Share the detection, normalization, alignment, comparison, aggregation, and rendering stages while using modality-specific intermediate representations.
+2. **Separate policy from implementation**: Users describe what to compare; plugins decide how to compare it.
+3. **Reproducibility first**: Results must include input digests, runtime parameters, backends, and version information.
+4. **Composable results**: Every comparator emits the shared `DiffResult`, enabling reuse by terminal, reporting, and CI integrations.
+5. **Safe defaults**: Never execute arbitrary code from configuration; apply resource limits to parsers, media decoders, and untrusted files.
+6. **Auditable compliance**: Track licenses and provenance separately for core code, optional backends, test data, and generated artifacts.
 
-详细设计见 [doc/architecture.md](doc/architecture.md)。
+See [docs/architecture.md](docs/architecture.md) for the detailed design.
 
-## 当前状态
+## Current status
 
-项目处于架构设计阶段。首个实现里程碑将优先覆盖二进制、文本、结构化配置、表格/数组和图片，随后扩展代码、PDF、音频与视频比较。
+The project is in the architecture-design phase. The first implementation milestone will prioritize binary, text, structured configuration, table/array, and image comparison, followed by source code, PDF, audio, and video support.
