@@ -54,7 +54,7 @@ created
 
 `cancelled` 和 `skipped` 是未来候选项，不是合法的 schema v1 outcome kind。添加它们必须进行兼容性评审，并修订本 RFC 或创建后继 RFC。
 
-渲染发生在 `CompareOutcome` 已经存在之后。renderer 失败不得把已有的 completed outcome 改写为比较失败。
+渲染发生在 `CompareOutcome` 已经存在之后。renderer 失败不得把已有的 completed outcome 改写为比较失败。如果 CLI 无法输出选定的展示形式，它仍可用失败状态退出；该失败单独写入 stderr，并且不得伪造替代 outcome。
 
 ## CompareOutcome
 
@@ -126,6 +126,8 @@ Schema v1 保留以下映射：
 
 字符串 code 是稳定的机器标识；多个字符串 code 可以共享同一数字状态码。
 
+显式 Phase 1 文本切片可以产生 `invalid_spec`、来源与资源失败、`decode_error`，以及 CLI 边界的 `internal_error`。它的编码选择器是封闭的 CLI/API 枚举，因此非法字节产生 `decode_error`；`unsupported_encoding` 保留给未来动态解析编码的阶段。能力与后端 problem code 同样保留到自动探测和可选后端实现之后。
+
 ## 两层 provenance
 
 执行 provenance 和比较 provenance 被有意分开。
@@ -190,6 +192,7 @@ class ChangeSet:
     omitted_count: int | None
     selection: Literal["all", "source_order_prefix", "algorithm_partial"]
     limit: int | None
+    limit_reason: Literal["change_items", "change_payload_bytes"] | None
 ```
 
 Summary count 的名称和单位是稳定的小写 ASCII 标识符。名称在单个结果中唯一，并按名称稳定排序后序列化。
@@ -206,7 +209,7 @@ Summary count 的名称和单位是稳定的小写 ASCII 标识符。名称在�
 
 Schema v1 声明 `partial`，以防止它与输出截断混淆。首个实现切片不得产生 partial：Myers 工作预算耗尽时返回 failed outcome。未来 spec 必须显式允许部分结果，比较器才能产生 partial；partial 结果可以证明 `different`，但绝不能声称 `equal`。
 
-截断只能发生在完整 change 边界上。它产生 `change_details_truncated` diagnostic，但不改变 relation、verdict 或 fidelity。
+截断只能发生在完整 change 边界上。新的 schema-v1 producer 会设置 `limit_reason`，使 `limit` 的单位无歧义；reader 为兼容早期 schema-v1 候选 payload，仍接受缺失或 null 的 reason。截断产生 `change_details_truncated` diagnostic，但不改变 relation、verdict 或 fidelity。
 
 ## Change 变体与扩展
 

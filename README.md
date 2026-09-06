@@ -40,8 +40,10 @@ platydiff text --format json before.txt after.txt
 
 Exit code `0` means a completed `pass` or `warn`, `1` means a completed
 `fail`, `2` is a command-line usage error with no outcome, and `3` is an
-`unavailable` or `failed` outcome. Structured consumers should inspect outcome
-and problem codes rather than infer details from the shell code.
+`unavailable` or `failed` outcome or a renderer failure. Successfully rendered
+outcomes go to stdout; parser and renderer errors go to stderr. Structured
+consumers should inspect outcome and problem codes rather than infer details
+from the shell code.
 
 ## Compare text from Python
 

@@ -332,6 +332,8 @@ def test_renderer_failure_uses_stderr_and_leaves_stdout_empty(
     module = importlib.import_module("platydiff.cli.main")
 
     def explode(_outcome: object) -> str:
+        assert isinstance(_outcome, CompletedOutcome)
+        assert _outcome.result.verdict is Verdict.PASS
         raise RuntimeError(f"sensitive path: {tmp_path}")
 
     monkeypatch.setattr(module, renderer_name, explode)
@@ -342,15 +344,41 @@ def test_renderer_failure_uses_stderr_and_leaves_stdout_empty(
     assert captured.err == "platydiff: rendering failed safely\n"
 
 
-def test_memory_error_is_not_swallowed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    "interruption",
+    [KeyboardInterrupt(), SystemExit(17), MemoryError()],
+)
+def test_process_interruptions_are_not_swallowed(
+    interruption: BaseException,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     before, after = write_pair(tmp_path, b"a", b"a")
     module = importlib.import_module("platydiff.cli.main")
 
-    def exhaust(*_arguments: object) -> object:
-        raise MemoryError
+    def interrupt(*_arguments: object) -> object:
+        raise interruption
 
-    monkeypatch.setattr(module, "compare", exhaust)
-    with pytest.raises(MemoryError):
+    monkeypatch.setattr(module, "compare", interrupt)
+    with pytest.raises(type(interruption)):
+        module.main(["text", str(before), str(after)])
+
+
+@pytest.mark.parametrize(
+    "interruption",
+    [KeyboardInterrupt(), SystemExit(17), MemoryError()],
+)
+def test_renderer_process_interruptions_are_not_swallowed(
+    interruption: BaseException,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    before, after = write_pair(tmp_path, b"a", b"a")
+    module = importlib.import_module("platydiff.cli.main")
+
+    def interrupt(_outcome: object) -> str:
+        raise interruption
+
+    monkeypatch.setattr(module, "render_terminal", interrupt)
+    with pytest.raises(type(interruption)):
         module.main(["text", str(before), str(after)])

@@ -164,13 +164,13 @@ Shell 退出码是：
 | `0` | Completed outcome，verdict 为 `pass` 或 `warn` |
 | `1` | Completed outcome，verdict 为 `fail` |
 | `2` | CLI 语法、选项或执行前使用错误，且不输出 comparison outcome |
-| `3` | `unavailable` 或 `failed` outcome，包括安全映射的 `internal_error` |
+| `3` | `unavailable` 或 `failed` outcome，包括安全映射的 `internal_error`，或者已有 outcome 的渲染失败 |
 
-机器消费者必须使用 RFC 0001 的稳定 problem 字符串和 HTTP 风格 status code，不得从 shell 退出码推断具体原因。
+所有成功渲染的 outcome（包括 `failed` 和 `unavailable`）都写入 stdout，使 JSON 保持为一个完整的机器可读信封。Parser 错误和 renderer 失败使用 stderr。机器消费者必须使用 RFC 0001 的稳定 problem 字符串和 HTTP 风格 status code，不得从 shell 退出码推断具体原因。
 
 ## 文本解码与规范化
 
-字节和路径输入默认按 strict UTF-8 解码。非法输入按具体情况产生 `failed/unsupported_encoding` 或 `failed/decode_error`，绝不静默替换。UTF-8 BOM 在 `utf-8` 下是数据，只有调用方显式选择 `utf-8-sig` 时才移除。
+字节和路径输入默认按 strict UTF-8 解码。非法字节产生 `failed/decode_error`，绝不静默替换。Phase 1 只公开封闭的 `utf-8` 与 `utf-8-sig` 选择器，因此未知选择器是 CLI 用法错误或 API 构造错误；`unsupported_encoding` 保留给未来动态解析编码的阶段。UTF-8 BOM 在 `utf-8` 下是数据，只有调用方显式选择 `utf-8-sig` 时才移除。
 
 解码后的输入拆分为不可变 `TextLine`：
 
@@ -188,7 +188,7 @@ class TextLine:
 
 内部编辑脚本包含 `equal`、`delete` 和 `insert`。Replace 被规范化为先删除后插入；该顺序也控制 hunk 序列化和 terminal 渲染。
 
-`TextHunk` 是 Phase 1 的内置 change，`kind="text_hunk"`。位置使用一基行号和以 `start_line + line_count` 表示的半开区间。零长度 insert/delete 锚点可以指向最后一行之后的位置。Hunk context 只是在完整编辑脚本已知后选取的展示数据；改变 context 不会改变 relation、verdict、metric 或 change 总数。
+`TextHunk` 是 Phase 1 的内置 change，`kind="text_hunk"`。位置使用一基行号和以 `start_line + line_count` 表示的半开区间。零长度 insert/delete 锚点可以指向最后一行之后的位置。Hunk context 只是在完整编辑脚本已知后选取的展示数据；改变 context 不会改变 relation、verdict、metric 或 change 总数。不同 change block 始终保持为不同 hunk；请求的 context 若会重叠，则确定性地分配共享的 equal-line 间隔且不重复，间隔为奇数时由较早的 hunk 多获得一行。
 
 默认严格策略在脚本没有 insert/delete 时产生 `equal/pass`，否则产生 `different/fail`。Phase 1 没有产生 `warn` 或 `degraded` fidelity 的策略，但会为了 schema v1 兼容性实现并序列化这些值。
 
@@ -226,7 +226,7 @@ Phase 1 的默认值是：
 | 序列化 change payload | 4 MiB |
 | Hunk context | 3 行 |
 
-读取时检查输入限制，确保 path input 不会无界加载。拆分时检查行数限制。编码后单行限制按所选换行规范化完成后的 strict UTF-8 计算。Change item 和 payload 限制只在完整脚本和总数已知后应用；触及任何一个限制都按确定性来源顺序在完整 item 边界截断。Payload 用量是每个保留的完整 change 独立编码为 schema-v1 规范紧凑 JSON 后的字节数之和：`ensure_ascii=false`、`allow_nan=false`、对象键排序且使用紧凑分隔符。外围数组、outcome envelope 和 pretty-print 空白不计入。
+读取时检查输入限制，确保 path input 不会无界加载。拆分时检查行数限制。编码后单行限制按所选换行规范化完成后的 strict UTF-8 计算。Change item 和 payload 限制只在完整脚本和总数已知后应用；触及任何一个限制都按确定性来源顺序在完整 item 边界截断。被截断的 `ChangeSet` 记录 `limit_reason="change_items"` 或 `"change_payload_bytes"`，由它确定 `limit` 的单位是 item 还是字节。Payload 用量是每个保留的完整 change 独立编码为 schema-v1 规范紧凑 JSON 后的字节数之和：`ensure_ascii=false`、`allow_nan=false`、对象键排序且使用紧凑分隔符。外围数组、outcome envelope 和 pretty-print 空白不计入。
 
 ## 验证契约
 

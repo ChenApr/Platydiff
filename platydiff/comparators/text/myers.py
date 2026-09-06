@@ -314,22 +314,9 @@ def shortest_edit_script(
             (central.before_start, central.after_start),
             (central.before_end, central.after_end),
         ):
-            # A boundary overlap after trimming means this region has no snake.
-            # Its shortest script is the deletion-first replacement sequence.
-            _append_delete_range(
-                operations, before, central.before_start, central.before_end
+            raise AssertionError(
+                "a non-thin middle split must make progress strictly inside its region"
             )
-            _append_insert_range(
-                operations, after, central.after_start, central.after_end
-            )
-            _append_equal_range(
-                operations,
-                before,
-                central_before_end,
-                central_after_end,
-                suffix_length,
-            )
-            continue
 
         if suffix_length:
             tasks.append(

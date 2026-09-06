@@ -194,7 +194,7 @@ def _read_regular_path(path: PathSource, max_bytes: int) -> bytes:
     except OSError as error:
         raise InputOutputError("A source could not be inspected.") from error
     if not stat.S_ISREG(metadata.st_mode):
-        raise InputOutputError("A source is not a regular file.")
+        raise InputOutputError("A source is not a regular file.", retryable=False)
 
     flags = os.O_RDONLY
     flags |= getattr(os, "O_CLOEXEC", 0)
@@ -203,7 +203,7 @@ def _read_regular_path(path: PathSource, max_bytes: int) -> bytes:
     try:
         descriptor = os.open(path.path, flags)
         if not stat.S_ISREG(os.fstat(descriptor).st_mode):
-            raise InputOutputError("A source is not a regular file.")
+            raise InputOutputError("A source is not a regular file.", retryable=False)
         with os.fdopen(descriptor, "rb") as stream:
             descriptor = None
             data = stream.read(max_bytes + 1)

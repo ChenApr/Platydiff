@@ -25,7 +25,11 @@ from platydiff import (
     compare,
 )
 from platydiff.core.models import TextHunk
-from platydiff.core.serialization import dumps_outcome, serialized_change_size
+from platydiff.core.serialization import (
+    dumps_outcome,
+    loads_outcome,
+    serialized_change_size,
+)
 
 
 def completed(
@@ -83,7 +87,17 @@ def test_fifo_source_is_rejected_without_blocking(tmp_path: Path) -> None:
     assert isinstance(outcome, FailedOutcome)
     assert outcome.problem.code == "io_error"
     assert outcome.problem.stage.value == "sourcing"
+    assert outcome.problem.retryable is False
     assert str(fifo) not in dumps_outcome(outcome)
+
+
+def test_directory_source_is_a_non_retryable_input_error(tmp_path: Path) -> None:
+    outcome = compare(PathSource(tmp_path), TextSource("same\n"), TextCompareSpec())
+
+    assert isinstance(outcome, FailedOutcome)
+    assert outcome.problem.code == "io_error"
+    assert outcome.problem.stage.value == "sourcing"
+    assert outcome.problem.retryable is False
 
 
 def test_different_lines_build_one_based_delete_then_insert_hunk() -> None:
@@ -213,6 +227,11 @@ def test_item_limit_truncates_complete_hunks_in_source_order() -> None:
     assert outcome.result.changes.total_count == 2
     assert outcome.result.changes.returned_count == 1
     assert outcome.result.changes.omitted_count == 1
+    assert outcome.result.changes.limit == 1
+    assert outcome.result.changes.limit_reason == "change_items"
+    roundtrip = loads_outcome(dumps_outcome(outcome))
+    assert isinstance(roundtrip, CompletedOutcome)
+    assert roundtrip.result.changes.limit_reason == "change_items"
     assert outcome.result.relation is Relation.DIFFERENT
     assert outcome.result.verdict is Verdict.FAIL
     assert [item.code for item in outcome.execution.diagnostics] == [
@@ -229,6 +248,11 @@ def test_payload_limit_never_cuts_a_hunk() -> None:
     assert outcome.result.changes.completeness is ChangeCompleteness.TRUNCATED
     assert outcome.result.changes.returned_count == 0
     assert outcome.result.changes.items == ()
+    assert outcome.result.changes.limit == 1
+    assert outcome.result.changes.limit_reason == "change_payload_bytes"
+    roundtrip = loads_outcome(dumps_outcome(outcome))
+    assert isinstance(roundtrip, CompletedOutcome)
+    assert roundtrip.result.changes.limit_reason == "change_payload_bytes"
 
 
 def test_payload_limit_uses_exact_canonical_utf8_change_sizes() -> None:
@@ -318,6 +342,37 @@ def test_context_changes_details_but_not_semantics_or_total_count() -> None:
     assert no_context.result.summary == context.result.summary
     assert no_context.result.changes.total_count == context.result.changes.total_count
     assert no_context.result.changes.items != context.result.changes.items
+
+
+def test_nearby_hunks_divide_context_without_overlapping() -> None:
+    before = TextSource("L1\nL2\nL3\nL4\nL5\nL6\nL7\nL8\nL9\nL10\n")
+    after = TextSource("L1\nX2\nL3\nL4\nL5\nL6\nX7\nL8\nL9\nL10\n")
+    outcome = completed(before, after, TextCompareSpec(context_lines=3))
+    hunks = outcome.result.changes.items
+
+    assert len(hunks) == 2
+    assert all(isinstance(hunk, TextHunk) for hunk in hunks)
+    first, second = hunks
+    assert isinstance(first, TextHunk)
+    assert isinstance(second, TextHunk)
+    assert first.before_start_line + first.before_line_count <= second.before_start_line
+    assert first.after_start_line + first.after_line_count <= second.after_start_line
+    before_lines = [
+        line.before_line
+        for hunk in hunks
+        if isinstance(hunk, TextHunk)
+        for line in hunk.lines
+        if line.before_line is not None
+    ]
+    after_lines = [
+        line.after_line
+        for hunk in hunks
+        if isinstance(hunk, TextHunk)
+        for line in hunk.lines
+        if line.after_line is not None
+    ]
+    assert len(before_lines) == len(set(before_lines))
+    assert len(after_lines) == len(set(after_lines))
 
 
 def test_provenance_records_defaults_hashes_transformations_and_work() -> None:

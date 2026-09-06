@@ -67,9 +67,12 @@ platydiff text [OPTIONS] BEFORE AFTER
 辅助空间、显式任务栈和确定性工作预算，不使用墙钟超时或语义 fallback。
 
 hunk 使用一基行号和 `start_line + line_count` span。context 只属于明细：改变
-它不会改变 relation、verdict、metric 或 hunk 总数。item 与 payload 限制只在
+它不会改变 relation、verdict、metric 或 hunk 总数。相邻 hunk 会确定性地分配共享
+context 且不重复行；共享间隔为奇数时，较早的 hunk 多获得一行。item 与 payload 限制只在
 完整编辑脚本和总数已知后应用。截断仅按来源顺序保留完整 hunk，添加
 `change_details_truncated`，且不改变结果的 relation、verdict 或 fidelity。
+`changes.limit_reason` 指明其 `limit` 的单位是 `change_items` 还是
+`change_payload_bytes`。
 
 Payload 限制是每个保留的完整 change 独立编码为 schema-v1 规范紧凑 JSON 后的
 UTF-8 字节数之和：直接输出 Unicode、拒绝非有限数、对象键排序，且分隔符不含
@@ -82,6 +85,11 @@ UTF-8 字节数之和：直接输出 Unicode、拒绝非有限数、对象键排
 `SequenceMatcher`，也不产生 partial result。CLI 将其他未处理异常安全映射为不含
 路径的 `internal_error`，并默认隐藏 traceback；`KeyboardInterrupt`、`SystemExit`
 和 `MemoryError` 仍作为中断处理，而不是领域 outcome。
+
+Phase 1 的编码选择是封闭的，因此非法字节产生 `decode_error`；
+`unsupported_encoding` 以及 capability/backend 失败保留给后续动态解析阶段。
+所有成功渲染的 outcome 都写入 stdout；parser 与 renderer 失败写入 stderr。
+Renderer 失败以 `3` 退出，但不会替换此前已经产生的 outcome。
 
 completed result provenance 包含输入角色、来源类型、字节大小、SHA-256、完整
 规范化 specification、显式转换、算法与实现版本、配置限制和确定性工作计数。

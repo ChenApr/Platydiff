@@ -77,10 +77,13 @@ fallback.
 
 Hunks use one-based line numbers and `start_line + line_count` spans. Context
 is detail only: changing it cannot change the relation, verdict, metrics, or
-total hunk count. Item and payload limits are applied after the complete edit
+total hunk count. Nearby hunks divide shared context deterministically without
+duplicating lines; an odd shared gap gives its extra line to the earlier hunk.
+Item and payload limits are applied after the complete edit
 script and all totals are known. Truncation retains only complete hunks in
 source order, adds `change_details_truncated`, and does not change the result's
-relation, verdict, or fidelity.
+relation, verdict, or fidelity. `changes.limit_reason` identifies whether its
+`limit` is measured in `change_items` or `change_payload_bytes`.
 
 The payload limit is the sum of the UTF-8 byte lengths of each retained,
 complete change encoded independently as canonical compact schema-v1 JSON:
@@ -97,6 +100,12 @@ Myers budget uses `compare_resource_limit` and never falls back to
 exceptions to a path-safe `internal_error` and suppresses tracebacks by
 default; `KeyboardInterrupt`, `SystemExit`, and `MemoryError` remain
 interruptions rather than domain outcomes.
+
+The Phase 1 encoding choices are closed, so invalid bytes produce
+`decode_error`; `unsupported_encoding` and capability/backend failures are
+reserved for later dynamic resolution. Successfully rendered outcomes of every
+kind go to stdout. Parser and renderer failures go to stderr; a renderer failure
+exits with `3` without replacing the outcome that was already produced.
 
 Completed result provenance includes input roles, source kinds, byte sizes,
 SHA-256 digests, the fully normalized specification, explicit transformations,

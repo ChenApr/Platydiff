@@ -233,6 +233,15 @@ def test_unknown_optional_fields_are_ignored() -> None:
     assert outcome_from_data(data) == completed_outcome()
 
 
+def test_missing_optional_change_limit_reason_is_accepted() -> None:
+    data = outcome_to_data(completed_outcome())
+    result_data = cast(JsonObject, data["result"])
+    changes_data = cast(JsonObject, result_data["changes"])
+    del changes_data["limit_reason"]
+
+    assert outcome_from_data(data) == completed_outcome()
+
+
 @pytest.mark.parametrize(
     ("kind", "incompatible_field"),
     [("completed", "problem"), ("failed", "result"), ("unavailable", "result")],
@@ -445,6 +454,18 @@ def test_change_set_invariants() -> None:
         0,
     )
     assert truncated.total_count == 2
+    assert truncated.limit_reason is None
+    truncated_with_reason = ChangeSet(
+        ChangeCompleteness.TRUNCATED,
+        (),
+        2,
+        0,
+        2,
+        ChangeSelection.SOURCE_ORDER_PREFIX,
+        0,
+        "change_items",
+    )
+    assert truncated_with_reason.limit_reason == "change_items"
     partial = ChangeSet(
         ChangeCompleteness.PARTIAL,
         (),

@@ -54,7 +54,7 @@ Terminal transitions are constrained as follows:
 
 `cancelled` and `skipped` are future candidates. They are not legal schema-v1 outcome kinds. Adding them requires a compatibility review and an RFC amendment or successor.
 
-Rendering occurs after `CompareOutcome` exists. A renderer failure must not rewrite an existing completed outcome as a comparison failure.
+Rendering occurs after `CompareOutcome` exists. A renderer failure must not rewrite an existing completed outcome as a comparison failure. The CLI may nevertheless exit unsuccessfully when it cannot emit the selected presentation; that failure is reported separately on stderr and no replacement outcome is fabricated.
 
 ## CompareOutcome
 
@@ -126,6 +126,8 @@ Schema v1 reserves these mappings:
 
 The string code is the stable machine identifier. Multiple string codes may share a numeric status code.
 
+The explicit Phase 1 text slice can produce `invalid_spec`, source and resource failures, `decode_error`, and a CLI-boundary `internal_error`. Its encoding selector is a closed CLI/API enum, so invalid bytes produce `decode_error`; `unsupported_encoding` is reserved for a future dynamically resolved encoding. Capability and backend problem codes are likewise reserved until detection and optional backends are implemented.
+
 ## Two-layer provenance
 
 Execution and comparison provenance are deliberately separate.
@@ -190,6 +192,7 @@ class ChangeSet:
     omitted_count: int | None
     selection: Literal["all", "source_order_prefix", "algorithm_partial"]
     limit: int | None
+    limit_reason: Literal["change_items", "change_payload_bytes"] | None
 ```
 
 Summary count names and units are stable lowercase ASCII identifiers. Names are unique within a result and serialized in stable name order.
@@ -206,7 +209,7 @@ When both are non-null, `summary.change_count` must equal `changes.total_count`.
 
 Schema v1 declares `partial` to prevent it from being conflated with output truncation. The first implementation slice must never produce it: exhausting the Myers work budget returns a failed outcome. A future specification must explicitly allow partial results before a comparator may produce `partial`; a partial result may prove `different` but must never claim `equal`.
 
-Truncation uses complete change boundaries. It produces a `change_details_truncated` diagnostic and does not change relation, verdict, or fidelity.
+Truncation uses complete change boundaries. New schema-v1 producers set `limit_reason` so the unit of `limit` is unambiguous; readers accept a missing or null reason for compatibility with earlier schema-v1 candidate payloads. Truncation produces a `change_details_truncated` diagnostic and does not change relation, verdict, or fidelity.
 
 ## Change variants and extensions
 

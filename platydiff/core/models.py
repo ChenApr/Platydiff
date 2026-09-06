@@ -701,17 +701,26 @@ class ChangeSet:
     omitted_count: int | None
     selection: ChangeSelection
     limit: int | None
+    limit_reason: Literal["change_items", "change_payload_bytes"] | None = None
 
     def __post_init__(self) -> None:
         if self.returned_count != len(self.items) or self.returned_count < 0:
             raise ValueError("returned_count must equal the item count")
         if self.limit is not None and self.limit < 0:
             raise ValueError("change limit must be non-negative")
+        if self.limit_reason not in (
+            None,
+            "change_items",
+            "change_payload_bytes",
+        ):
+            raise ValueError("unknown change limit reason")
         if self.completeness is ChangeCompleteness.COMPLETE:
             if (
                 self.total_count != self.returned_count
                 or self.omitted_count != 0
                 or self.selection is not ChangeSelection.ALL
+                or self.limit is not None
+                or self.limit_reason is not None
             ):
                 raise ValueError("invalid complete ChangeSet")
         elif self.completeness is ChangeCompleteness.TRUNCATED:
@@ -728,6 +737,7 @@ class ChangeSet:
             self.total_count is not None
             or self.omitted_count is not None
             or self.selection is not ChangeSelection.ALGORITHM_PARTIAL
+            or self.limit_reason is not None
         ):
             raise ValueError("invalid partial ChangeSet")
 

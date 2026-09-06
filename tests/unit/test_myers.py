@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import importlib
 import itertools
 import tracemalloc
+from typing import Protocol
 
 import pytest
 
 from platydiff.comparators.text.models import EditOperation, TextLine
 from platydiff.comparators.text.myers import shortest_edit_script
 from platydiff.core.problems import CompareResourceLimitError
+
+
+class RegionLike(Protocol):
+    before_start: int
+    after_start: int
 
 
 def text_lines(*values: str) -> tuple[TextLine, ...]:
@@ -145,6 +152,24 @@ def test_repeated_runs_are_identical() -> None:
         shortest_edit_script(before, after, max_work=10_000) for _ in range(20)
     }
     assert len(snapshots) == 1
+
+
+def test_boundary_middle_split_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module("platydiff.comparators.text.myers")
+
+    def boundary_split(
+        _before: tuple[TextLine, ...],
+        _after: tuple[TextLine, ...],
+        region: RegionLike,
+        _budget: object,
+    ) -> tuple[int, int]:
+        return region.before_start, region.after_start
+
+    monkeypatch.setattr(module, "_middle_split", boundary_split)
+    with pytest.raises(AssertionError, match="strictly inside"):
+        shortest_edit_script(text_lines("a", "b"), text_lines("x", "y"), max_work=100)
 
 
 def test_budget_boundary_is_exact() -> None:

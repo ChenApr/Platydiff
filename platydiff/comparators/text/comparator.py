@@ -89,8 +89,9 @@ def _split_lines(text: str, max_lines: int) -> tuple[TextLine, ...]:
 
 def _normalize(
     lines: tuple[TextLine, ...], spec: TextCompareSpec
-) -> tuple[TextLine, ...]:
+) -> tuple[tuple[TextLine, ...], int]:
     normalized: list[TextLine] = []
+    maximum_encoded_size = 0
     for line in lines:
         terminator = (
             "\n"
@@ -111,18 +112,9 @@ def _normalize(
                 "A normalized line exceeded the configured encoded-line limit.",
                 stage=PipelineStage.NORMALIZING,
             )
+        maximum_encoded_size = max(maximum_encoded_size, encoded_size)
         normalized.append(normalized_line)
-    return tuple(normalized)
-
-
-def _maximum_encoded_line_size(lines: tuple[TextLine, ...]) -> int:
-    return max(
-        (
-            len((line.content + line.terminator).encode("utf-8", errors="strict"))
-            for line in lines
-        ),
-        default=0,
-    )
+    return tuple(normalized), maximum_encoded_size
 
 
 def _operation_cursors(
@@ -155,11 +147,20 @@ def _hunk_ranges(
     if block_start is not None:
         changed_blocks.append((block_start, len(operations)))
     ranges: list[tuple[int, int]] = []
-    for start, end in changed_blocks:
+    for index, (start, end) in enumerate(changed_blocks):
+        if index == 0:
+            left_available = start
+        else:
+            left_available = (start - changed_blocks[index - 1][1]) // 2
+        if index == len(changed_blocks) - 1:
+            right_available = len(operations) - end
+        else:
+            gap = changed_blocks[index + 1][0] - end
+            right_available = (gap + 1) // 2
         ranges.append(
             (
-                max(0, start - context_lines),
-                min(len(operations), end + context_lines),
+                start - min(context_lines, left_available),
+                end + min(context_lines, right_available),
             )
         )
     return tuple(ranges)
@@ -203,13 +204,16 @@ def _select_hunks(
     retained: list[TextHunk] = []
     payload_bytes = 0
     limiting_value: int | None = None
+    limiting_reason: Literal["change_items", "change_payload_bytes"] | None = None
     cursors: tuple[tuple[int, int], ...] | None = None
     for start, end in ranges:
         if len(retained) >= spec.limits.max_change_items:
             limiting_value = spec.limits.max_change_items
+            limiting_reason = "change_items"
             break
         if spec.limits.max_change_payload_bytes == 0:
             limiting_value = 0
+            limiting_reason = "change_payload_bytes"
             break
         if cursors is None:
             cursors = _operation_cursors(operations)
@@ -217,6 +221,7 @@ def _select_hunks(
         size = serialized_change_size(hunk)
         if payload_bytes + size > spec.limits.max_change_payload_bytes:
             limiting_value = spec.limits.max_change_payload_bytes
+            limiting_reason = "change_payload_bytes"
             break
         retained.append(hunk)
         payload_bytes += size
@@ -236,6 +241,8 @@ def _select_hunks(
             total_count,
         )
     omitted = total_count - len(retained)
+    if limiting_value is None or limiting_reason is None:
+        raise AssertionError("truncated changes require a limiting value and reason")
     diagnostic = Diagnostic(
         "change_details_truncated",
         DiagnosticSeverity.WARNING,
@@ -246,6 +253,7 @@ def _select_hunks(
             "returned_count": len(retained),
             "max_change_items": spec.limits.max_change_items,
             "max_change_payload_bytes": spec.limits.max_change_payload_bytes,
+            "limit_reason": limiting_reason,
         },
     )
     return (
@@ -257,6 +265,7 @@ def _select_hunks(
             omitted,
             ChangeSelection.SOURCE_ORDER_PREFIX,
             limiting_value,
+            limiting_reason,
         ),
         payload_bytes,
         (diagnostic,),
@@ -301,6 +310,8 @@ def _aggregate(
     sourced_after: SourcedInput,
     lines_before: tuple[TextLine, ...],
     lines_after: tuple[TextLine, ...],
+    maximum_before_line_bytes: int,
+    maximum_after_line_bytes: int,
     myers: MyersResult,
     spec: TextCompareSpec,
 ) -> ComparisonCompletion:
@@ -369,7 +380,7 @@ def _aggregate(
                 ResourceUsage(
                     "before_encoded_line_bytes",
                     spec.limits.max_encoded_line_bytes,
-                    _maximum_encoded_line_size(lines_before),
+                    maximum_before_line_bytes,
                 ),
                 ResourceUsage(
                     "change_items",
@@ -394,7 +405,7 @@ def _aggregate(
                 ResourceUsage(
                     "after_encoded_line_bytes",
                     spec.limits.max_encoded_line_bytes,
-                    _maximum_encoded_line_size(lines_after),
+                    maximum_after_line_bytes,
                 ),
                 ResourceUsage(
                     "myers_work", spec.limits.max_myers_work, myers.work_units
@@ -420,13 +431,15 @@ def compare_text(
             _split_lines(_decode(sourced_after, spec), spec.limits.max_input_lines),
         ),
     )
-    normalized_before, normalized_after = stages.run(
+    before_normalization, after_normalization = stages.run(
         PipelineStage.NORMALIZING,
         lambda: (
             _normalize(lines_before, spec),
             _normalize(lines_after, spec),
         ),
     )
+    normalized_before, maximum_before_line_bytes = before_normalization
+    normalized_after, maximum_after_line_bytes = after_normalization
     aligned_before, aligned_after = stages.run(
         PipelineStage.ALIGNING, lambda: (normalized_before, normalized_after)
     )
@@ -445,6 +458,8 @@ def compare_text(
             sourced_after,
             aligned_before,
             aligned_after,
+            maximum_before_line_bytes,
+            maximum_after_line_bytes,
             myers,
             spec,
         ),

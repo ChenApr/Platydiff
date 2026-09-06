@@ -625,6 +625,7 @@ def _result_to_data(result: DiffResult) -> JsonObject:
             "omitted_count": result.changes.omitted_count,
             "selection": result.changes.selection.value,
             "limit": result.changes.limit,
+            "limit_reason": result.changes.limit_reason,
         },
         "metrics": [
             {
@@ -684,6 +685,10 @@ def _result_from_data(value: JsonValue) -> DiffResult:
         _change_from_data(item)
         for item in _array(_required(changes_data, "items"), "change items")
     )
+    raw_limit_reason = changes_data.get("limit_reason")
+    limit_reason = _optional_string(raw_limit_reason, "limit_reason")
+    if limit_reason not in (None, "change_items", "change_payload_bytes"):
+        raise SerializationError(f"unknown change limit reason: {limit_reason}")
     metrics: list[Metric] = []
     for raw in _array(_required(data, "metrics"), "metrics"):
         item = _object(raw, "metric")
@@ -779,6 +784,10 @@ def _result_from_data(value: JsonValue) -> DiffResult:
                 "change selection",
             ),
             limit=_optional_integer(_required(changes_data, "limit"), "limit"),
+            limit_reason=cast(
+                Literal["change_items", "change_payload_bytes"] | None,
+                limit_reason,
+            ),
         )
         return DiffResult(
             relation=_enum_value(Relation, _required(data, "relation"), "relation"),

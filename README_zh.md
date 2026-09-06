@@ -38,7 +38,8 @@ platydiff text --format json before.txt after.txt
 
 退出码 `0` 表示 completed 且 verdict 为 `pass` 或 `warn`，`1` 表示 completed
 且 verdict 为 `fail`，`2` 表示没有产生 outcome 的命令行用法错误，`3` 表示
-`unavailable` 或 `failed` outcome。结构化消费者应读取 outcome 和 problem code，
+`unavailable`、`failed` outcome 或 renderer 失败。成功渲染的 outcome 写入 stdout；
+parser 与 renderer 错误写入 stderr。结构化消费者应读取 outcome 和 problem code，
 而不是从 shell 退出码猜测具体错误。
 
 ## 从 Python 比较文本
