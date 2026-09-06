@@ -146,6 +146,8 @@ output:
 
 ### 4.2 DiffResult
 
+执行终态与已完成结果的权威契约见 [RFC 0001](rfcs/0001-comparison-outcome-and-diff-result_zh.md)。下方结构是早期架构草图；如与 RFC 不一致，实现必须以 RFC 为准。
+
 ```text
 DiffResult
 ├── equal               # 在当前规则下是否相等
@@ -230,6 +232,8 @@ PDF 同时包含文本、绘制指令、字体、图片和页面布局。应提�
 统计比较可以包含 KS、Wasserstein、卡方、置信区间和效应量。p-value 不可单独决定是否存在实际差异；结果应同时报告效应量、样本量、多重比较校正和科研任务定义的实际容差。
 
 ## 7. 里程碑
+
+分阶段交付计划及实现门禁由 [RFC 0002](rfcs/0002-development-phases-and-text-slice_zh.md) 定义。下方版本分组描述产品方向；它们不覆盖 RFC 中更狭窄且需要显式授权的阶段，也不表示相关能力已经实现。
 
 ### v0.1：核心闭环
 

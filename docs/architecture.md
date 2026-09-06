@@ -146,6 +146,8 @@ Configuration expressions must use a restricted rule language. They must never e
 
 ### 4.2 DiffResult
 
+The authoritative execution-outcome and completed-result contract is [RFC 0001](rfcs/0001-comparison-outcome-and-diff-result.md). The structure below is an earlier architectural sketch; implementations must follow the RFC where the two differ.
+
 ```text
 DiffResult
 ├── equal               # Whether the inputs are equal under the active rules
@@ -230,6 +232,8 @@ The comparison order is schema, dimensions, coordinate or primary-key alignment,
 Statistical comparison can include KS tests, Wasserstein distance, chi-squared tests, confidence intervals, and effect sizes. A p-value alone must not determine whether a practically meaningful difference exists. Results should also report effect size, sample size, multiple-comparison correction, and the practical tolerance defined by the scientific task.
 
 ## 7. Milestones
+
+The staged delivery plan and its implementation gates are defined by [RFC 0002](rfcs/0002-development-phases-and-text-slice.md). The version groupings below describe product direction; they do not override the RFC's narrower, explicitly authorized phases or imply that a capability is implemented.
 
 ### v0.1: Core loop
 
