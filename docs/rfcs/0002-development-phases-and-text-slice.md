@@ -258,7 +258,8 @@ Contract tests must cover every outcome variant, serialization round trips, unkn
 
 Later phases form an accepted roadmap, not automatic authorization to implement them:
 
-1. **Phase 2:** automatic detection, capability resolution, and a binary comparator.
+1. **Phase 2:** automatic detection, capability resolution, and a binary comparator,
+   proposed in [RFC 0003](0003-automatic-detection-capability-resolution-and-binary-comparison.md).
 2. **Phase 3:** third-party entry-point discovery, a plugin SDK, and a compatibility suite.
 3. **Phase 4:** JSON/YAML and table/array comparison.
 4. **Phase 5:** image comparison.

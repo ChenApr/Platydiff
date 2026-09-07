@@ -257,7 +257,8 @@ python -m build
 
 后续阶段构成已接受的路线图，不自动授权实施：
 
-1. **Phase 2：** 自动探测、capability resolution 和 binary comparator。
+1. **Phase 2：** 自动探测、capability resolution 和 binary comparator，提议见
+   [RFC 0003](0003-automatic-detection-capability-resolution-and-binary-comparison_zh.md)。
 2. **Phase 3：** 第三方 entry-point discovery、插件 SDK 和兼容性套件。
 3. **Phase 4：** JSON/YAML 和 table/array 比较。
 4. **Phase 5：** image 比较。

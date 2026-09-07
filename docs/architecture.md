@@ -233,7 +233,7 @@ Statistical comparison can include KS tests, Wasserstein distance, chi-squared t
 
 ## 7. Milestones
 
-The staged delivery plan and its implementation gates are defined by [RFC 0002](rfcs/0002-development-phases-and-text-slice.md). The version groupings below describe product direction; they do not override the RFC's narrower, explicitly authorized phases or imply that a capability is implemented.
+The staged delivery plan and its implementation gates are defined by [RFC 0002](rfcs/0002-development-phases-and-text-slice.md). The proposed Phase 2 detection, internal resolution, and exact-binary contract is [RFC 0003](rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison.md). The version groupings below describe product direction; they do not override the RFCs' narrower, explicitly authorized phases or imply that a capability is implemented.
 
 Phase 1 is implemented on the default branch and contains the Python package,
 schema-v1 contracts, explicit text pipeline, linear-space Myers algorithm,

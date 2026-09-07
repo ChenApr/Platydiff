@@ -18,5 +18,6 @@
 | --- | --- | --- |
 | [0001](0001-comparison-outcome-and-diff-result_zh.md) | Implemented | 分离执行终态与已完成的差异结果，并定义 schema v1 的结果语义 |
 | [0002](0002-development-phases-and-text-slice_zh.md) | Implemented | 为首个 Python/text 切片设置门禁，并把后续能力置于显式契约评审之后 |
+| [0003](0003-automatic-detection-capability-resolution-and-binary-comparison_zh.md) | Proposed | 定义有界自动探测、确定性内部能力解析和精确二进制比较 |
 
 计划中的行为在实现并完成验证前，必须继续明确标记为计划能力。
