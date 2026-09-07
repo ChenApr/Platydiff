@@ -190,6 +190,9 @@ After interfaces stabilize, performance-critical paths may use Rust extensions, 
 - Run media and PDF parsing in bounded workers with time, memory, disk, and process limits.
 - Record every automatic downsampling, crop, resampling operation, or color conversion in result provenance.
 - Support cancellation and stage-level errors. A renderer failure must not invalidate an already produced core result.
+- Keep every human review surface downstream of validated outcome semantics. The
+  proposed renderer and UI sequence is defined in [RFC 0004](rfcs/0004-human-review-ui-and-renderer-boundary.md)
+  and is not authorized while that RFC remains Proposed.
 
 ## 6. Modality fundamentals
 

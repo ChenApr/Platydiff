@@ -190,6 +190,9 @@ DiffResult
 - 媒体和 PDF 解析运行在有超时、内存、磁盘和进程限制的工作单元中。
 - 任何自动降采样、裁剪、重采样或颜色转换都必须出现在结果来源信息中。
 - 比较任务支持取消和阶段级错误，单个渲染器失败不应破坏已有核心结果。
+- 所有人类评审界面必须位于已验证 outcome 语义的下游。提议的 renderer 与 UI 顺序
+  见 [RFC 0004](rfcs/0004-human-review-ui-and-renderer-boundary_zh.md)；该 RFC 为
+  Proposed 时不授权实现。
 
 ## 6. 各模态基本原理
 
