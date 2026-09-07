@@ -18,10 +18,9 @@ Platydiff 是面向科研数据、实验回归和竞赛工作流的可扩展多�
 - Pillow、OpenCV、scikit-image、Tree-sitter、FFmpeg 和 PDF 后端均为可选插件或外部后端。
 - 性能热点可在接口稳定后使用 Rust 扩展，但不得让核心 API 依赖具体 FFI。
 
-仓库现已包含 Python 工程脚手架、`platydiff` 包，以及 PR #3 中 Phase 1
-显式文本实现候选的自动化测试。在合并前应将该工作视为尚未交付。后续模态、
-公共插件发现和更丰富的 renderer 仍处于计划阶段；不得描述为已实现，且只报告
-实际运行过的验证命令。
+仓库现已包含已实现的 Phase 1 显式文本 Python 库和 CLI，以及相应自动化测试。
+该实现已进入默认分支，但尚未发布。后续模态、公共插件发现和更丰富的 renderer
+仍处于计划阶段；不得描述为已实现，且只报告实际运行过的验证命令。
 
 ## 仓库结构
 
@@ -30,7 +29,7 @@ Platydiff 是面向科研数据、实验回归和竞赛工作流的可扩展多�
 - `README.md`：英文权威版，说明项目目标、覆盖范围和设计原则；`README_zh.md` 为中文翻译。
 - `docs/architecture.md`：英文权威架构文档；`docs/architecture_zh.md` 为中文翻译。
 - `pyproject.toml`：Python 打包元数据与标准开发工具配置。
-- `platydiff/`：Phase 1 库与 CLI 的实现候选。
+- `platydiff/`：已实现的 Phase 1 库与 CLI。
 - `tests/`：单元、集成、契约、算法、CLI 与打包回归测试。
 
 目标结构：

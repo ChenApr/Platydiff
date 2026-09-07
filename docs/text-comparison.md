@@ -2,10 +2,10 @@
 
 [Chinese documentation](text-comparison_zh.md)
 
-The Phase 1 candidate in PR #3 compares one explicit text source with another.
-It supports files, owned bytes, and already-decoded strings without automatic
-format or encoding detection. This guide describes candidate behavior, not a
-shipped release.
+The Phase 1 implementation on the default branch compares one explicit text
+source with another. It supports files, owned bytes, and already-decoded
+strings without automatic format or encoding detection. This guide describes
+implemented but unreleased behavior.
 
 ## Python API
 
