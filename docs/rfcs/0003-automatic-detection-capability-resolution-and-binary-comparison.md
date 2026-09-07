@@ -93,12 +93,16 @@ An explicit `TextCompareSpec` or `BinaryCompareSpec` bypasses `detecting`. Only
 `AutoCompareSpec` enables it. A Python source type, filename suffix, or MIME
 label never silently changes an explicit specification.
 
-All integer limit fields reject booleans. Byte/count/work limits are in the
-inclusive range `0..2**63-1`. A zero input limit accepts only an empty encoded
-source; zero line or Myers limits retain their RFC 0002 meanings; zero change
-item or payload limits still complete comparison but return a truncated empty
-detail prefix when a change exists. `chunk_bytes` and `binary_chunk_bytes` are
-execution granularities, not budgets, and must be in `1..16*1024*1024`.
+All new Phase 2 integer limit fields reject booleans. Byte/count/work limits are
+in the inclusive IEEE-754 exact-integer range `0..2**53`. This bound ensures
+that every input size, binary offset/count, and derived `FiniteValue` metric is
+serialized without integer rounding by the existing schema-v1 numeric model.
+`2**53` is valid and `2**53+1` is rejected at spec/model construction. A zero
+input limit accepts only an empty encoded source; zero line or Myers limits
+retain their RFC 0002 meanings; zero change item or payload limits still
+complete comparison but return a truncated empty detail prefix when a change
+exists. `chunk_bytes` and `binary_chunk_bytes` are execution granularities, not
+budgets, and must be in `1..16*1024*1024`.
 `context_lines` is non-negative. Confidence and margin are integers in
 `0..1000`; a zero margin permits an exactly tied top candidate to be selected
 by the total ordering. `max_detection_bytes=0` disables content inspection but
@@ -208,9 +212,30 @@ evidence_counts: stable identifier -> non-negative integer
 
 `confidence` is a deterministic evidence score, not a probability or a promise
 about correctness. Scores are comparable only for this detector version. The
-evidence counts are limited to `inspected_bytes`, `nul_count`,
-`disallowed_control_count`, `non_ascii_byte_count`, and `pending_utf8_bytes`.
-They never include bytes or decoded content.
+producer always emits all five `evidence_counts` keys, including zeros, in
+canonical key order:
+
+- `inspected_bytes`: actual prefix bytes obtained, from zero through
+  `effective_detection_bytes`;
+- `nul_count`: raw `0x00` bytes in those inspected bytes;
+- `non_ascii_byte_count`: raw inspected bytes in `0x80..0xff`;
+- `pending_utf8_bytes`: one to three trailing bytes held by the incremental
+  decoder only when the prefix ends before EOF inside an otherwise valid scalar;
+  zero at EOF or after a conclusive UTF-8 error;
+- `disallowed_control_count`: successfully decoded C0/C1 scalars before any
+  conclusive UTF-8 error, excluding NUL, TAB, LF, and CR.
+
+All candidates for one source repeat the identical count object. `TextSource`
+uses five zeros because its source-kind signal requires no byte inspection.
+Counts never include bytes or decoded content. Readers require all five known
+keys; a missing key, boolean, negative value, non-integer, or value above
+`2**53` is invalid. Unknown additional keys are ignored on read and omitted on
+canonical re-emission under the RFC 0001 optional-field rule. The exact compact
+form of an ASCII text candidate is:
+
+```json
+{"confidence":900,"detector_id":"core.text_binary_prefix","detector_version":"1","evidence_codes":["utf8_valid_ascii"],"evidence_counts":{"disallowed_control_count":0,"inspected_bytes":3,"non_ascii_byte_count":0,"nul_count":0,"pending_utf8_bytes":0},"modality_id":"text","priority":0}
+```
 
 The classifier applies the first matching row. `TextSource` is already validated
 as Unicode scalar text and never receives a binary candidate. For `PathSource`
@@ -323,15 +348,25 @@ PairDetectionCandidate
   after_confidence: 0..1000
   detector_priority: 0
   capability_priority: non-negative integer
+  capability_id: stable identifier
+  backend_id: stable identifier
 ```
 
 Each `SourceDetectionRecord` contains its role and candidates sorted by
 descending confidence then modality ID. Each `PairDetectionCandidate` contains
 modality, pair confidence, before/after confidence, detector priority, and
-capability priority. Evidence codes are sorted lexically and evidence-count
-keys use canonical JSON key ordering. `selected_modality` is non-null exactly
+capability priority plus the capability/backend IDs used by the final total
+ordering. Those fields make the serialized pair order independently
+reproducible even if a later internal registry has more than one capability per
+modality. Evidence codes are sorted lexically and all five evidence-count keys
+are emitted as specified above. `selected_modality` is non-null exactly
 for `selected`; `no_match` and `ambiguous` require null. Candidate bytes and
-decoded text are never serialized.
+decoded text are never serialized. Detector and capability priorities are
+non-boolean integers in `0..2**53`. A canonical selected-text pair candidate is:
+
+```json
+{"after_confidence":900,"backend_id":"stdlib","before_confidence":900,"capability_id":"text","capability_priority":0,"confidence":900,"detector_priority":0,"modality_id":"text"}
+```
 
 An illustrative `ExecutionRecord` field fragment is:
 
@@ -408,47 +443,60 @@ at `resolving`.
 
 ### Snapshot and stage ownership
 
-Phase 2 introduces a private replayable source snapshot. Stage ownership is
-normative:
+Phase 2 deliberately has two source paths. `TextCompareSpec` keeps the Phase 1
+eager path; `AutoCompareSpec` and `BinaryCompareSpec` use the new replayable
+snapshot path. The following rules never use the unqualified phrase "selected
+text" across both paths.
 
-- `sourcing` validates source objects, opens each path once, performs the
-  baseline `fstat`, rejects non-regular targets, checks known sizes, and performs
-  a bounded incremental UTF-8 size preflight for `TextSource`. It does not read
-  path content.
-- `detecting` reads and owns the bounded prefix for auto mode, then checks
-  descriptor metadata against the sourcing baseline. The prefix remains
-  replayable and is not counted twice against input limits.
-- `resolving` consumes only detection/request metadata and never source bytes.
-- `decoding` consumes the replayed prefix plus remaining bytes when text is
-  selected, computes that source hash, enforces text byte/line limits, performs
-  strict decoding, and makes the final descriptor metadata check for that text
-  snapshot. For binary, it only constructs the byte-stream adapters; incremental
-  `TextSource` UTF-8 encoding is one such adapter.
-- `normalizing` and `aligning` retain their text meaning and are observed no-ops
-  for binary.
-- `comparing` consumes the replayed prefix plus remaining binary bytes, directly
-  compares bytes, computes both hashes and spans, enforces byte/change limits,
-  reaches EOF, and performs the final descriptor metadata checks.
-- `aggregating` constructs the result from already completed comparison facts.
+**Explicit `TextCompareSpec` compatibility path:** `sourcing` retains the Phase
+1 implementation: it validates source objects, inspects/opens regular paths,
+eagerly reads both inputs under `ResourceLimits.max_input_bytes`, and constructs
+the owned sourced bytes. Missing, denied, non-regular, I/O, and input-byte-limit
+failures retain their Phase 1 problem code, stage `sourcing`, and JSON wire.
+`resolving`, `decoding`, `normalizing`, `aligning`, `comparing`, and
+`aggregating` then retain their existing ownership and trace. Phase 2 commit 1
+must not replace this path.
 
-The same bytes consumed during detection are replayed to decoding/comparing and
-therefore participate once in hashes and comparison. `io_error`,
-`resource_limit_exceeded`, `source_changed`, and `decode_error` carry the stage
-where they are actually discovered; `source_changed` is not fixed to sourcing.
-The existing Phase 1 explicit-text eager-source path and its serialized failures
-remain unchanged until an independently reviewed refactor can preserve them.
+**`AutoCompareSpec` snapshot path:** `sourcing` validates sources, opens each
+path once, records the baseline `fstat`, rejects non-regular targets, checks
+known sizes, and incrementally preflights `TextSource` encoded size without
+reading path content. `detecting` reads and owns the bounded prefix and checks
+descriptor metadata. If text is selected, `decoding` consumes the replayed
+prefix plus the remainder, computes the input hash, enforces auto text byte/line
+limits, performs strict decoding, and makes the final descriptor check. If
+binary is selected, `decoding` only constructs byte-stream adapters and
+`comparing` performs the binary operations described below.
+
+**Explicit `BinaryCompareSpec` snapshot path:** `sourcing` has the same snapshot
+ownership as auto, but there is no `detecting`. `resolving` selects binary;
+`decoding` constructs adapters; `normalizing` and `aligning` are observed no-ops;
+`comparing` consumes the stream, directly compares bytes, computes hashes and
+spans, enforces byte/change limits, reaches EOF, and makes final descriptor
+checks. `aggregating` constructs the result from completed facts.
+
+On either snapshot path, `resolving` consumes metadata only. Auto prefix bytes
+are replayed and therefore participate once in hashes and comparison.
+`io_error`, `resource_limit_exceeded`, `source_changed`, and `decode_error`
+carry the stage where the snapshot path actually discovers them;
+`source_changed` is not fixed to sourcing. Unifying the eager text and snapshot
+engines is explicitly outside Phase 2. A later RFC/refactor may do so only if it
+keeps every Phase 1 source/resource failure stage and serialized payload
+byte-for-byte compatible or introduces an approved migration.
 
 | Scenario | Required terminal trace |
 | --- | --- |
-| Auto, stable text | `validating✓ sourcing✓ detecting✓ resolving✓ decoding✓ normalizing✓ aligning✓ comparing✓ aggregating✓` |
+| Explicit stable text | Phase 1 trace `validating✓ sourcing✓ resolving✓ decoding✓ normalizing✓ aligning✓ comparing✓ aggregating✓` |
+| Explicit text missing/I/O/oversize source | Phase 1 terminal `sourcing/failed` with its existing code and wire |
+| Auto, stable selected text | snapshot trace `validating✓ sourcing✓ detecting✓ resolving✓ decoding✓ normalizing✓ aligning✓ comparing✓ aggregating✓` |
+| Auto, stable selected binary | snapshot trace `validating✓ sourcing✓ detecting✓ resolving✓ decoding✓ normalizing✓ aligning✓ comparing✓ aggregating✓` |
 | Explicit stable binary | `validating✓ sourcing✓ resolving✓ decoding✓ normalizing✓ aligning✓ comparing✓ aggregating✓` |
-| Metadata changes after snapshot, before/during prefix read | terminal `detecting/failed/source_changed` |
+| Auto metadata changes after snapshot, before/during prefix read | terminal `detecting/failed/source_changed` |
 | Prefix read raises I/O error | terminal `detecting/failed/io_error` |
 | Auto selects text; later bytes are invalid UTF-8 | terminal `decoding/failed/decode_error`; no binary fallback |
-| Text full read or final metadata check fails | terminal `decoding/failed/io_error` or `source_changed` |
+| Auto-selected text full read or final metadata check fails | terminal `decoding/failed/io_error` or `source_changed` |
 | Binary stream read or final metadata check fails | terminal `comparing/failed/io_error` or `source_changed` |
 | Binary exceeds streamed input-byte limit | terminal `comparing/failed/resource_limit_exceeded` |
-| Initial known size already exceeds input limit | terminal `sourcing/failed/resource_limit_exceeded` |
+| Snapshot path initial known size exceeds input limit | terminal `sourcing/failed/resource_limit_exceeded` |
 
 When two failures become observable in one operation, the first deterministic
 check wins: byte-budget overflow is checked after every chunk before span/hash
@@ -522,7 +570,7 @@ after_offset: zero-based byte offset
 after_length: non-negative byte length
 ```
 
-All values reject booleans and lie in `0..2**63-1`. Both lengths cannot be zero.
+All values reject booleans and lie in `0..2**53`. Both lengths cannot be zero.
 A replacement span has equal positive lengths and equal before/after offsets.
 An insertion has `before_length=0`, positive `after_length`, and both offsets at
 the common EOF. A deletion is symmetric. The built-in comparator emits at most
@@ -575,6 +623,11 @@ The binary result contract is exact:
 The evaluation verdict is `pass` exactly when observed is zero and `fail`
 otherwise. It is the only Phase 2 binary policy evaluation. Equal inputs have
 zero changes and all zero difference counts; lengths remain their actual values.
+Because each accepted input and every span coordinate is at most `2**53`,
+`different_bytes`, `before_bytes`, and `after_bytes` are also at most `2**53`
+and survive `FiniteValue`'s float normalization exactly. Constructor and
+serialization tests must accept `2**53`, reject `2**53+1`, and round-trip every
+boundary metric without rounding.
 Input hashes are ordered before/after in comparison provenance. Resource
 provenance records `max_input_bytes`, actual `before_bytes`/`after_bytes`,
 `chunk_bytes`, `max_change_items`, `max_change_payload_bytes`, returned change
@@ -669,9 +722,9 @@ remain private.
 
 | Area | Required evidence before `Implemented` |
 | --- | --- |
-| Detection | every scoring-table row, empty, mixed evidence, incomplete UTF-8 prefix, late-invalid UTF-8, ties, below-threshold, explicit override, deterministic repeated runs |
+| Detection | every scoring-table row, canonical five-key counts including zeros, invalid count objects, empty, mixed evidence, incomplete UTF-8 prefix, late-invalid UTF-8, ties, below-threshold, explicit override, reproducible pair ordering, deterministic repeated runs |
 | Resolution | registration-order independence, duplicate rejection, every reject reason, selected/rejected attempts, missing backend, no capability |
-| Binary correctness | equal, different, empty, length mismatch, chunk-boundary mismatch, reconstruction-free span invariants, hash recorded but not trusted for equality |
+| Binary correctness | equal, different, empty, length mismatch, chunk-boundary mismatch, reconstruction-free span invariants, `2**53` exact and `2**53+1` rejected model/metric boundaries, hash recorded but not trusted for equality |
 | Resources | exact input boundary, detection prefix boundary, change-item and payload truncation, bounded peak memory, no partial result on input/work exhaustion |
 | Sources | bytes, text encoding, regular path, missing/denied path, directory, FIFO/device/socket where available, symlink target, mutation during read |
 | Contracts | Phase 1 golden payloads, new round trips, unknown fields/kinds, stable codes, public exports, schema decision and migration note |
@@ -685,8 +738,9 @@ Implementation remains unassigned until this RFC is accepted. A future code
 session should use focused commits in this order:
 
 1. `refactor(core): add bounded replayable source snapshots`
-   - Gate: Phase 1 behavior and golden JSON unchanged; regular-file and mutation
-     tests prove a single descriptor/snapshot lifecycle.
+   - Gate: snapshots serve only auto/binary paths; the Phase 1 explicit-text
+     eager path, stages, problems, and golden JSON remain unchanged; regular-file
+     and mutation tests prove one descriptor per snapshot.
 2. `feat(core): add detection and capability request contracts`
    - Gate: schema decision recorded; candidate ranking, ambiguity, request
      normalization, and registry-order tests pass without a binary comparator.
