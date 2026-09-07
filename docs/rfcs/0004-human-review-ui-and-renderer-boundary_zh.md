@@ -46,7 +46,7 @@ payload 不得进入 template。
 - 不重新解释的 relation、verdict 和 fidelity；
 - summary count、metric 与 policy evaluation；
 - `ChangeSet` completeness、returned/omitted count、selection 和 limits；
-- text hunk，或明确降级的通用 extension-change 摘要；
+- text hunk、binary span，或明确降级的通用 extension-change 摘要；
 - 按 stage 与 severity 分组的 diagnostic；
 - execution stage、capability attempt、transformation、comparator/algorithm 版本、
   input hash 和资源 limit/usage；
@@ -100,6 +100,18 @@ character 必须可见转义或隔离，避免显示顺序冒充逻辑内容。
 链接、hunk index 和可获得键盘焦点的 heading。search/filter 只有在 UI 明示展示筛选
 已开启，且仍可访问全部 returned set 时，才可以隐藏行。
 
+## 二进制评审体验
+
+每个 `BinarySpan` 是一个可导航 change。UI 显示 before/after 的十进制 byte offset 与
+length，并只根据经过验证的 length 零/非零形状给出 replacement、insertion 或 deletion
+展示标签。可选十六进制 offset 是同一位置值的格式化结果，而不是第二个 location。
+binary navigation 保持来源顺序，并清晰区分最终 trailing insertion/deletion。
+
+U1 永远不显示、猜测、decode、preview 或 embed span 覆盖的 bytes；不提供 text/hex
+dump，也不读取原始来源。summary、metric、strict-equality evaluation、hash、truncation
+和 resource usage 只来自 validated outcome。malformed span 或非法 binary collection
+必须阻止 view-model 构建，不能产生 partial UI。
+
 ## 交付顺序
 
 ### UI-U1：terminal 改进与 self-contained HTML
@@ -121,9 +133,10 @@ character 必须可见转义或隔离，避免显示顺序冒充逻辑内容。
 platydiff ... --format html --output report.html
 ```
 
-HTML 应要求显式 output path，在用户明确选择前拒绝意外覆盖，并在目标目录原子写入。
-它仍是 renderer output，而不是 `DiffResult.artifacts` item。CI 可以把结果文件发布为
-build artifact；Platydiff 本身不上传。
+HTML 应要求显式 output path，在用户明确选择前拒绝意外覆盖，并在目标目录原子发布
+完整文件。no-overwrite 与 overwrite 算法在本地文件安全章节定义。它仍是 renderer
+output，而不是 `DiffResult.artifacts` item。CI 可以把结果文件发布为 build artifact；
+Platydiff 本身不上传。
 
 ### UI-U2：Phase 3 或 4 之后的可选 TUI
 
@@ -154,14 +167,17 @@ HTML 与未来 interactive surface 必须提供：
 - 不要求 hover、motion 或 pointer-only gesture；
 - reduced-motion 支持且不自动播放 animation；
 - responsive reflow，不在窄屏强制 side-by-side diff；
-- 用本地 CSS variable 提供 light、dark 和 system theme；
+- 使用本地 CSS variable 与 `prefers-color-scheme` 自动提供 light/dark style；由于 U1
+  不含 script，report 内 theme selector 延后；
 - 可复制的逻辑文本与可见 whitespace marker 分离；
 - 为 line number、insertion、deletion、diagnostic 和折叠 section 提供 accessible label。
 
 初始 HTML 可使用无需 JavaScript 的 browser-native fragment link 和 disclosure widget。
-未来 TUI 必须发布并测试 keyboard map；提议默认 `j/k` 或 arrow 移动、`n/p` 前后 change、
-`/` 搜索、`Enter` 展开、`q` 退出。shortcut 必须有可发现替代方式，且不能遮蔽
-terminal interrupt 行为。
+U1 不提供 custom live search、filter、sort、persisted preference 或 report 内 theme
+switch；用户仍可使用 browser Find、fragment navigation、disclosure control、system
+theme 与 print CSS。未来 TUI 必须发布并测试 keyboard map；提议默认 `j/k` 或 arrow
+移动、`n/p` 前后 change、`/` 搜索、`Enter` 展开、`q` 退出。shortcut 必须有可发现
+替代方式，且不能遮蔽 terminal interrupt 行为。
 
 ## 大结果行为
 
@@ -181,8 +197,10 @@ UI 把每个 label、line、message、diagnostic detail、plugin field、URI 和
 
 - 使用与上下文匹配的 text/attribute escaping；不得把不可信值拼接进 HTML、CSS、URL
   或 terminal control sequence。
-- U1 不含 script，并输出等价于 `default-src 'none'; style-src 'unsafe-inline';
-  img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'` 的严格 policy。
+- U1 不含 script，并在 HTML 前部包含 `<meta http-equiv>` CSP：
+  `default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none';
+  form-action 'none'`。meta CSP 可执行这些 fetch/form/base 限制，但不能执行
+  `frame-ancestors`；因此刻意不写该 directive。
 - 不使用 `innerHTML`、executable template、remote asset、inline event handler、form、
   iframe 或 automatic navigation。
 - U1 中 artifact URI 只作为 inert text。未来 link 需要 RFC 0001 safe artifact-root
@@ -191,8 +209,29 @@ UI 把每个 label、line、message、diagnostic detail、plugin field、URI 和
   source text、label、hash、diagnostic 和 provenance。
 - report 排除绝对本地路径、environment variable、username、temporary path、token 和
   stack trace。
-- atomic output 在 target directory 新建 temporary file，在支持平台设置 restrictive
-  permission，flush/close 后 replace；symlink 与 overwrite 行为需要专门测试。
+- standalone `file://` report 没有可信 HTTP response header，可能被其他 local content
+  frame。用户应把它作为独立文件打开。CI 或未来 local HTTP server 提供 report 时，
+  必须增加 response header
+  `Content-Security-Policy: frame-ancestors 'none'`（也可增加
+  `X-Frame-Options: DENY` 作为 legacy defense）。meta CSP 是纵深防御，不是完整 sandbox；
+  browser extension、browser vulnerability、screenshot、copied content 和用户主动
+  发布 report 仍是 residual risk。
+- 两种模式都固定一次已存在 parent directory，并在平台支持时相对同一个 directory
+  handle 完成 temporary creation 与 publication。它们先创建新的 `0600` temporary file
+  （支持平台上的 `0600` 等价 owner-only access），flush、在支持时 `fsync`，并在发布前
+  close。如果 available platform primitive 无法约束 parent-directory replacement 或
+  final-component no-follow 行为，renderer 必须安全失败，不能弱化契约。默认
+  no-overwrite mode 使用 exclusive/no-follow 语义，
+  把已完成 temporary inode 原子 link 到 absent target，然后删除 temporary name。如果
+  filesystem/platform 不能保证该 no-clobber installation，renderer 必须安全失败，
+  不得 fallback 到 check-then-replace。默认模式下，已有 file、directory 或 symlink
+  始终失败。
+- 显式 overwrite mode 仍不打开或 follow target。它拒绝观察到是 symlink 的 target，
+  随后用完成的 temporary file 原子替换 directory entry。竞态中被替换成 symlink 仍
+  安全，因为 replace 作用于 entry 而非 referent。directory target 和不支持 atomic
+  replace 的 filesystem 必须失败。在可用时执行 directory `fsync`；缺少 directory
+  `fsync` 只削弱 crash durability，不削弱 no-clobber 或 symlink safety，并作为平台
+  limitation 报告。
 
 ## Theme 与视觉语言
 
@@ -210,13 +249,16 @@ dependency 都要评审 purpose、optionality、license、size、platform、secu
 
 UI-U1 要求：
 
-- 覆盖所有 outcome、fidelity、completeness、metric-value、problem、diagnostic、attempt
-  与 artifact-reference state 的共享 view-model test matrix；
+- 覆盖所有 outcome、fidelity、completeness、metric-value、problem、diagnostic、attempt、
+  artifact-reference、text-hunk 与 binary-span state 的共享 view-model test matrix；
 - 从相同 validated outcome 生成 terminal 与 HTML golden test；
 - 对 HTML、attribute、control、bidi text、plugin payload、URI、label 和类似
   `</script>` 的字符串进行 adversarial escaping test，即使 U1 不含 script；
 - newline、BOM、tab、trailing space、missing-final-newline、long-line、Unicode 和
   narrow-terminal fixture；
+- binary replacement/insertion/deletion span、zero/large/chunk-boundary offset、
+  truncated span list、原始 source file 缺失，以及 renderer 不读取或输出 source byte
+  的证明；
 - keyboard-only、screen-reader structure、contrast、reflow、print、light/dark 和
   reduced-motion review；
 - complete/truncated/partial 与 renderer-byte-limit test；
@@ -238,8 +280,9 @@ development-only dependency。
 2. `feat(terminal): improve human review navigation and detail`
    - 门禁：safe control rendering、narrow layout、状态区分与现有 exit behavior 通过。
 3. `feat(html): add a self-contained accessible report`
-   - 门禁：无 JavaScript CSP、escaping、atomic output、accessibility structure、
-     deterministic snapshot 和 renderer limit 通过。
+   - 门禁：无 JavaScript meta CSP 及已记录 framing residual risk、escaping、竞态安全
+     no-clobber/overwrite output、binary span、accessibility structure、deterministic
+     snapshot 和 renderer limit 通过。
 4. `docs: document local and CI review reports`
    - 门禁：双语 example、disclosure warning、browser/platform note 和 dependency/license
      影响与已验证行为一致。
@@ -254,8 +297,8 @@ development-only dependency。
 | ID | 决策 | 建议 | 阻断项 |
 | --- | --- | --- | --- |
 | U1 | 首个美化 surface | 从同一 view model 改进 terminal 并增加 self-contained HTML | UI-U1 范围 |
-| U2 | HTML 行为 | 无 JavaScript，以原生 anchor/disclosure 和严格 CSP 实现 | 安全架构 |
-| U3 | 文件交付 | 要求 `--output`；原子创建；未显式 opt-in 时拒绝覆盖 | CLI 与文件系统行为 |
+| U2 | HTML 行为 | 无 JavaScript，以原生 anchor/disclosure、可兑现 meta CSP 和明确的 file framing 限制实现 | 安全架构 |
+| U3 | 文件交付 | 要求 `--output`；默认 atomic no-clobber；显式 entry-replacement overwrite；不支持时安全失败 | CLI 与文件系统行为 |
 | U4 | Dependency budget | UI-U1 只用标准库与 embedded CSS | packaging/license 门禁 |
 | U5 | 排期 | 仅在 Phase 2 schema 决策后开始 UI-U1，但允许其 view-model 设计评审 Phase 2 | 实现顺序 |
 | U6 | TUI framework | 延后到 Phase 3 或 4 提供证据且 UI-U2 被接受后选择 | optional dependency |

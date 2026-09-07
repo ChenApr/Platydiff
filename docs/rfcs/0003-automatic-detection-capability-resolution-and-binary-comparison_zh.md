@@ -43,6 +43,43 @@ Phase 2 不增加：
 `CompareSpec` 继续作为比较意图的公共描述：
 
 ```python
+@dataclass(frozen=True, slots=True)
+class BinaryResourceLimits:
+    max_input_bytes: int = 16 * 1024 * 1024
+    chunk_bytes: int = 64 * 1024
+    max_change_items: int = 10_000
+    max_change_payload_bytes: int = 4 * 1024 * 1024
+
+@dataclass(frozen=True, slots=True)
+class BinaryCompareSpec:
+    kind: Literal["binary"] = field(default="binary", init=False)
+    limits: BinaryResourceLimits = field(default_factory=BinaryResourceLimits)
+
+@dataclass(frozen=True, slots=True)
+class AutoTextOptions:
+    encoding: TextEncoding = TextEncoding.UTF8
+    newline: NewlinePolicy = NewlinePolicy.PRESERVE
+    context_lines: int = 3
+
+@dataclass(frozen=True, slots=True)
+class AutoResourceLimits:
+    max_input_bytes: int = 16 * 1024 * 1024
+    max_input_lines: int = 200_000
+    max_encoded_line_bytes: int = 1024 * 1024
+    max_myers_work: int = 5_000_000
+    max_detection_bytes: int = 64 * 1024
+    binary_chunk_bytes: int = 64 * 1024
+    max_change_items: int = 10_000
+    max_change_payload_bytes: int = 4 * 1024 * 1024
+
+@dataclass(frozen=True, slots=True)
+class AutoCompareSpec:
+    kind: Literal["auto"] = field(default="auto", init=False)
+    text: AutoTextOptions = field(default_factory=AutoTextOptions)
+    minimum_confidence: int = 800
+    ambiguity_margin: int = 100
+    limits: AutoResourceLimits = field(default_factory=AutoResourceLimits)
+
 CompareSpec = AutoCompareSpec | TextCompareSpec | BinaryCompareSpec
 
 compare(before: Source, after: Source, spec: CompareSpec) -> CompareOutcome
@@ -51,6 +88,33 @@ compare(before: Source, after: Source, spec: CompareSpec) -> CompareOutcome
 显式 `TextCompareSpec` 或 `BinaryCompareSpec` 跳过 `detecting`。只有
 `AutoCompareSpec` 启用探测。Python 来源类型、文件后缀或 MIME 标签不得静默改变
 显式 specification。
+
+所有整数 limit field 都拒绝 boolean。byte/count/work limit 的范围是
+`0..2**63-1`（含端点）。input limit 为零时只接受 encoded bytes 为空的来源；line
+和 Myers limit 为零时沿用 RFC 0002 的含义；change item 或 payload limit 为零时仍
+完成比较，但存在 change 时返回空的 truncated detail prefix。`chunk_bytes` 与
+`binary_chunk_bytes` 是执行粒度而非预算，范围必须为 `1..16*1024*1024`。
+`context_lines` 非负。confidence 与 margin 是 `0..1000` 的整数；margin 为零时，
+完全同分的第一名可由全序选中。`max_detection_bytes=0` 禁止内容检查，但不跳过探测。
+
+constructor 在 validation 前填充所有默认值。serialization 始终输出完全填充的
+normalized spec。reader 要求下方所示每个 field，按 RFC 0001 忽略未知 optional
+object field，拒绝未知 spec kind、缺失 field 和错误类型，也不重新输出被忽略 field。
+canonical compact JSON 使用 RFC 0002 的 UTF-8、sorted-key 和 compact-separator 规则。
+准确示例如下：
+
+```json
+{"kind":"binary","limits":{"chunk_bytes":65536,"max_change_items":10000,"max_change_payload_bytes":4194304,"max_input_bytes":16777216}}
+```
+
+```json
+{"ambiguity_margin":100,"kind":"auto","limits":{"binary_chunk_bytes":65536,"max_change_items":10000,"max_change_payload_bytes":4194304,"max_detection_bytes":65536,"max_encoded_line_bytes":1048576,"max_input_bytes":16777216,"max_input_lines":200000,"max_myers_work":5000000},"minimum_confidence":800,"text":{"context_lines":3,"encoding":"utf-8","newline":"preserve"}}
+```
+
+`TextCompareSpec` 及其公共 `ResourceLimits` type/JSON 与 Phase 1 已实现形式逐字保持。
+两个新 spec 各有唯一公共 limits object；不存在可成为第二真值源的 keyword argument
+或 environment/config override。`AutoTextOptions` 定义 auto 选中 text 后采用的精确
+意图；选中 binary 时忽略它，但 provenance 保留完整 auto spec。
 
 Phase 2 的 `CapabilityRequest` 是 core/resolver 私有值。它不从 `platydiff` 导出，
 不被 `compare` 接受，也没有公共 JSON schema。这样可以先用两个内置能力验证边界，
@@ -73,34 +137,47 @@ limits: normalized ExecutionLimits
 `schema_version`；debug 表示不持久化，也不作为输入。选定意图和限制通过现有
 comparison provenance 与资源使用记录保存。
 
-在 resolver 边界，比较意图与执行限制必须分离。Phase 2 应引入内部
-`ExecutionLimits` 规范化模型，并把现有 schema-v1 `TextCompareSpec.limits` 转换到
-该模型；Phase 1 公共字段保持不变。未来 schema 是否把 limits 从所有 spec 中移出
-另行决定；Phase 2 不得创建两个互相冲突的公共 limits 来源。
+在 resolver 边界，比较意图与执行限制必须分离。Phase 2 引入唯一的私有 superset
+`ExecutionLimits`，它只从一个 spec limits object 产生：text 转换未变化的
+`ResourceLimits`，binary 转换 `BinaryResourceLimits`，auto 转换
+`AutoResourceLimits` 并计算
+`effective_detection_bytes=min(max_detection_bytes, max_input_bytes)`。公共 normalized
+spec 记录 requested value，execution provenance 记录 effective limit 与实际用量。
+不引入公共 `ExecutionLimits` constructor、wire object、compare parameter、配置文件或
+environment override。把 limits 移出 spec 需要后续 schema 决策。
 
 ## 探测契约
 
 ### 有界证据收集
 
-探测对每个来源最多读取开头 `max_detection_bytes`。它使用随后比较会消费的同一
+探测对每个来源最多读取开头 `effective_detection_bytes`。它使用随后比较会消费的同一
 已打开来源快照，或由该快照持有的可重放有界前缀。探测不得按名称打开路径，然后
 比较另一次解析得到的路径。TextSource 提供显式文本信号；byte 与 path 来源需要
 内容证据。
 
-Phase 2 内置 detector 只能使用确定性证据：
+Phase 2 只有一个 detector policy：
+
+```text
+detector_id: core.text_binary_prefix
+detector_version: 1
+detector_priority: 0
+```
+
+它只使用确定性证据：
 
 - source kind；
 - 有界字节前缀及长度；
 - 检查前缀的 strict UTF-8 有效性；
 - NUL 与控制字符证据；
-- 实现文档明确枚举的稳定内置 magic signature（如有）。
+- decoded Unicode C0/C1 control count。
 
-文件后缀与操作系统 MIME 数据库可以作为弱 diagnostic 证据记录，但在 Phase 2
-不得决定选中模态。locale、墙钟时间、文件系统枚举顺序和网络服务均禁止作为输入。
+magic signature、文件后缀、操作系统 MIME 数据库和统计式文件分类器在 Phase 2
+均不属于范围，不参与打分也不记录。locale、墙钟时间、文件系统枚举顺序和网络服务
+均禁止作为输入。
 
 ### 探测候选与 confidence
 
-每个来源产生零个或多个 candidate record：
+每个来源使用如下类型产生 candidate record：
 
 ```text
 modality_id: text | binary
@@ -109,17 +186,43 @@ detector_id: stable identifier
 detector_version: implementation version
 priority: non-negative integer
 evidence_codes: ordered stable identifiers
+evidence_counts: stable identifier -> non-negative integer
 ```
 
 `confidence` 是确定性的证据分数，不是概率或正确性承诺。分数只能在同一
-detector/version 和 policy 下比较。execution record 必须在 diagnostic details 或
-capability attempts 中暴露 detector/version、生效阈值、来源候选、pair 候选及最终
-disposition，但不得暴露被检查的输入字节。
+detector version 下比较。evidence count 只允许 `inspected_bytes`、`nul_count`、
+`disallowed_control_count`、`non_ascii_byte_count` 和 `pending_utf8_bytes`，不得包含
+字节或 decoded content。
+
+classifier 使用第一个匹配行。`TextSource` 已被验证为 Unicode scalar text，永远不
+获得 binary candidate。对 `PathSource` 和 `BytesSource`，允许的文本控制符只有 TAB
+（`U+0009`）、LF（`U+000A`）和 CR（`U+000D`）；NUL 使用单独一行；其他 C0/C1
+scalar 均为 disallowed。
+
+| 来源/证据 | Text 分数与 code | Binary 分数与 code |
+| --- | --- | --- |
+| `TextSource`，包括 empty | 1000，`explicit_text_source` | 无 candidate |
+| 空 byte/path source | 500，`empty_source` | 500，`empty_source` |
+| 非空来源，effective prefix 为零 byte | 500，`content_not_inspected` | 500，`content_not_inspected` |
+| prefix 含 NUL | 无 candidate | 1000，`nul_present` |
+| prefix 存在确定的 strict UTF-8 error | 无 candidate | 1000，`utf8_invalid` |
+| decoded prefix 含其他 disallowed C0/C1 scalar | 400，`disallowed_control_present` | 950，`disallowed_control_present` |
+| 合法 UTF-8 prefix，末尾可能是不完整 scalar | 850，`utf8_prefix_incomplete` | 500，`utf8_prefix_incomplete` |
+| 合法且完整的 prefix，含任意 non-ASCII byte | 950，`utf8_valid_non_ascii` | 400，`utf8_valid_non_ascii` |
+| 合法且完整的 ASCII prefix | 900，`utf8_valid_ascii` | 400，`utf8_valid_ascii` |
+
+validation 使用 strict incremental UTF-8 decoder。prefix 在 source EOF 前停止时，
+末尾一个由一至三个 byte 组成的不完整 scalar 是 pending，而非 invalid，并产生
+`utf8_prefix_incomplete`；该 suffix 前的任何 error 都是确定错误。prefix 到达 EOF
+时，pending scalar 是确定的 `utf8_invalid`。BOM 是合法 non-ASCII UTF-8 证据，探测
+时不移除。探测不推断 UTF-8 以外的编码。
 
 只有当模态对两个输入都 eligible，且某内置 capability 可以满足请求时，pair
 candidate 才存在；其分数取两个来源分数的最小值。同一模态的重复 candidate
-折叠为一个 record：保留最高分，再取最低 detector priority，并按稳定排序保留
-所有 evidence code。
+同时保留 before/after 顺序的来源分数。该单一 detector 不会产生重复项；通用 fold
+规则仍是保留最高分，再取最低 detector priority，并按 lexical stable order 保留
+evidence code。一个看似文本的来源与一个非法 UTF-8 来源配对时，只剩低分 binary
+交集；不会把一个输入当 text、另一个当 binary。
 
 ### 排序与歧义
 
@@ -142,8 +245,89 @@ eligible pair candidate 使用如下全序：
 Phase 2 不增加文件名 override 或“best effort”开关。auto 选择 unavailable 时，
 消息必须提示用户显式选择 `text` 或 `binary`。
 
-最低值和 ambiguity margin 的数值属于 decision ledger 中的接受决策。它们必须是
-normalized auto spec 与 provenance 中的常量，不能是隐藏调参。
+最低值和 ambiguity margin 的数值属于 decision ledger 中的接受决策。draft spec
+默认值是 800 和 100。任意接受值下，评分表、minimum 比较、margin 比较与全序都使
+结果可完全计算。先执行 minimum test；top candidate 低于 minimum 时，即使候选同分
+也产生 `detection_no_match`。只有一个 eligible candidate 时，其领先视为无穷大。
+多个 candidate 时要求
+`top_score - runner_up_score >= ambiguity_margin`。接受值继续显式记录于 normalized
+auto spec 与 provenance。
+
+探测只分类有界 prefix。如果选中 text 后，strict full-input decoding 在后续发现非法
+UTF-8，execution 在 `decoding` 以 `failed/decode_error` 结束，不得 retry 或 fallback
+到 binary。该 `late-invalid` 行为是可复现性要求，并明确区分 prefix confidence 与
+full-input validation。
+
+### 类型化探测 provenance
+
+探测只有一个 wire 位置：optional `ExecutionRecord.detection` field。显式 text/binary
+调用省略该 field，而非序列化为 null，因此行为未变化的每个 Phase 1 JSON payload
+逐字节保持一致。auto outcome（包括探测 unavailable）包含：
+
+```text
+DetectionRecord
+  detector_id: core.text_binary_prefix
+  detector_version: "1"
+  maximum_bytes: effective non-negative limit
+  minimum_confidence: 0..1000
+  ambiguity_margin: 0..1000
+  sources: exactly (before, after) SourceDetectionRecord
+  pair_candidates: tuple sorted by the normative rank
+  disposition: selected | no_match | ambiguous
+  selected_modality: text | binary | null
+
+SourceDetectionRecord
+  role: before | after
+  candidates: tuple[DetectionCandidate, ...]
+
+DetectionCandidate
+  modality_id: text | binary
+  confidence: 0..1000
+  detector_id: core.text_binary_prefix
+  detector_version: "1"
+  priority: 0
+  evidence_codes: tuple[stable identifier, ...]
+  evidence_counts: JSON object of the allowed count keys
+
+PairDetectionCandidate
+  modality_id: text | binary
+  confidence: 0..1000
+  before_confidence: 0..1000
+  after_confidence: 0..1000
+  detector_priority: 0
+  capability_priority: non-negative integer
+```
+
+每个 `SourceDetectionRecord` 包含 role，以及按 confidence 降序、modality ID 升序排序
+的 candidates。每个 `PairDetectionCandidate` 包含 modality、pair confidence、
+before/after confidence、detector priority 与 capability priority。evidence code 按
+lexical order 排序，evidence-count key 使用 canonical JSON key ordering。
+`selected_modality` 当且仅当 disposition 为 `selected` 时非 null；`no_match` 与
+`ambiguous` 要求 null。不得序列化 candidate bytes 或 decoded text。
+
+一个 `ExecutionRecord` field fragment 示例为：
+
+```json
+{"detection": {
+  "detector_id": "core.text_binary_prefix",
+  "detector_version": "1",
+  "maximum_bytes": 65536,
+  "minimum_confidence": 800,
+  "ambiguity_margin": 100,
+  "sources": [
+    {"role": "before", "candidates": []},
+    {"role": "after", "candidates": []}
+  ],
+  "pair_candidates": [],
+  "disposition": "no_match",
+  "selected_modality": null
+}}
+```
+
+这是 decision D3 下 schema-v1 的 additive field。JSON field name 与上方名称一致；
+tuple 序列化为 array，enum 序列化为所示 lowercase string。record 内未知 optional
+field 在读取时忽略且不重新输出；错误类型、缺失 required field、非法排序和未知 disposition
+必须拒绝。
 
 ## 能力解析
 
@@ -187,6 +371,47 @@ validating -> sourcing -> resolving -> ...
 确定性 rank 排在 selection 之前。探测 unavailable 终止于 `detecting`；能力
 unavailable 终止于 `resolving`。
 
+### Snapshot 与 stage 归属
+
+Phase 2 引入私有 replayable source snapshot。stage 归属是规范性要求：
+
+- `sourcing` 验证 source object、只打开每个 path 一次、执行 baseline `fstat`、拒绝
+  non-regular target、检查已知 size，并对 `TextSource` 做有界 incremental UTF-8
+  size preflight；它不读取 path content。
+- `detecting` 在 auto mode 读取并持有有界 prefix，然后把 descriptor metadata 与
+  sourcing baseline 对比。prefix 保持可重放，且不在 input limit 中重复计数。
+- `resolving` 只消费 detection/request metadata，不读取 source bytes。
+- 选中 text 时，`decoding` 消费 replayed prefix 和剩余 bytes，计算 source hash，
+  执行 text byte/line limit 与 strict decoding，并对该 text snapshot 完成最终
+  descriptor metadata 检查。对 binary，它只构造 byte-stream adapter；incremental
+  `TextSource` UTF-8 encoding 是其中一种 adapter。
+- `normalizing` 与 `aligning` 保持 text 含义，对 binary 是被记录的 no-op。
+- `comparing` 消费 replayed prefix 和其余 binary bytes，实际比较字节，计算两个 hash
+  与 span，执行 byte/change limit，到达 EOF，并完成最终 descriptor metadata 检查。
+- `aggregating` 只从已完成的 comparison fact 构建结果。
+
+detecting 消费的相同 bytes 被 replay 到 decoding/comparing，因此在 hash 和 comparison
+中只计算一次。`io_error`、`resource_limit_exceeded`、`source_changed` 和
+`decode_error` 必须携带实际发现它们的 stage；`source_changed` 不固定为 sourcing。
+现有 Phase 1 显式 text eager-source 路径及其序列化 failure 保持不变，直到独立评审
+能够证明 refactor 继续兼容。
+
+| 场景 | 要求的 terminal trace |
+| --- | --- |
+| Auto、稳定 text | `validating✓ sourcing✓ detecting✓ resolving✓ decoding✓ normalizing✓ aligning✓ comparing✓ aggregating✓` |
+| 显式稳定 binary | `validating✓ sourcing✓ resolving✓ decoding✓ normalizing✓ aligning✓ comparing✓ aggregating✓` |
+| snapshot 后、prefix 读取前/期间 metadata 改变 | 终止于 `detecting/failed/source_changed` |
+| prefix read 产生 I/O error | 终止于 `detecting/failed/io_error` |
+| Auto 选中 text，后续 bytes 为非法 UTF-8 | 终止于 `decoding/failed/decode_error`；不 fallback binary |
+| Text full read 或最终 metadata check 失败 | 终止于 `decoding/failed/io_error` 或 `source_changed` |
+| Binary stream read 或最终 metadata check 失败 | 终止于 `comparing/failed/io_error` 或 `source_changed` |
+| Binary 超过 streamed input-byte limit | 终止于 `comparing/failed/resource_limit_exceeded` |
+| 初始已知 size 已超过 input limit | 终止于 `sourcing/failed/resource_limit_exceeded` |
+
+一个 operation 内有两个 failure 变为可观察时，按确定性顺序选择第一个：每个 chunk
+后先检查 byte-budget overflow，再做 span/hash finalization；I/O error 在抛出时报告；
+只有 clean EOF 后才执行最终 metadata 比较。
+
 ## 精确二进制比较
 
 ### 语义与算法
@@ -207,8 +432,13 @@ fidelity: full
 因此声明的 relation 不受哈希碰撞影响。
 
 空输入合法。binary 显式选择时，`TextSource` 按其 strict UTF-8 字节编码比较，并
-记录该 transformation。`BytesSource` 已是不可变快照。path input 对探测、比较和
-哈希使用每个来源各自唯一的一次已打开文件描述符。
+记录该 transformation。sourcing 先用 strict incremental encoder 对有界 character
+slice 统计 encoded bytes，并在超出 byte limit 时立即以
+`sourcing/failed/resource_limit_exceeded` 失败。comparing 通过有界 `chunk_bytes`
+adapter 重复相同的确定性 incremental encoding，永远不构造完整 encoded copy。
+非法 Unicode scalar input 在 `TextSource` 构造期间，或 snapshot 存在前的
+`validating/failed/invalid_spec` 被拒绝。`BytesSource` 已是不可变快照。path input
+对探测、比较和哈希使用每个来源各自唯一的一次已打开文件描述符。
 
 ### 来源安全与可复现性
 
@@ -219,9 +449,10 @@ special file 必须在不阻塞的情况下失败。只有 symlink 打开的目�
 
 descriptor 初始和最终 metadata 包括平台可用的 device、inode/file ID、byte length
 和纳秒修改时间。在观察到的读取窗口内检测到变化时，返回
-`failed/source_changed`，且不生成 `DiffResult`。streamed byte count 独立于声明
-size 检查。这可检测普通 mutation，但不能证明恶意 writer 没有修改后恢复全部可见
-metadata；input SHA-256 仍标识实际读到的字节。
+`failed/source_changed`，stage 为实际观察到它的 `detecting`、`decoding` 或
+`comparing`，且不生成 `DiffResult`。streamed byte count 独立于声明 size 检查。这可
+检测普通 mutation，但不能证明恶意 writer 没有修改后恢复全部可见 metadata；input
+SHA-256 仍标识实际读到的字节。
 
 Python API 继续传播 `KeyboardInterrupt`、`SystemExit` 和 `MemoryError`。schema v1
 没有 cancelled outcome。CLI 可在现有边界抑制未知 traceback，但不得把 interrupt
@@ -238,18 +469,56 @@ after_offset: zero-based byte offset
 after_length: non-negative byte length
 ```
 
-它不内嵌字节内容。在重叠长度中，极大连续的不等字节 run 变为 before/after 长度
-相等的 span；末尾长度差形成一个最终 insertion 或 deletion span。span 按来源顺序、
-互不重叠，是观察到的不匹配范围，而不是最小 insert/delete script 或 patch。
+所有值拒绝 boolean，范围为 `0..2**63-1`。两个 length 不能同时为零。replacement
+span 的两个 length 相等且为正，并且 before/after offset 相等。insertion 的
+`before_length=0`、`after_length` 为正，两个 offset 都位于共同 EOF；deletion 对称。
+内置 comparator 最多产生一个 insertion/deletion，且始终为最终 span。replacement
+span 覆盖重叠 prefix 内极大连续不等 run，按两个 offset 严格排序，既不重叠也不相接；
+相接 replacement 必须合并。binary `ChangeSet` 构造时验证这些 collection invariant。
 
-完整算法统计全部 span 和不匹配字节，同时只保留有界的来源顺序前缀。因此明细
-limit 可以产生 `truncated` `ChangeSet`，但不改变 relation、verdict 或 fidelity。
-输入或 work budget 耗尽产生 `failed`，不得产生 `partial` 或假定 difference。
+`BinarySpan` 不内嵌字节内容。span 是观察到的不匹配范围，而不是最小 insert/delete
+script 或 patch。其 canonical object 为：
 
-结果至少记录 finite metric：`different_bytes`、`before_bytes` 和 `after_bytes`，unit
-均为 `bytes`；同时记录匹配的 summary count 和两个 input hash。`different_bytes`
-等于对齐位置的不等字节数加上长度差绝对值。resource provenance 记录 byte limit、
-实际读取字节、chunk size、返回 change 数和保留的 canonical change payload bytes。
+```json
+{
+  "kind": "binary_span",
+  "before_offset": 4096,
+  "before_length": 12,
+  "after_offset": 4096,
+  "after_length": 12
+}
+```
+
+完整算法统计全部 span 和不匹配字节，同时只保留有界的来源顺序前缀。item 与
+canonical payload budget 使用 RFC 0001 的准确 schema-v1 计数规则。因此明细 limit
+可产生 `truncated` `ChangeSet`，但不改变 relation、verdict 或 fidelity。Phase 2
+不定义 binary work budget：`max_input_bytes` 限制线性扫描，`chunk_bytes` 限制每次
+allocation。input-byte 耗尽产生 `failed/resource_limit_exceeded`，不得产生 `partial`
+或假定 difference。input limit 为零时只接受两个 empty input；item 或 payload limit
+为零时，equal input 返回 `complete`，different input 返回零 item 的 `truncated`。
+对每个待保留的完整 span，先检查 item limit，再检查 payload limit；第一个失败检查
+决定 `limit_reason` 和 `limit`。
+
+binary result 契约如下：
+
+| Field | 稳定值 |
+| --- | --- |
+| `summary.change_count` | binary span 总数 |
+| Summary `different_bytes` | 对齐位置不等 byte 加长度差绝对值；unit `bytes` |
+| Summary `replacement_spans` | replacement span 数；unit `spans` |
+| Summary `inserted_bytes` | 末尾 after-only bytes；unit `bytes` |
+| Summary `deleted_bytes` | 末尾 before-only bytes；unit `bytes` |
+| Metric `different_bytes` | finite 同一计数；unit `bytes`；direction `lower_is_better`；aggregation `sum` |
+| Metric `before_bytes` | finite input size；unit `bytes`；direction `neutral`；aggregation `count` |
+| Metric `after_bytes` | finite input size；unit `bytes`；direction `neutral`；aggregation `count` |
+| Evaluation | rule `binary.strict_equality`、metric `different_bytes`、operator `eq`、finite threshold `0`、observed metric value |
+
+evaluation verdict 当且仅当 observed 为零时是 `pass`，否则为 `fail`。它是 Phase 2
+唯一 binary policy evaluation。equal input 的 change 与全部 difference count 为零；
+length 保持实际值。input hash 在 comparison provenance 中按 before/after 排序。
+resource provenance 记录 `max_input_bytes`、实际 `before_bytes`/`after_bytes`、
+`chunk_bytes`、`max_change_items`、`max_change_payload_bytes`、returned change count
+和保留的 canonical payload bytes。
 
 ## CLI 与 Python 兼容性
 
@@ -295,14 +564,15 @@ Phase 2 不得声称 schema v1 不具备的前向兼容性。当前 reader 拒�
 在选定 schema 内，变更必须为加法：现有 required field、enum 含义、outcome 语义、
 problem mapping、exit code 和 Phase 1 golden JSON 保持不变。optional field 必须有
 读取默认值。未知 extension change 继续可保留；未知的非命名空间内置 kind 继续拒绝。
-本 RFC 提议的新 problem code 为：
+`ExecutionRecord.detection` 是唯一新增 optional wire field；producer 对每个显式比较
+省略它，reader 把 absent 解释为没有 detection stage。本 RFC 提议的新 problem code 为：
 
 | Code | Status | Outcome | Stage |
 | --- | ---: | --- | --- |
 | `detection_no_match` | 415 | unavailable | detecting |
 | `detection_ambiguous` | 409 | unavailable | detecting |
 | `source_type_unsupported` | 415 | failed | sourcing |
-| `source_changed` | 409 | failed | sourcing |
+| `source_changed` | 409 | failed | detecting、decoding 或 comparing |
 
 `capability_unavailable` 与 `backend_unavailable` 保持 RFC 0001 mapping。每个新增 code、
 kind、spec 和 public export 都要求 constructor、round-trip、invalid-state、golden JSON
@@ -325,14 +595,14 @@ kind、spec 和 public export 都要求 constructor、round-trip、invalid-state
 
 | 领域 | 进入 `Implemented` 前的必要证据 |
 | --- | --- |
-| Detection | empty、合法 UTF-8、非法 UTF-8、NUL/control-heavy、prefix boundary、tie、低于阈值、显式 override、多次运行确定性 |
+| Detection | 每个评分表行、empty、mixed evidence、不完整 UTF-8 prefix、late-invalid UTF-8、tie、低于阈值、显式 override、多次运行确定性 |
 | Resolution | 注册顺序无关、重复拒绝、每个 reject reason、selected/rejected attempt、backend 缺失、无 capability |
 | Binary correctness | equal、different、empty、长度不同、chunk boundary mismatch、无需重建的 span invariant、hash 记录但不用于独立判等 |
 | Resources | 精确 input boundary、detection prefix boundary、change-item/payload truncation、有界峰值内存、input/work 耗尽不产生 partial |
 | Sources | bytes、text encoding、regular path、missing/denied path、directory、可用平台的 FIFO/device/socket、symlink target、读取中 mutation |
 | Contracts | Phase 1 golden payload、新 round trip、unknown field/kind、stable code、public export、schema 决策和 migration note |
 | CLI | 旧路由不变、binary/auto 路由、全部 exit、stdout/stderr、flag 分离、label/path/control 转义、renderer failure |
-| Provenance | detector/comparator/backend 版本、阈值、排序、attempt、transformation、hash、limits 和实际用量 |
+| Provenance | typed detection wire golden/round trip、detector/comparator/backend 版本、阈值、排序、attempt、transformation、hash、limits 和实际用量；不含 inspected bytes |
 | Packaging | 零新增 runtime dependency、Ruff、strict mypy、完整 pytest、build、wheel/sdist 检查、默认分支 CI 绿色 |
 
 ## 提议的实现 commit 与门禁

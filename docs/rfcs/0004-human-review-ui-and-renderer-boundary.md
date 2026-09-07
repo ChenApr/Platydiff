@@ -49,7 +49,8 @@ schema. At minimum it represents:
 - relation, verdict, and fidelity without reinterpretation;
 - summary counts, metrics, and policy evaluations;
 - `ChangeSet` completeness, returned/omitted counts, selection, and limits;
-- text hunks or explicitly degraded generic extension-change summaries;
+- text hunks, binary spans, or explicitly degraded generic extension-change
+  summaries;
 - diagnostics grouped by stage and severity;
 - execution stages, capability attempts, transformations, comparator and
   algorithm versions, input hashes, and resource limits/usage;
@@ -112,6 +113,21 @@ headings are permitted. Search and filtering may hide rows only when the UI
 states that a presentation filter is active and preserves access to the full
 returned set.
 
+## Binary review experience
+
+Each `BinarySpan` is one navigable change. The UI displays decimal byte offsets
+and lengths for before and after, plus a presentation label of replacement,
+insertion, or deletion derived only from the validated zero/non-zero length
+shape. An optional hexadecimal rendering of the same offsets is formatting,
+not a second location value. Binary navigation preserves source order and makes
+the final trailing insertion/deletion distinguishable.
+
+U1 never displays, guesses, decodes, previews, or embeds the bytes covered by a
+span. It shows no text or hex dump and does not read the original sources.
+Summary, metrics, strict-equality evaluation, hashes, truncation, and resource
+usage come only from the validated outcome. A malformed span or invalid binary
+collection prevents view-model construction rather than producing a partial UI.
+
 ## Delivery sequence
 
 ### UI-U1: terminal refinement and self-contained HTML
@@ -135,9 +151,11 @@ platydiff ... --format html --output report.html
 ```
 
 HTML should require an explicit output path, refuse accidental overwrite unless
-the user explicitly opts in, and write atomically in the destination directory.
-It remains a renderer output, not a `DiffResult.artifacts` item. CI can publish
-the resulting file as a build artifact; Platydiff itself does not upload it.
+the user explicitly opts in, and publish a complete file atomically in the
+destination directory. The no-overwrite and overwrite algorithms are specified
+under local-file security. It remains a renderer output, not a
+`DiffResult.artifacts` item. CI can publish the resulting file as a build
+artifact; Platydiff itself does not upload it.
 
 ### UI-U2: optional TUI after Phase 3 or 4
 
@@ -171,16 +189,20 @@ HTML and future interactive surfaces must provide:
 - no required hover, motion, or pointer-only gesture;
 - reduced-motion support and no automatic animation;
 - responsive reflow without forcing side-by-side diffs on narrow screens;
-- user-selectable light, dark, and system themes using local CSS variables;
+- automatic light/dark styling from `prefers-color-scheme` using local CSS
+  variables; an in-report theme selector is deferred because U1 has no script;
 - copyable logical text distinct from any visible whitespace markers;
 - accessible labels for line numbers, insertions, deletions, diagnostics, and
   collapsed sections.
 
 The initial HTML can use browser-native fragment links and disclosure widgets,
-which work without JavaScript. A future TUI must publish and test a keyboard
-map; proposed defaults are `j/k` or arrows to move, `n/p` for next/previous
-change, `/` for search, `Enter` to expand, and `q` to quit. Shortcuts must have
-discoverable alternatives and must not shadow terminal interrupt behavior.
+which work without JavaScript. U1 provides no custom live search, filtering,
+sorting, persisted preferences, or in-report theme switch; users retain browser
+Find, fragment navigation, disclosure controls, system theme, and print CSS. A
+future TUI must publish and test a keyboard map; proposed defaults are `j/k` or
+arrows to move, `n/p` for next/previous change, `/` for search, `Enter` to
+expand, and `q` to quit. Shortcuts must have discoverable alternatives and must
+not shadow terminal interrupt behavior.
 
 ## Large-result behavior
 
@@ -203,9 +225,10 @@ and media type as untrusted.
 
 - Escape text and attributes with context-appropriate escaping; never concatenate
   untrusted values into HTML, CSS, URLs, or terminal control sequences.
-- U1 contains no script and emits a restrictive policy equivalent to
+- U1 contains no script and includes an early HTML `<meta http-equiv>` CSP with
   `default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none';
-  form-action 'none'; frame-ancestors 'none'`.
+  form-action 'none'`. Meta CSP can enforce these fetch/form/base restrictions,
+  but cannot enforce `frame-ancestors`; that directive is deliberately absent.
 - Do not use `innerHTML`, executable templates, remote assets, inline event
   handlers, forms, iframes, or automatic navigation.
 - Artifact URIs remain inert text in U1. Future links require the RFC 0001 safe
@@ -215,9 +238,32 @@ and media type as untrusted.
   diagnostics, and provenance.
 - Absolute local paths, environment variables, usernames, temporary paths,
   tokens, and stack traces are excluded from reports.
-- Atomic output uses a newly created temporary file in the target directory,
-  restrictive permissions where supported, flush/close, and replace; symlink
-  and overwrite behavior requires dedicated tests.
+- A standalone `file://` report has no trusted HTTP response headers and may be
+  framed by other local content. Users should open it as a standalone file.
+  When a CI or future local HTTP server serves the report, it must add the
+  response header `Content-Security-Policy: frame-ancestors 'none'` (and may add
+  `X-Frame-Options: DENY` for legacy defense). Meta CSP is defense in depth, not
+  a complete sandbox; browser extensions, browser vulnerabilities, screenshots,
+  copied content, and deliberate report publication remain residual risks.
+- Both modes anchor the existing parent directory once and perform temporary
+  creation and publication relative to that same directory handle where the
+  platform supports it. They render into a newly created `0600` temporary file
+  (`0600`-equivalent owner-only access where supported), flush it, `fsync` where
+  supported, and close it before publication. If parent-directory replacement
+  or final-component no-follow behavior cannot be bounded by available platform
+  primitives, rendering fails safely rather than weakening the contract.
+  The default no-overwrite mode atomically links that completed temporary inode
+  to an absent target with exclusive/no-follow semantics, then removes the
+  temporary name. If the filesystem/platform cannot guarantee this no-clobber
+  installation, rendering fails safely and never falls back to check-then-replace.
+  An existing file, directory, or symlink always fails in default mode.
+- Explicit overwrite mode still never opens or follows the target. It rejects a
+  target observed as a symlink, then atomically replaces the directory entry
+  with the completed temporary file. A race that substitutes a symlink is safe
+  because replacement acts on the entry, not its referent. Directory targets
+  and unsupported atomic-replace filesystems fail. Directory `fsync` is used
+  where available; lack of directory `fsync` weakens crash durability, not
+  no-clobber or symlink safety, and is reported as a platform limitation.
 
 ## Themes and visual language
 
@@ -237,13 +283,17 @@ or accessible names and redistribution permission.
 UI-U1 would require:
 
 - one shared view-model test matrix over all outcome, fidelity, completeness,
-  metric-value, problem, diagnostic, attempt, and artifact-reference states;
+  metric-value, problem, diagnostic, attempt, artifact-reference, text-hunk,
+  and binary-span states;
 - terminal and HTML golden tests from the same validated outcomes;
 - adversarial escaping tests for HTML, attributes, controls, bidi text, plugin
   payloads, URIs, labels, and `</script>`-like strings even though U1 has no
   script;
 - newline, BOM, tab, trailing-space, missing-final-newline, long-line, Unicode,
   and narrow-terminal fixtures;
+- binary replacement/insertion/deletion spans, zero/large/chunk-boundary offsets,
+  truncated span lists, absent source files, and proof that no source byte is
+  read or emitted by the renderer;
 - keyboard-only, screen-reader structure, contrast, reflow, print, light/dark,
   and reduced-motion review;
 - complete/truncated/partial and renderer-byte-limit tests;
@@ -268,8 +318,9 @@ accepted, use these commits:
    - Gate: safe control rendering, narrow layouts, state distinctions, and
      existing exit behavior pass.
 3. `feat(html): add a self-contained accessible report`
-   - Gate: JavaScript-free CSP, escaping, atomic output, accessibility structure,
-     deterministic snapshots, and renderer limits pass.
+   - Gate: JavaScript-free meta CSP with documented framing residual risk,
+     escaping, race-safe no-clobber/overwrite output, binary spans,
+     accessibility structure, deterministic snapshots, and renderer limits pass.
 4. `docs: document local and CI review reports`
    - Gate: bilingual examples, disclosure warnings, browser/platform notes, and
      dependency/license impact match verified behavior.
@@ -285,8 +336,8 @@ These decisions require explicit human acceptance:
 | ID | Decision | Recommendation | Blocks |
 | --- | --- | --- | --- |
 | U1 | First polished surface | Improve terminal and add self-contained HTML from one view model | UI-U1 scope |
-| U2 | HTML behavior | JavaScript-free document with native anchors/disclosure and restrictive CSP | Security architecture |
-| U3 | File delivery | Require `--output`; atomic create; refuse overwrite without explicit opt-in | CLI and filesystem behavior |
+| U2 | HTML behavior | JavaScript-free document with native anchors/disclosure, enforceable meta CSP, and documented lack of file framing control | Security architecture |
+| U3 | File delivery | Require `--output`; atomic no-clobber by default; explicit entry-replacement overwrite; safe failure when unsupported | CLI and filesystem behavior |
 | U4 | Dependency budget | Standard library and embedded CSS only for UI-U1 | Packaging/license gate |
 | U5 | Scheduling | Start UI-U1 only after Phase 2 schema decision, but allow its view-model design to review Phase 2 | Implementation ordering |
 | U6 | TUI framework | Defer selection until UI-U2 is accepted after Phase 3 or 4 evidence | Optional dependency |
