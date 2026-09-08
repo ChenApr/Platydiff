@@ -31,12 +31,15 @@ from platydiff.core.serialization import dumps_outcome, loads_outcome
 from platydiff.renderers.terminal import render_terminal
 
 
-def run_module(*arguments: str) -> subprocess.CompletedProcess[str]:
+def run_module(
+    *arguments: str, cwd: Path | None = None
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", "platydiff", *arguments],
         check=False,
         capture_output=True,
         text=True,
+        cwd=cwd,
     )
 
 
@@ -94,7 +97,7 @@ def test_two_routes_use_the_same_result_path(tmp_path: Path) -> None:
     [
         (),
         ("text", "only-one-path"),
-        ("compare", "--type", "binary", "a", "b"),
+        ("compare", "a", "b"),
         ("text", "--context-lines", "-1", "a", "b"),
         ("text", "--unknown", "a", "b"),
     ],
@@ -174,10 +177,138 @@ def test_cli_output_limit_reports_truncation(tmp_path: Path) -> None:
 
 def test_console_script_help_entry_point() -> None:
     result = subprocess.run(
-        ["platydiff", "--help"], check=False, capture_output=True, text=True
+        [str(Path(sys.executable).with_name("platydiff")), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 0
-    assert "{compare,text}" in result.stdout
+    assert "{compare,text,binary}" in result.stdout
+
+
+def test_binary_routes_share_the_same_result(tmp_path: Path) -> None:
+    before, after = write_pair(tmp_path, b"a\x00", b"b\x00")
+    shortcut = run_module("binary", "--format", "json", str(before), str(after))
+    compare_result = run_module(
+        "compare", "--type", "binary", "--format", "json", str(before), str(after)
+    )
+    assert shortcut.returncode == compare_result.returncode == 1
+    assert (
+        parse_object(shortcut.stdout)["result"]
+        == parse_object(compare_result.stdout)["result"]
+    )
+
+
+def test_auto_route_and_detection_unavailable_exit(tmp_path: Path) -> None:
+    text_before, text_after = write_pair(tmp_path, b"same", b"same")
+    selected = run_module(
+        "compare",
+        "--type",
+        "auto",
+        "--format",
+        "json",
+        str(text_before),
+        str(text_after),
+    )
+    assert selected.returncode == 0
+    payload = parse_object(selected.stdout)
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    assert execution["detection"]["selected_modality"] == "text"
+
+    text_before.write_bytes(b"")
+    text_after.write_bytes(b"")
+    unavailable = run_module(
+        "compare",
+        "--type",
+        "auto",
+        "--format",
+        "json",
+        str(text_before),
+        str(text_after),
+    )
+    assert unavailable.returncode == 3
+    assert parse_object(unavailable.stdout)["kind"] == "unavailable"
+
+
+def test_text_only_option_is_rejected_for_binary_and_auto() -> None:
+    for kind in ("binary", "auto"):
+        result = run_module("compare", "--type", kind, "--context-lines", "1", "a", "b")
+        assert result.returncode == 2
+        assert result.stdout == ""
+
+
+@pytest.mark.parametrize(
+    ("kind", "option"),
+    [
+        ("text", "--chunk-bytes=1"),
+        ("binary", "--max-detection-bytes=1"),
+        ("auto", "--chunk-bytes=1"),
+    ],
+)
+def test_compare_rejects_options_from_another_modality(kind: str, option: str) -> None:
+    result = run_module("compare", "--type", kind, option, "a", "b")
+    assert result.returncode == 2
+    assert result.stdout == ""
+
+
+def test_option_terminator_preserves_dash_prefixed_binary_path(tmp_path: Path) -> None:
+    before = tmp_path / "--context-lines=1"
+    after = tmp_path / "other"
+    before.write_bytes(b"same")
+    after.write_bytes(b"same")
+
+    result = run_module("binary", "--", before.name, after.name, cwd=tmp_path)
+
+    assert result.returncode == 0
+    assert "equal: pass" in result.stdout
+    assert result.stderr == ""
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ("binary", "--chunk-bytes", "16777217", "a", "b"),
+        ("compare", "--type", "auto", "--minimum-confidence", "1001", "a", "b"),
+    ],
+)
+def test_phase2_cli_numeric_bounds_are_usage_errors(arguments: tuple[str, ...]) -> None:
+    result = run_module(*arguments)
+    assert result.returncode == 2
+    assert result.stdout == ""
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        (
+            "compare",
+            "--type",
+            "auto",
+            "--max-detection-bytes",
+            str(2**53 + 1),
+            "before",
+            "after",
+        ),
+        (
+            "compare",
+            "--type",
+            "binary",
+            "--max-input-bytes",
+            str(2**53 + 1),
+            "before",
+            "after",
+        ),
+    ],
+)
+def test_phase2_cli_exact_integer_overflow_is_a_clean_usage_error(
+    arguments: tuple[str, ...],
+) -> None:
+    result = run_module(*arguments)
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert "usage:" in result.stderr
+    assert "Traceback" not in result.stderr
 
 
 def test_warn_verdict_maps_to_exit_zero() -> None:

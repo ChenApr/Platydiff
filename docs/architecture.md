@@ -237,12 +237,11 @@ Statistical comparison can include KS tests, Wasserstein distance, chi-squared t
 
 ## 7. Milestones
 
-The staged delivery plan and its implementation gates are defined by [RFC 0002](rfcs/0002-development-phases-and-text-slice.md). The accepted Phase 2 detection, internal resolution, and exact-binary contract is [RFC 0003](rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison.md); it remains planned until implemented and verified. The version groupings below describe product direction; they do not override the RFCs' narrower, explicitly authorized phases or imply that a capability is implemented.
+The staged delivery plan and its implementation gates are defined by [RFC 0002](rfcs/0002-development-phases-and-text-slice.md). Phase 2 bounded detection, internal resolution, and exact binary comparison implement [RFC 0003](rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison.md). The version groupings below describe product direction and do not imply that later capabilities are implemented.
 
-Phase 1 is implemented on the default branch and contains the Python package,
-schema-v1 contracts, explicit text pipeline, linear-space Myers algorithm,
-CLI, and terminal/JSON renderers. It remains unreleased. Every other modality
-and renderer listed below remains planned.
+Phases 1 and 2 contain the Python package, schema-v1 contracts, explicit text,
+bounded text/binary detection, exact binary comparison, CLI, and terminal/JSON
+renderers. They remain unreleased. Every other modality and renderer below is planned.
 
 ### v0.1: Core loop
 

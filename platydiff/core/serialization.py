@@ -10,6 +10,12 @@ from typing import Literal, cast
 from platydiff.core.models import (
     SCHEMA_VERSION,
     ArtifactRef,
+    AutoCompareSpec,
+    AutoResourceLimits,
+    AutoTextOptions,
+    BinaryCompareSpec,
+    BinaryResourceLimits,
+    BinarySpan,
     CapabilityAttempt,
     CapabilityProblem,
     Change,
@@ -17,8 +23,11 @@ from platydiff.core.models import (
     ChangeSelection,
     ChangeSet,
     CompareOutcome,
+    CompareSpec,
     ComparisonProvenance,
     CompletedOutcome,
+    DetectionCandidate,
+    DetectionRecord,
     Diagnostic,
     DiagnosticSeverity,
     DiffResult,
@@ -39,12 +48,14 @@ from platydiff.core.models import (
     NegativeInfinityValue,
     NewlinePolicy,
     NumericValue,
+    PairDetectionCandidate,
     PipelineStage,
     PolicyEvaluation,
     PositiveInfinityValue,
     Relation,
     ResourceLimits,
     ResourceUsage,
+    SourceDetectionRecord,
     SourceKind,
     StageDisposition,
     StageRecord,
@@ -151,8 +162,39 @@ def _enum_value[T](constructor: Callable[[str], T], value: JsonValue, name: str)
         raise SerializationError(f"unknown {name}: {raw}") from error
 
 
-def spec_to_data(spec: TextCompareSpec) -> JsonObject:
-    """Serialize a normalized Phase 1 specification."""
+def spec_to_data(spec: CompareSpec) -> JsonObject:
+    """Serialize a normalized schema-v1 specification."""
+    if isinstance(spec, BinaryCompareSpec):
+        return {
+            "kind": spec.kind,
+            "limits": {
+                "max_input_bytes": spec.limits.max_input_bytes,
+                "chunk_bytes": spec.limits.chunk_bytes,
+                "max_change_items": spec.limits.max_change_items,
+                "max_change_payload_bytes": spec.limits.max_change_payload_bytes,
+            },
+        }
+    if isinstance(spec, AutoCompareSpec):
+        return {
+            "kind": spec.kind,
+            "text": {
+                "encoding": spec.text.encoding.value,
+                "newline": spec.text.newline.value,
+                "context_lines": spec.text.context_lines,
+            },
+            "minimum_confidence": spec.minimum_confidence,
+            "ambiguity_margin": spec.ambiguity_margin,
+            "limits": {
+                "max_input_bytes": spec.limits.max_input_bytes,
+                "max_input_lines": spec.limits.max_input_lines,
+                "max_encoded_line_bytes": spec.limits.max_encoded_line_bytes,
+                "max_myers_work": spec.limits.max_myers_work,
+                "max_detection_bytes": spec.limits.max_detection_bytes,
+                "binary_chunk_bytes": spec.limits.binary_chunk_bytes,
+                "max_change_items": spec.limits.max_change_items,
+                "max_change_payload_bytes": spec.limits.max_change_payload_bytes,
+            },
+        }
     limits = spec.limits
     return {
         "kind": spec.kind,
@@ -170,14 +212,85 @@ def spec_to_data(spec: TextCompareSpec) -> JsonObject:
     }
 
 
-def spec_from_data(value: JsonValue) -> TextCompareSpec:
+def spec_from_data(value: JsonValue) -> CompareSpec:
     """Validate generic JSON data and construct a specification."""
     data = _object(value, "spec")
     kind = _string(_required(data, "kind"), "spec.kind")
-    if kind != "text":
+    if kind not in ("text", "binary", "auto"):
         raise SerializationError(f"unknown spec kind: {kind}")
     limits_data = _object(_required(data, "limits"), "spec.limits")
     try:
+        if kind == "binary":
+            return BinaryCompareSpec(
+                limits=BinaryResourceLimits(
+                    max_input_bytes=_integer(
+                        _required(limits_data, "max_input_bytes"), "max_input_bytes"
+                    ),
+                    chunk_bytes=_integer(
+                        _required(limits_data, "chunk_bytes"), "chunk_bytes"
+                    ),
+                    max_change_items=_integer(
+                        _required(limits_data, "max_change_items"),
+                        "max_change_items",
+                    ),
+                    max_change_payload_bytes=_integer(
+                        _required(limits_data, "max_change_payload_bytes"),
+                        "max_change_payload_bytes",
+                    ),
+                )
+            )
+        if kind == "auto":
+            text_data = _object(_required(data, "text"), "spec.text")
+            return AutoCompareSpec(
+                text=AutoTextOptions(
+                    encoding=_enum_value(
+                        TextEncoding, _required(text_data, "encoding"), "encoding"
+                    ),
+                    newline=_enum_value(
+                        NewlinePolicy, _required(text_data, "newline"), "newline"
+                    ),
+                    context_lines=_integer(
+                        _required(text_data, "context_lines"), "context_lines"
+                    ),
+                ),
+                minimum_confidence=_integer(
+                    _required(data, "minimum_confidence"), "minimum_confidence"
+                ),
+                ambiguity_margin=_integer(
+                    _required(data, "ambiguity_margin"), "ambiguity_margin"
+                ),
+                limits=AutoResourceLimits(
+                    max_input_bytes=_integer(
+                        _required(limits_data, "max_input_bytes"), "max_input_bytes"
+                    ),
+                    max_input_lines=_integer(
+                        _required(limits_data, "max_input_lines"), "max_input_lines"
+                    ),
+                    max_encoded_line_bytes=_integer(
+                        _required(limits_data, "max_encoded_line_bytes"),
+                        "max_encoded_line_bytes",
+                    ),
+                    max_myers_work=_integer(
+                        _required(limits_data, "max_myers_work"), "max_myers_work"
+                    ),
+                    max_detection_bytes=_integer(
+                        _required(limits_data, "max_detection_bytes"),
+                        "max_detection_bytes",
+                    ),
+                    binary_chunk_bytes=_integer(
+                        _required(limits_data, "binary_chunk_bytes"),
+                        "binary_chunk_bytes",
+                    ),
+                    max_change_items=_integer(
+                        _required(limits_data, "max_change_items"),
+                        "max_change_items",
+                    ),
+                    max_change_payload_bytes=_integer(
+                        _required(limits_data, "max_change_payload_bytes"),
+                        "max_change_payload_bytes",
+                    ),
+                ),
+            )
         limits = ResourceLimits(
             max_input_bytes=_integer(
                 _required(limits_data, "max_input_bytes"), "max_input_bytes"
@@ -259,8 +372,184 @@ def _stage_from_data(value: JsonValue) -> StageRecord:
     )
 
 
-def _execution_to_data(record: ExecutionRecord) -> JsonObject:
+def _detection_candidate_to_data(candidate: DetectionCandidate) -> JsonObject:
     return {
+        "modality_id": candidate.modality_id,
+        "confidence": candidate.confidence,
+        "detector_id": candidate.detector_id,
+        "detector_version": candidate.detector_version,
+        "priority": candidate.priority,
+        "evidence_codes": list(candidate.evidence_codes),
+        "evidence_counts": dict(candidate.evidence_counts),
+    }
+
+
+def _detection_candidate_from_data(value: JsonValue) -> DetectionCandidate:
+    data = _object(value, "detection candidate")
+    modality = _string(_required(data, "modality_id"), "modality_id")
+    if modality not in ("text", "binary"):
+        raise SerializationError(f"unknown detection modality: {modality}")
+    evidence_codes = tuple(
+        _string(item, "evidence code")
+        for item in _array(_required(data, "evidence_codes"), "evidence_codes")
+    )
+    if evidence_codes != tuple(sorted(evidence_codes)):
+        raise SerializationError("detection evidence codes must be sorted")
+    try:
+        return DetectionCandidate(
+            modality_id=cast(Literal["text", "binary"], modality),
+            confidence=_integer(_required(data, "confidence"), "confidence"),
+            detector_id=_string(_required(data, "detector_id"), "detector_id"),
+            detector_version=_string(
+                _required(data, "detector_version"), "detector_version"
+            ),
+            priority=_integer(_required(data, "priority"), "priority"),
+            evidence_codes=evidence_codes,
+            evidence_counts=_object(
+                _required(data, "evidence_counts"), "evidence_counts"
+            ),
+        )
+    except ValueError as error:
+        raise SerializationError(str(error)) from error
+
+
+def _pair_candidate_to_data(candidate: PairDetectionCandidate) -> JsonObject:
+    return {
+        "modality_id": candidate.modality_id,
+        "confidence": candidate.confidence,
+        "before_confidence": candidate.before_confidence,
+        "after_confidence": candidate.after_confidence,
+        "detector_priority": candidate.detector_priority,
+        "capability_priority": candidate.capability_priority,
+        "capability_id": candidate.capability_id,
+        "backend_id": candidate.backend_id,
+    }
+
+
+def _pair_candidate_from_data(value: JsonValue) -> PairDetectionCandidate:
+    data = _object(value, "pair detection candidate")
+    modality = _string(_required(data, "modality_id"), "modality_id")
+    if modality not in ("text", "binary"):
+        raise SerializationError(f"unknown detection modality: {modality}")
+    try:
+        return PairDetectionCandidate(
+            modality_id=cast(Literal["text", "binary"], modality),
+            confidence=_integer(_required(data, "confidence"), "confidence"),
+            before_confidence=_integer(
+                _required(data, "before_confidence"), "before_confidence"
+            ),
+            after_confidence=_integer(
+                _required(data, "after_confidence"), "after_confidence"
+            ),
+            detector_priority=_integer(
+                _required(data, "detector_priority"), "detector_priority"
+            ),
+            capability_priority=_integer(
+                _required(data, "capability_priority"), "capability_priority"
+            ),
+            capability_id=_string(_required(data, "capability_id"), "capability_id"),
+            backend_id=_string(_required(data, "backend_id"), "backend_id"),
+        )
+    except ValueError as error:
+        raise SerializationError(str(error)) from error
+
+
+def _detection_to_data(record: DetectionRecord) -> JsonObject:
+    return {
+        "detector_id": record.detector_id,
+        "detector_version": record.detector_version,
+        "maximum_bytes": record.maximum_bytes,
+        "minimum_confidence": record.minimum_confidence,
+        "ambiguity_margin": record.ambiguity_margin,
+        "sources": [
+            {
+                "role": source.role,
+                "candidates": [
+                    _detection_candidate_to_data(candidate)
+                    for candidate in source.candidates
+                ],
+            }
+            for source in record.sources
+        ],
+        "pair_candidates": [
+            _pair_candidate_to_data(candidate) for candidate in record.pair_candidates
+        ],
+        "disposition": record.disposition,
+        "selected_modality": record.selected_modality,
+    }
+
+
+def _detection_from_data(value: JsonValue) -> DetectionRecord:
+    data = _object(value, "detection")
+    sources: list[SourceDetectionRecord] = []
+    for raw in _array(_required(data, "sources"), "detection sources"):
+        item = _object(raw, "source detection")
+        role = _string(_required(item, "role"), "source detection role")
+        if role not in ("before", "after"):
+            raise SerializationError(f"unknown detection source role: {role}")
+        candidates = tuple(
+            _detection_candidate_from_data(candidate)
+            for candidate in _array(
+                _required(item, "candidates"), "source detection candidates"
+            )
+        )
+        expected = tuple(
+            sorted(
+                candidates,
+                key=lambda candidate: (-candidate.confidence, candidate.modality_id),
+            )
+        )
+        if candidates != expected:
+            raise SerializationError("source detection candidates must be sorted")
+        sources.append(
+            SourceDetectionRecord(
+                role=cast(Literal["before", "after"], role),
+                candidates=candidates,
+            )
+        )
+    if len(sources) != 2:
+        raise SerializationError("detection must contain two source records")
+    pair_candidates = tuple(
+        _pair_candidate_from_data(candidate)
+        for candidate in _array(
+            _required(data, "pair_candidates"), "pair detection candidates"
+        )
+    )
+    disposition = _string(_required(data, "disposition"), "detection disposition")
+    if disposition not in ("selected", "no_match", "ambiguous"):
+        raise SerializationError(f"unknown detection disposition: {disposition}")
+    selected = _optional_string(
+        _required(data, "selected_modality"), "selected_modality"
+    )
+    if selected not in (None, "text", "binary"):
+        raise SerializationError(f"unknown selected modality: {selected}")
+    try:
+        record = DetectionRecord(
+            detector_id=_string(_required(data, "detector_id"), "detector_id"),
+            detector_version=_string(
+                _required(data, "detector_version"), "detector_version"
+            ),
+            maximum_bytes=_integer(_required(data, "maximum_bytes"), "maximum_bytes"),
+            minimum_confidence=_integer(
+                _required(data, "minimum_confidence"), "minimum_confidence"
+            ),
+            ambiguity_margin=_integer(
+                _required(data, "ambiguity_margin"), "ambiguity_margin"
+            ),
+            sources=(sources[0], sources[1]),
+            pair_candidates=pair_candidates,
+            disposition=cast(Literal["selected", "no_match", "ambiguous"], disposition),
+            selected_modality=cast(Literal["text", "binary"] | None, selected),
+        )
+    except ValueError as error:
+        raise SerializationError(str(error)) from error
+    if record.pair_candidates != pair_candidates:
+        raise SerializationError("pair detection candidates must be sorted")
+    return record
+
+
+def _execution_to_data(record: ExecutionRecord) -> JsonObject:
+    data: JsonObject = {
         "started_at": record.started_at,
         "finished_at": record.finished_at,
         "duration_ns": record.duration_ns,
@@ -290,6 +579,9 @@ def _execution_to_data(record: ExecutionRecord) -> JsonObject:
             else record.last_completed_stage.value
         ),
     }
+    if record.detection is not None:
+        data["detection"] = _detection_to_data(record.detection)
+    return data
 
 
 def _execution_from_data(value: JsonValue) -> ExecutionRecord:
@@ -344,6 +636,7 @@ def _execution_from_data(value: JsonValue) -> ExecutionRecord:
         if raw_last is None
         else _enum_value(PipelineStage, raw_last, "last completed stage")
     )
+    detection = _detection_from_data(data["detection"]) if "detection" in data else None
     try:
         return ExecutionRecord(
             started_at=_string(_required(data, "started_at"), "started_at"),
@@ -356,6 +649,7 @@ def _execution_from_data(value: JsonValue) -> ExecutionRecord:
             attempts=tuple(attempts),
             diagnostics=tuple(diagnostics),
             last_completed_stage=last,
+            detection=detection,
         )
     except ValueError as error:
         raise SerializationError(str(error)) from error
@@ -529,6 +823,14 @@ def _hunk_to_data(hunk: TextHunk) -> JsonObject:
 def _change_to_data(change: Change) -> JsonObject:
     if isinstance(change, TextHunk):
         return _hunk_to_data(change)
+    if isinstance(change, BinarySpan):
+        return {
+            "kind": change.kind,
+            "before_offset": change.before_offset,
+            "before_length": change.before_length,
+            "after_offset": change.after_offset,
+            "after_length": change.after_length,
+        }
     return {
         "kind": change.kind,
         "plugin_id": change.plugin_id,
@@ -551,7 +853,7 @@ def serialized_change_size(change: Change) -> int:
     )
 
 
-def _change_from_data(value: JsonValue) -> TextHunk | ExtensionChange:
+def _change_from_data(value: JsonValue) -> TextHunk | BinarySpan | ExtensionChange:
     data = _object(value, "change")
     kind = _string(_required(data, "kind"), "change kind")
     if kind == "text_hunk":
@@ -592,6 +894,20 @@ def _change_from_data(value: JsonValue) -> TextHunk | ExtensionChange:
             ),
             lines=tuple(lines),
         )
+    if kind == "binary_span":
+        try:
+            return BinarySpan(
+                before_offset=_integer(
+                    _required(data, "before_offset"), "before_offset"
+                ),
+                before_length=_integer(
+                    _required(data, "before_length"), "before_length"
+                ),
+                after_offset=_integer(_required(data, "after_offset"), "after_offset"),
+                after_length=_integer(_required(data, "after_length"), "after_length"),
+            )
+        except ValueError as error:
+            raise SerializationError(str(error)) from error
     if "." in kind:
         return ExtensionChange(
             kind=kind,

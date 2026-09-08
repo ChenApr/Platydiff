@@ -236,11 +236,11 @@ PDF 同时包含文本、绘制指令、字体、图片和页面布局。应提�
 
 ## 7. 里程碑
 
-分阶段交付计划及实现门禁由 [RFC 0002](rfcs/0002-development-phases-and-text-slice_zh.md) 定义。已接受的 Phase 2 探测、内部能力解析和精确二进制契约见 [RFC 0003](rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison_zh.md)；在完成实施与验证前，它仍是计划能力。下方版本分组描述产品方向；它们不覆盖 RFC 中更狭窄且需要显式授权的阶段，也不表示相关能力已经实现。
+分阶段交付计划及实现门禁由 [RFC 0002](rfcs/0002-development-phases-and-text-slice_zh.md) 定义。Phase 2 的有界探测、内部能力解析和精确二进制比较已实现 [RFC 0003](rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison_zh.md)。下方版本分组只描述产品方向，不表示后续能力已经实现。
 
-Phase 1 已在默认分支实现，包含 Python 包、schema-v1 契约、显式文本流水线、
-线性空间 Myers 算法、CLI 以及 terminal/JSON renderer。它尚未发布。下列其他
-模态与 renderer 仍为计划能力。
+Phase 1 与 Phase 2 包含 Python 包、schema-v1 契约、显式文本、有界文本/二进制
+探测、精确二进制比较、CLI 及 terminal/JSON renderer，且仍未发布。下列其他
+模态与 renderer 仍是计划能力。
 
 ### v0.1：核心闭环
 

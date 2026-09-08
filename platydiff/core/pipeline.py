@@ -6,15 +6,28 @@ import os
 import stat
 import time
 from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from platydiff.core._capabilities import (
+    CapabilityCatalog,
+    CapabilityRequest,
+    Resolution,
+    request_from_spec,
+)
+from platydiff.core._detection import detect_pair
+from platydiff.core._sources import SourceSnapshot, open_source_snapshot
 from platydiff.core.models import (
+    AutoCompareSpec,
+    BinaryCompareSpec,
     BytesSource,
     CapabilityAttempt,
+    CapabilityProblem,
     CompareOutcome,
     CompareSpec,
     CompletedOutcome,
+    DetectionRecord,
     Diagnostic,
     DiffResult,
     ExecutionProblem,
@@ -28,14 +41,19 @@ from platydiff.core.models import (
     StageRecord,
     TextCompareSpec,
     TextSource,
+    UnavailableOutcome,
 )
 from platydiff.core.problems import (
+    CapabilityUnavailableError,
+    DetectionUnavailableError,
     DomainError,
     InputOutputError,
     InvalidSpecError,
     ResourceLimitError,
     SourceNotFoundError,
     SourcePermissionError,
+    SourceTypeUnsupportedError,
+    UnavailableError,
 )
 
 type Clock = Callable[[], tuple[str, int]]
@@ -73,13 +91,15 @@ def _system_clock() -> tuple[str, int]:
 class StageRunner:
     """Record actual stage calls, durations, and terminal disposition."""
 
-    def __init__(self, clock: Clock) -> None:
+    def __init__(self, clock: Clock, *, detection_enabled: bool = False) -> None:
         self._clock = clock
         self._started_at, self._started_ns = clock()
         self._finished_at = self._started_at
         self._finished_ns = self._started_ns
         self._records: list[StageRecord] = []
         self._attempts: list[CapabilityAttempt] = []
+        self._detection_enabled = detection_enabled
+        self._detection: DetectionRecord | None = None
 
     def run[T](self, stage: PipelineStage, operation: Callable[[], T]) -> T:
         self._validate_next_stage(stage)
@@ -98,7 +118,9 @@ class StageRunner:
                 started_ns,
                 finished_at,
                 finished_ns,
-                StageDisposition.FAILED,
+                StageDisposition.UNAVAILABLE
+                if isinstance(error, UnavailableError)
+                else StageDisposition.FAILED,
             )
             raise
         finished_at, finished_ns = self._clock()
@@ -121,6 +143,12 @@ class StageRunner:
             raise RuntimeError("capability selection must follow resolution")
         self._attempts.append(CapabilityAttempt("text", "stdlib", "selected"))
 
+    def record_attempts(self, attempts: tuple[CapabilityAttempt, ...]) -> None:
+        self._attempts.extend(attempts)
+
+    def record_detection(self, detection: DetectionRecord) -> None:
+        self._detection = detection
+
     def execution(self, diagnostics: tuple[Diagnostic, ...]) -> ExecutionRecord:
         completed = [
             record.stage
@@ -135,21 +163,20 @@ class StageRunner:
             attempts=tuple(self._attempts),
             diagnostics=diagnostics,
             last_completed_stage=completed[-1] if completed else None,
+            detection=self._detection,
         )
 
     def _validate_next_stage(self, stage: PipelineStage) -> None:
-        if stage is PipelineStage.DETECTING:
+        if stage is PipelineStage.DETECTING and not self._detection_enabled:
             raise RuntimeError("explicit text comparison must skip detection")
         if (
             self._records
             and self._records[-1].disposition is not StageDisposition.COMPLETED
         ):
             raise RuntimeError("no stage may run after a terminal disposition")
+        lifecycle = tuple(PipelineStage) if self._detection_enabled else _PHASE1_STAGES
         expected_index = len(self._records)
-        if (
-            expected_index >= len(_PHASE1_STAGES)
-            or _PHASE1_STAGES[expected_index] is not stage
-        ):
+        if expected_index >= len(lifecycle) or lifecycle[expected_index] is not stage:
             raise RuntimeError("comparison stages must run in enabled lifecycle order")
 
     def _append_record(
@@ -174,12 +201,15 @@ class StageRunner:
         )
 
 
-def _validate_request(before: Source, after: Source, spec: CompareSpec) -> None:
+def _validate_request(
+    before: Source, after: Source, spec: CompareSpec
+) -> TextCompareSpec:
     if not isinstance(spec, TextCompareSpec):
         raise InvalidSpecError("The comparison specification is not supported.")
     source_types = (PathSource, BytesSource, TextSource)
     if not isinstance(before, source_types) or not isinstance(after, source_types):
         raise InvalidSpecError("The source type is not supported.")
+    return spec
 
 
 def _read_regular_path(path: PathSource, max_bytes: int) -> bytes:
@@ -272,15 +302,16 @@ def run_comparison(
     """Run one explicit comparison and convert only expected domain failures."""
     stages = StageRunner(clock)
     try:
-        stages.run(
+        validated_spec = stages.run(
             PipelineStage.VALIDATING, lambda: _validate_request(before, after, spec)
         )
         sourced_before, sourced_after = stages.run(
-            PipelineStage.SOURCING, lambda: _source_pair(before, after, spec)
+            PipelineStage.SOURCING,
+            lambda: _source_pair(before, after, validated_spec),
         )
-        executor = stages.run(PipelineStage.RESOLVING, lambda: resolver(spec))
+        executor = stages.run(PipelineStage.RESOLVING, lambda: resolver(validated_spec))
         stages.record_selected_capability()
-        completion = executor(sourced_before, sourced_after, spec, stages)
+        completion = executor(sourced_before, sourced_after, validated_spec, stages)
     except DomainError as error:
         return FailedOutcome(
             execution=stages.execution(()),
@@ -296,3 +327,153 @@ def run_comparison(
     return CompletedOutcome(
         execution=stages.execution(completion.diagnostics), result=completion.result
     )
+
+
+def run_snapshot_comparison(
+    before: Source,
+    after: Source,
+    spec: AutoCompareSpec | BinaryCompareSpec,
+    catalog: CapabilityCatalog,
+    *,
+    clock: Clock = _system_clock,
+) -> CompareOutcome:
+    """Run an automatic or explicit binary comparison over replayable snapshots."""
+    stages = StageRunner(clock, detection_enabled=isinstance(spec, AutoCompareSpec))
+    with ExitStack() as stack:
+        try:
+            stages.run(PipelineStage.VALIDATING, lambda: None)
+            snapshots = stages.run(
+                PipelineStage.SOURCING,
+                lambda: _snapshot_pair(
+                    stack, before, after, spec.limits.max_input_bytes
+                ),
+            )
+            request = request_from_spec(
+                spec, (snapshots[0].source_kind, snapshots[1].source_kind)
+            )
+            if isinstance(spec, AutoCompareSpec):
+                detection = stages.run(
+                    PipelineStage.DETECTING,
+                    lambda: _detect_or_raise(stages, snapshots, spec, catalog, request),
+                )
+                if detection.selected_modality is None:
+                    raise RuntimeError("selected detection lacks a modality")
+                request = request.with_resolved_modality(detection.selected_modality)
+            else:
+                request = request.with_resolved_modality("binary")
+            resolution = stages.run(
+                PipelineStage.RESOLVING,
+                lambda: _resolve_or_raise(stages, catalog, request),
+            )
+            if resolution.selected is None:
+                raise RuntimeError("resolution completed without a capability")
+            if resolution.selected.modality == "binary":
+                completion = _run_binary_snapshot(snapshots, spec, stages)
+            else:
+                completion = _run_text_snapshot(snapshots, spec, stages)
+        except UnavailableError as error:
+            return UnavailableOutcome(
+                execution=stages.execution(()),
+                problem=CapabilityProblem(
+                    error.code,
+                    error.status_code,
+                    error.stage,
+                    str(error),
+                    error.details,
+                    error.retryable,
+                ),
+            )
+        except DomainError as error:
+            return FailedOutcome(
+                execution=stages.execution(()),
+                problem=ExecutionProblem(
+                    error.code,
+                    error.status_code,
+                    error.stage,
+                    str(error),
+                    error.details,
+                    error.retryable,
+                ),
+            )
+    return CompletedOutcome(
+        execution=stages.execution(completion.diagnostics), result=completion.result
+    )
+
+
+def _snapshot_pair(
+    stack: ExitStack, before: Source, after: Source, max_input_bytes: int
+) -> tuple[SourceSnapshot, SourceSnapshot]:
+    source_types = (PathSource, BytesSource, TextSource)
+    if not isinstance(before, source_types) or not isinstance(after, source_types):
+        raise SourceTypeUnsupportedError()
+    return (
+        stack.enter_context(
+            open_source_snapshot(before, max_input_bytes=max_input_bytes)
+        ),
+        stack.enter_context(
+            open_source_snapshot(after, max_input_bytes=max_input_bytes)
+        ),
+    )
+
+
+def _detect_or_raise(
+    stages: StageRunner,
+    snapshots: tuple[SourceSnapshot, SourceSnapshot],
+    spec: AutoCompareSpec,
+    catalog: CapabilityCatalog,
+    request: CapabilityRequest,
+) -> DetectionRecord:
+    detection = detect_pair(
+        snapshots[0], snapshots[1], spec, catalog.records_for_detection(request)
+    )
+    stages.record_detection(detection)
+    if detection.disposition != "selected":
+        raise DetectionUnavailableError(ambiguous=detection.disposition == "ambiguous")
+    return detection
+
+
+def _raise_capability_unavailable(attempts: tuple[CapabilityAttempt, ...]) -> None:
+    raise CapabilityUnavailableError(
+        backend_missing=any(item.reason_code == "backend_missing" for item in attempts)
+    )
+
+
+def _resolve_or_raise(
+    stages: StageRunner,
+    catalog: CapabilityCatalog,
+    request: CapabilityRequest,
+) -> Resolution:
+    resolution = catalog.resolve(request)
+    stages.record_attempts(resolution.attempts)
+    if resolution.selected is None:
+        _raise_capability_unavailable(resolution.attempts)
+    return resolution
+
+
+def _run_binary_snapshot(
+    snapshots: tuple[SourceSnapshot, SourceSnapshot],
+    spec: AutoCompareSpec | BinaryCompareSpec,
+    stages: StageRunner,
+) -> ComparisonCompletion:
+    from platydiff.comparators.binary.comparator import compare_binary_snapshots
+
+    stages.run(PipelineStage.DECODING, lambda: None)
+    stages.run(PipelineStage.NORMALIZING, lambda: None)
+    stages.run(PipelineStage.ALIGNING, lambda: None)
+    completion = stages.run(
+        PipelineStage.COMPARING,
+        lambda: compare_binary_snapshots(snapshots[0], snapshots[1], spec),
+    )
+    return stages.run(PipelineStage.AGGREGATING, lambda: completion)
+
+
+def _run_text_snapshot(
+    snapshots: tuple[SourceSnapshot, SourceSnapshot],
+    spec: AutoCompareSpec | BinaryCompareSpec,
+    stages: StageRunner,
+) -> ComparisonCompletion:
+    if not isinstance(spec, AutoCompareSpec):
+        raise RuntimeError("binary intent cannot resolve to text")
+    from platydiff.comparators.text.comparator import compare_text_snapshots
+
+    return compare_text_snapshots(snapshots[0], snapshots[1], spec, stages)

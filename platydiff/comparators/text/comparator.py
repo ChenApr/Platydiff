@@ -8,7 +8,9 @@ from typing import Literal, cast
 from platydiff._version import __version__
 from platydiff.comparators.text.models import EditOperation, MyersResult, TextLine
 from platydiff.comparators.text.myers import ALGORITHM_ID, shortest_edit_script
+from platydiff.core._sources import SourceSnapshot
 from platydiff.core.models import (
+    AutoCompareSpec,
     ChangeCompleteness,
     ChangeSelection,
     ChangeSet,
@@ -28,6 +30,7 @@ from platydiff.core.models import (
     PipelineStage,
     PolicyEvaluation,
     Relation,
+    ResourceLimits,
     ResourceUsage,
     SummaryCount,
     TextCompareSpec,
@@ -348,6 +351,7 @@ def _aggregate(
     maximum_after_line_bytes: int,
     myers: MyersResult,
     spec: TextCompareSpec,
+    provenance_spec: CompareSpec | None = None,
 ) -> ComparisonCompletion:
     operations = _canonical_operations(myers.operations)
     change_set, payload_bytes, diagnostics, total_hunks = _select_hunks(
@@ -395,7 +399,7 @@ def _aggregate(
                 _input_provenance(sourced_before, "before"),
                 _input_provenance(sourced_after, "after"),
             ),
-            spec=spec_to_data(spec),
+            spec=spec_to_data(provenance_spec or spec),
             transformations=_transformations(sourced_before, sourced_after, spec),
             comparator_id="text",
             comparator_version=__version__,
@@ -458,6 +462,8 @@ def compare_text(
     stages: StageRunner,
 ) -> ComparisonCompletion:
     """Execute the staged strict Phase 1 text comparison."""
+    if not isinstance(generic_spec, TextCompareSpec):
+        raise RuntimeError("text comparator received a non-text specification")
     spec = generic_spec
     lines_before, lines_after = stages.run(
         PipelineStage.DECODING,
@@ -499,3 +505,73 @@ def compare_text(
             spec,
         ),
     )
+
+
+def compare_text_snapshots(
+    before: SourceSnapshot,
+    after: SourceSnapshot,
+    auto_spec: AutoCompareSpec,
+    stages: StageRunner,
+) -> ComparisonCompletion:
+    """Execute auto-selected text while preserving the snapshot stage ownership."""
+    spec = TextCompareSpec(
+        encoding=auto_spec.text.encoding,
+        newline=auto_spec.text.newline,
+        context_lines=auto_spec.text.context_lines,
+        limits=ResourceLimits(
+            max_input_bytes=auto_spec.limits.max_input_bytes,
+            max_input_lines=auto_spec.limits.max_input_lines,
+            max_encoded_line_bytes=auto_spec.limits.max_encoded_line_bytes,
+            max_myers_work=auto_spec.limits.max_myers_work,
+            max_change_items=auto_spec.limits.max_change_items,
+            max_change_payload_bytes=auto_spec.limits.max_change_payload_bytes,
+        ),
+    )
+    sourced_before, sourced_after, lines_before, lines_after = stages.run(
+        PipelineStage.DECODING,
+        lambda: _decode_snapshots(before, after, spec),
+    )
+    before_normalization, after_normalization = stages.run(
+        PipelineStage.NORMALIZING,
+        lambda: (_normalize(lines_before, spec), _normalize(lines_after, spec)),
+    )
+    normalized_before, maximum_before_line_bytes = before_normalization
+    normalized_after, maximum_after_line_bytes = after_normalization
+    aligned_before, aligned_after = stages.run(
+        PipelineStage.ALIGNING, lambda: (normalized_before, normalized_after)
+    )
+    myers = stages.run(
+        PipelineStage.COMPARING,
+        lambda: shortest_edit_script(
+            aligned_before, aligned_after, max_work=spec.limits.max_myers_work
+        ),
+    )
+    return stages.run(
+        PipelineStage.AGGREGATING,
+        lambda: _aggregate(
+            sourced_before,
+            sourced_after,
+            aligned_before,
+            aligned_after,
+            maximum_before_line_bytes,
+            maximum_after_line_bytes,
+            myers,
+            spec,
+            auto_spec,
+        ),
+    )
+
+
+def _decode_snapshots(
+    before: SourceSnapshot, after: SourceSnapshot, spec: TextCompareSpec
+) -> tuple[SourcedInput, SourcedInput, tuple[TextLine, ...], tuple[TextLine, ...]]:
+    def one(snapshot: SourceSnapshot) -> tuple[SourcedInput, tuple[TextLine, ...]]:
+        data = b"".join(snapshot.iter_chunks(64 * 1024, stage=PipelineStage.DECODING))
+        sourced = SourcedInput(data, snapshot.source_kind, snapshot.label, None)
+        return sourced, _split_lines(
+            _decode(sourced, spec), spec.limits.max_input_lines
+        )
+
+    sourced_before, lines_before = one(before)
+    sourced_after, lines_after = one(after)
+    return sourced_before, sourced_after, lines_before, lines_after

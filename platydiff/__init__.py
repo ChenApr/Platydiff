@@ -3,6 +3,12 @@
 from platydiff._version import __version__
 from platydiff.api import compare
 from platydiff.core.models import (
+    AutoCompareSpec,
+    AutoResourceLimits,
+    AutoTextOptions,
+    BinaryCompareSpec,
+    BinaryResourceLimits,
+    BinarySpan,
     BytesSource,
     ChangeCompleteness,
     ChangeSelection,
@@ -28,6 +34,12 @@ from platydiff.core.models import (
 )
 
 __all__ = [
+    "AutoCompareSpec",
+    "AutoResourceLimits",
+    "AutoTextOptions",
+    "BinaryCompareSpec",
+    "BinaryResourceLimits",
+    "BinarySpan",
     "BytesSource",
     "ChangeCompleteness",
     "ChangeSelection",

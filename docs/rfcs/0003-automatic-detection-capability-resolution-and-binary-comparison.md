@@ -2,11 +2,11 @@
 
 [Chinese documentation](0003-automatic-detection-capability-resolution-and-binary-comparison_zh.md)
 
-- Status: Accepted
+- Status: Implemented
 - Date: 2026-09-07
 - Accepted: 2026-09-09
 - Owners: Platydiff maintainers
-- Implementation owner: unassigned pending explicit implementation dispatch
+- Implementation owner: Platydiff maintainers
 
 ## Summary
 

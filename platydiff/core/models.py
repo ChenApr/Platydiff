@@ -20,6 +20,14 @@ _IDENTIFIER = re.compile(r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _PERCENT_ESCAPE = re.compile(r"%[0-9a-fA-F]{2}")
 _INVALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9a-fA-F]{2})")
+_MAX_EXACT_INTEGER = 2**53
+_DETECTION_COUNT_KEYS = (
+    "inspected_bytes",
+    "nul_count",
+    "non_ascii_byte_count",
+    "pending_utf8_bytes",
+    "disallowed_control_count",
+)
 
 
 def _unicode_scalar(value: str, field_name: str) -> None:
@@ -39,6 +47,14 @@ def _identifier(value: str, *, namespaced: bool | None = None) -> None:
         raise ValueError("extension identifiers must use a reverse-domain name")
     if namespaced is False and has_namespace:
         raise ValueError("built-in identifiers must not use a domain prefix")
+
+
+def _bounded_integer(value: object, field_name: str, lower: int, upper: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{field_name} must be an integer")
+    if not lower <= value <= upper:
+        raise ValueError(f"{field_name} must be in {lower}..{upper}")
+    return value
 
 
 def _json_safe(value: JsonValue) -> None:
@@ -261,7 +277,276 @@ class TextCompareSpec:
             raise ValueError("context_lines must be non-negative")
 
 
-type CompareSpec = TextCompareSpec
+@dataclass(frozen=True, slots=True)
+class BinaryResourceLimits:
+    """Deterministic resource limits for exact binary comparison."""
+
+    max_input_bytes: int = 16 * 1024 * 1024
+    chunk_bytes: int = 64 * 1024
+    max_change_items: int = 10_000
+    max_change_payload_bytes: int = 4 * 1024 * 1024
+
+    def __post_init__(self) -> None:
+        _bounded_integer(self.max_input_bytes, "max_input_bytes", 0, _MAX_EXACT_INTEGER)
+        _bounded_integer(self.chunk_bytes, "chunk_bytes", 1, 16 * 1024 * 1024)
+        _bounded_integer(
+            self.max_change_items, "max_change_items", 0, _MAX_EXACT_INTEGER
+        )
+        _bounded_integer(
+            self.max_change_payload_bytes,
+            "max_change_payload_bytes",
+            0,
+            _MAX_EXACT_INTEGER,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class BinaryCompareSpec:
+    """Explicit user intent for an exact byte comparison."""
+
+    kind: Literal["binary"] = field(default="binary", init=False)
+    limits: BinaryResourceLimits = field(default_factory=BinaryResourceLimits)
+
+
+@dataclass(frozen=True, slots=True)
+class AutoTextOptions:
+    """Text intent to use only when automatic detection selects text."""
+
+    encoding: TextEncoding = TextEncoding.UTF8
+    newline: NewlinePolicy = NewlinePolicy.PRESERVE
+    context_lines: int = 3
+
+    def __post_init__(self) -> None:
+        _bounded_integer(self.context_lines, "context_lines", 0, _MAX_EXACT_INTEGER)
+
+
+@dataclass(frozen=True, slots=True)
+class AutoResourceLimits:
+    """Single normalized resource-limit source for automatic comparison."""
+
+    max_input_bytes: int = 16 * 1024 * 1024
+    max_input_lines: int = 200_000
+    max_encoded_line_bytes: int = 1024 * 1024
+    max_myers_work: int = 5_000_000
+    max_detection_bytes: int = 64 * 1024
+    binary_chunk_bytes: int = 64 * 1024
+    max_change_items: int = 10_000
+    max_change_payload_bytes: int = 4 * 1024 * 1024
+
+    def __post_init__(self) -> None:
+        for name in (
+            "max_input_bytes",
+            "max_input_lines",
+            "max_encoded_line_bytes",
+            "max_myers_work",
+            "max_detection_bytes",
+            "max_change_items",
+            "max_change_payload_bytes",
+        ):
+            _bounded_integer(getattr(self, name), name, 0, _MAX_EXACT_INTEGER)
+        _bounded_integer(
+            self.binary_chunk_bytes,
+            "binary_chunk_bytes",
+            1,
+            16 * 1024 * 1024,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class AutoCompareSpec:
+    """Intent for deterministic text-or-binary automatic comparison."""
+
+    kind: Literal["auto"] = field(default="auto", init=False)
+    text: AutoTextOptions = field(default_factory=AutoTextOptions)
+    minimum_confidence: int = 800
+    ambiguity_margin: int = 100
+    limits: AutoResourceLimits = field(default_factory=AutoResourceLimits)
+
+    def __post_init__(self) -> None:
+        _bounded_integer(self.minimum_confidence, "minimum_confidence", 0, 1000)
+        _bounded_integer(self.ambiguity_margin, "ambiguity_margin", 0, 1000)
+
+
+type CompareSpec = AutoCompareSpec | TextCompareSpec | BinaryCompareSpec
+
+
+@dataclass(frozen=True, slots=True)
+class DetectionCandidate:
+    modality_id: Literal["text", "binary"]
+    confidence: int
+    detector_id: str
+    detector_version: str
+    priority: int
+    evidence_codes: tuple[str, ...]
+    evidence_counts: JsonObject
+
+    def __post_init__(self) -> None:
+        if self.modality_id not in ("text", "binary"):
+            raise ValueError("unknown detection modality")
+        _bounded_integer(self.confidence, "confidence", 0, 1000)
+        _identifier(self.detector_id)
+        _unicode_scalar(self.detector_version, "detector version")
+        _bounded_integer(self.priority, "priority", 0, _MAX_EXACT_INTEGER)
+        for code in self.evidence_codes:
+            _identifier(code)
+        if len(self.evidence_codes) != len(set(self.evidence_codes)):
+            raise ValueError("detection evidence codes must be unique")
+        object.__setattr__(self, "evidence_codes", tuple(sorted(self.evidence_codes)))
+        normalized: JsonObject = {}
+        for key in _DETECTION_COUNT_KEYS:
+            if key not in self.evidence_counts:
+                raise ValueError(f"missing detection evidence count: {key}")
+            normalized[key] = _bounded_integer(
+                self.evidence_counts[key], key, 0, _MAX_EXACT_INTEGER
+            )
+        pending_utf8_bytes = normalized["pending_utf8_bytes"]
+        if not isinstance(pending_utf8_bytes, int) or isinstance(
+            pending_utf8_bytes, bool
+        ):
+            raise RuntimeError("normalized detection count must be an integer")
+        if pending_utf8_bytes > 3:
+            raise ValueError("pending_utf8_bytes must be in 0..3")
+        object.__setattr__(self, "evidence_counts", normalized)
+
+
+@dataclass(frozen=True, slots=True)
+class SourceDetectionRecord:
+    role: Literal["before", "after"]
+    candidates: tuple[DetectionCandidate, ...]
+
+    def __post_init__(self) -> None:
+        if self.role not in ("before", "after"):
+            raise ValueError("unknown detection source role")
+        modalities = [item.modality_id for item in self.candidates]
+        if len(modalities) != len(set(modalities)):
+            raise ValueError("source detection modalities must be unique")
+        object.__setattr__(
+            self,
+            "candidates",
+            tuple(
+                sorted(
+                    self.candidates,
+                    key=lambda item: (-item.confidence, item.modality_id),
+                )
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class PairDetectionCandidate:
+    modality_id: Literal["text", "binary"]
+    confidence: int
+    before_confidence: int
+    after_confidence: int
+    detector_priority: int
+    capability_priority: int
+    capability_id: str
+    backend_id: str
+
+    def __post_init__(self) -> None:
+        if self.modality_id not in ("text", "binary"):
+            raise ValueError("unknown detection modality")
+        for name in ("confidence", "before_confidence", "after_confidence"):
+            _bounded_integer(getattr(self, name), name, 0, 1000)
+        if self.confidence != min(self.before_confidence, self.after_confidence):
+            raise ValueError("pair confidence must be the minimum source confidence")
+        _bounded_integer(
+            self.detector_priority, "detector_priority", 0, _MAX_EXACT_INTEGER
+        )
+        _bounded_integer(
+            self.capability_priority, "capability_priority", 0, _MAX_EXACT_INTEGER
+        )
+        _identifier(self.capability_id)
+        _identifier(self.backend_id)
+
+
+def _pair_detection_sort_key(
+    item: PairDetectionCandidate,
+) -> tuple[int, int, int, str, str, str]:
+    return (
+        -item.confidence,
+        item.detector_priority,
+        item.capability_priority,
+        item.modality_id,
+        item.capability_id,
+        item.backend_id,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class DetectionRecord:
+    detector_id: str
+    detector_version: str
+    maximum_bytes: int
+    minimum_confidence: int
+    ambiguity_margin: int
+    sources: tuple[SourceDetectionRecord, SourceDetectionRecord]
+    pair_candidates: tuple[PairDetectionCandidate, ...]
+    disposition: Literal["selected", "no_match", "ambiguous"]
+    selected_modality: Literal["text", "binary"] | None
+
+    def __post_init__(self) -> None:
+        _identifier(self.detector_id)
+        _unicode_scalar(self.detector_version, "detector version")
+        _bounded_integer(self.maximum_bytes, "maximum_bytes", 0, _MAX_EXACT_INTEGER)
+        _bounded_integer(self.minimum_confidence, "minimum_confidence", 0, 1000)
+        _bounded_integer(self.ambiguity_margin, "ambiguity_margin", 0, 1000)
+        if tuple(item.role for item in self.sources) != ("before", "after"):
+            raise ValueError("detection sources must be ordered before, after")
+        for source in self.sources:
+            for candidate in source.candidates:
+                if (
+                    candidate.detector_id != self.detector_id
+                    or candidate.detector_version != self.detector_version
+                ):
+                    raise ValueError("source candidate detector must match its record")
+        identities = [
+            (item.modality_id, item.capability_id, item.backend_id)
+            for item in self.pair_candidates
+        ]
+        if len(identities) != len(set(identities)):
+            raise ValueError("pair detection candidates must be unique")
+        object.__setattr__(
+            self,
+            "pair_candidates",
+            tuple(sorted(self.pair_candidates, key=_pair_detection_sort_key)),
+        )
+        if self.disposition == "selected":
+            if self.selected_modality is None:
+                raise ValueError("selected detection requires a modality")
+            if (
+                not self.pair_candidates
+                or self.pair_candidates[0].modality_id != self.selected_modality
+            ):
+                raise ValueError("selected modality must match the top pair candidate")
+            if self.pair_candidates[0].confidence < self.minimum_confidence:
+                raise ValueError("selected detection must reach minimum confidence")
+            if (
+                len(self.pair_candidates) > 1
+                and self.pair_candidates[0].confidence
+                - self.pair_candidates[1].confidence
+                < self.ambiguity_margin
+            ):
+                raise ValueError("selected detection must satisfy ambiguity margin")
+        elif self.disposition in ("no_match", "ambiguous"):
+            if self.selected_modality is not None:
+                raise ValueError("unselected detection must not contain a modality")
+            if (
+                self.disposition == "no_match"
+                and self.pair_candidates
+                and self.pair_candidates[0].confidence >= self.minimum_confidence
+            ):
+                raise ValueError("no-match detection must be below its minimum")
+            if self.disposition == "ambiguous" and (
+                len(self.pair_candidates) < 2
+                or self.pair_candidates[0].confidence < self.minimum_confidence
+                or self.pair_candidates[0].confidence
+                - self.pair_candidates[1].confidence
+                >= self.ambiguity_margin
+            ):
+                raise ValueError("ambiguous detection must contain close candidates")
+        else:
+            raise ValueError("unknown detection disposition")
 
 
 @dataclass(frozen=True, slots=True)
@@ -319,6 +604,7 @@ class ExecutionRecord:
     attempts: tuple[CapabilityAttempt, ...] = ()
     diagnostics: tuple[Diagnostic, ...] = ()
     last_completed_stage: PipelineStage | None = None
+    detection: DetectionRecord | None = None
 
     def __post_init__(self) -> None:
         started = _utc_timestamp(self.started_at)
@@ -337,6 +623,17 @@ class ExecutionRecord:
             for lifecycle in (lifecycle_with_detection, lifecycle_without_detection)
         ):
             raise ValueError("execution stages must form a contiguous lifecycle prefix")
+        detection_records = [
+            record for record in self.stages if record.stage is PipelineStage.DETECTING
+        ]
+        if self.detection is not None and not detection_records:
+            raise ValueError("detection provenance requires a detection stage")
+        if (
+            detection_records
+            and detection_records[0].disposition is not StageDisposition.FAILED
+            and self.detection is None
+        ):
+            raise ValueError("completed detection requires detection provenance")
         terminal_indexes = [
             index
             for index, record in enumerate(self.stages)
@@ -376,13 +673,17 @@ _PROBLEM_CODES: dict[str, tuple[int, Literal["failed", "unavailable"]]] = {
     "invalid_spec": (400, "failed"),
     "permission_denied": (403, "failed"),
     "source_not_found": (404, "failed"),
+    "source_changed": (409, "failed"),
     "resource_limit_exceeded": (413, "failed"),
     "compare_resource_limit": (413, "failed"),
     "unsupported_encoding": (415, "failed"),
+    "source_type_unsupported": (415, "failed"),
     "decode_error": (422, "failed"),
     "internal_error": (500, "failed"),
     "io_error": (500, "failed"),
     "capability_unavailable": (501, "unavailable"),
+    "detection_no_match": (415, "unavailable"),
+    "detection_ambiguous": (409, "unavailable"),
     "comparator_failure": (502, "failed"),
     "backend_unavailable": (503, "unavailable"),
 }
@@ -675,6 +976,36 @@ class TextHunk:
 
 
 @dataclass(frozen=True, slots=True)
+class BinarySpan:
+    """One maximal observed mismatch range without embedded byte payload."""
+
+    kind: Literal["binary_span"] = field(default="binary_span", init=False)
+    before_offset: int = 0
+    before_length: int = 0
+    after_offset: int = 0
+    after_length: int = 0
+
+    def __post_init__(self) -> None:
+        for name in (
+            "before_offset",
+            "before_length",
+            "after_offset",
+            "after_length",
+        ):
+            _bounded_integer(getattr(self, name), name, 0, _MAX_EXACT_INTEGER)
+        if self.before_length == self.after_length == 0:
+            raise ValueError("a binary span must contain changed bytes")
+        if self.before_offset != self.after_offset:
+            raise ValueError("binary span offsets must share the aligned position")
+        if (
+            self.before_length > 0
+            and self.after_length > 0
+            and self.before_length != self.after_length
+        ):
+            raise ValueError("replacement spans must have equal positive lengths")
+
+
+@dataclass(frozen=True, slots=True)
 class ExtensionChange:
     kind: str
     plugin_id: str
@@ -689,7 +1020,7 @@ class ExtensionChange:
         _json_safe(self.payload)
 
 
-type Change = TextHunk | ExtensionChange
+type Change = TextHunk | BinarySpan | ExtensionChange
 
 
 @dataclass(frozen=True, slots=True)
@@ -740,6 +1071,26 @@ class ChangeSet:
             or self.limit_reason is not None
         ):
             raise ValueError("invalid partial ChangeSet")
+        binary_items = [item for item in self.items if isinstance(item, BinarySpan)]
+        if binary_items and len(binary_items) != len(self.items):
+            raise ValueError("built-in change kinds must not be mixed")
+        if binary_items:
+            _validate_binary_spans(tuple(binary_items))
+
+
+def _validate_binary_spans(spans: tuple[BinarySpan, ...]) -> None:
+    trailing_seen = False
+    previous_end = -1
+    for index, span in enumerate(spans):
+        is_trailing = span.before_length == 0 or span.after_length == 0
+        if is_trailing:
+            if trailing_seen or index != len(spans) - 1:
+                raise ValueError("a trailing binary span must be the final item")
+            trailing_seen = True
+        else:
+            if span.before_offset <= previous_end:
+                raise ValueError("replacement binary spans must not overlap or touch")
+            previous_end = span.before_offset + span.before_length
 
 
 @dataclass(frozen=True, slots=True)
