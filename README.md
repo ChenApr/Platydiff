@@ -3,15 +3,10 @@
 [Chinese documentation](README_zh.md)
 
 `platydiff` is an extensible multimodal diff engine for scientific data,
-experimental regression testing, and competition workflows. Phase 1 is
-implemented on the default branch: it compares explicitly selected text
-sources through a typed Python API or CLI and emits terminal output or the
-schema-v1 JSON outcome contract. The implementation remains unreleased.
-
-Other modalities and automatic detection remain planned. Their accepted Phase
-2 contract is [RFC 0003](docs/rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison.md),
-but it is not implemented yet. Platydiff never guesses that an input is text
-from its extension, content, or Python type.
+experimental regression testing, and competition workflows. Phases 1 and 2
+implement explicit text, exact binary, and opt-in automatic text/binary
+comparison through a typed Python API or CLI. Results use the schema-v1 outcome
+contract. The implementation remains unreleased.
 
 ## Install for development
 
@@ -78,19 +73,33 @@ resource limits, result semantics, and failure behavior. The authoritative
 contracts are [RFC 0001](docs/rfcs/0001-comparison-outcome-and-diff-result.md)
 and [RFC 0002](docs/rfcs/0002-development-phases-and-text-slice.md).
 
+## Compare binary data or detect text/binary
+
+```bash
+platydiff binary before.bin after.bin
+platydiff compare --type binary before.bin after.bin
+platydiff compare --type auto before.dat after.dat
+```
+
+Automatic detection is never implicit: omitting `--type` is a usage error.
+Detection inspects only a bounded prefix; binary comparison streams bounded
+chunks and compares actual bytes. See the
+[automatic and binary guide](docs/binary-comparison.md).
+
 ## Implemented and planned capabilities
 
-Implemented on the default branch in Phase 1:
+Implemented in Phases 1 and 2:
 
 - Python 3.12+ library and `platydiff` CLI;
 - schema-v1 `CompareOutcome` and `DiffResult` JSON serialization;
 - strict line-oriented text comparison;
 - deterministic linear-space Myers insert/delete edit scripts;
 - terminal and JSON renderers with bounded change details.
+- bounded deterministic text/binary detection and internal capability resolution;
+- collision-safe exact binary comparison with payload-free change spans.
 
 Planned, not implemented:
 
-- automatic format or encoding detection and binary comparison;
 - public plugin discovery or SDKs;
 - JSON/YAML, tables, arrays, images, source code, PDF, audio, and video;
 - stdin, directories, recursive comparison, and configuration files;

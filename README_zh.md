@@ -3,13 +3,8 @@
 [English documentation](README.md)
 
 `platydiff` 是一个面向科研数据、实验回归测试与竞赛工作流的可扩展多模态
-Diff 引擎。Phase 1 已在默认分支实现：它通过类型化 Python API 或 CLI
-比较显式指定的文本来源，并输出终端结果或 schema-v1 JSON outcome 契约。
-该实现尚未发布。
-
-其他模态和自动探测仍是计划能力；其已接受的 Phase 2 契约见
-[RFC 0003](docs/rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison_zh.md)，
-但尚未实施。Platydiff 不会根据扩展名、内容或 Python 类型猜测输入是文本。
+Diff 引擎。Phase 1 与 Phase 2 已实现显式文本、精确二进制，以及需要显式启用的
+文本/二进制自动探测；Python API 与 CLI 均输出 schema-v1 outcome。当前仍未发布。
 
 ## 开发环境安装
 
@@ -71,19 +66,31 @@ LF、CRLF、CR 和末尾缺少换行会保持不同。Unicode、空白、tab、�
 权威契约见 [RFC 0001](docs/rfcs/0001-comparison-outcome-and-diff-result_zh.md)
 和 [RFC 0002](docs/rfcs/0002-development-phases-and-text-slice_zh.md)。
 
+## 比较二进制或自动探测文本/二进制
+
+```bash
+platydiff binary before.bin after.bin
+platydiff compare --type binary before.bin after.bin
+platydiff compare --type auto before.dat after.dat
+```
+
+自动探测从不隐式启用；省略 `--type` 是用法错误。探测只读取有界前缀，二进制
+比较以有界 chunk 流式读取并比较真实字节。详见[自动探测与二进制比较指南](docs/binary-comparison_zh.md)。
+
 ## 已实现与计划能力
 
-Phase 1 已在默认分支实现：
+Phase 1 与 Phase 2 已实现：
 
 - Python 3.12+ 库与 `platydiff` CLI；
 - schema-v1 `CompareOutcome` 和 `DiffResult` JSON 序列化；
 - strict 行级文本比较；
 - 确定性、线性辅助空间的 Myers insert/delete 编辑脚本；
 - 具有有界 change 明细的 terminal 与 JSON renderer。
+- 有界、确定性的文本/二进制探测与内部 capability resolution；
+- collision-safe 的精确二进制比较和不携带 payload 的 change span。
 
 计划中、尚未实现：
 
-- 自动格式或编码探测与二进制比较；
 - 公共插件发现或 SDK；
 - JSON/YAML、表格、数组、图片、源代码、PDF、音频和视频；
 - stdin、目录、递归比较和配置文件；

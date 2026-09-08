@@ -6,8 +6,9 @@ All notable changes to Platydiff are documented in this file.
 
 ### Added
 
-- Accepted the Phase 2 automatic detection, internal capability resolution,
-  and exact binary comparison contract; implementation remains planned.
+- Implemented the Phase 2 bounded automatic text/binary detector, deterministic
+  built-in capability resolution, exact streaming binary comparator, Python
+  contracts, and CLI routes.
 - Recorded the terminal/HTML-first human review UI roadmap without authorizing
   UI implementation or scheduling.
 - Python 3.12 package and `platydiff` console entry point.
@@ -26,5 +27,11 @@ All notable changes to Platydiff are documented in this file.
 - Safe separation of rendered outcomes on stdout from parser and renderer
   failures on stderr.
 
-Later modalities, automatic detection, and public plugin discovery remain
-planned and are not part of this change.
+Later modalities and public plugin discovery remain planned.
+
+### Changed
+
+- Extended the unreleased schema v1 with `auto` and `binary` specifications,
+  `binary_span` changes, and optional detection provenance. Existing explicit
+  text payloads remain byte-for-byte compatible; pre-release Phase 1 readers
+  had no forward-compatibility guarantee for the new closed-union kinds.

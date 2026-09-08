@@ -2,11 +2,11 @@
 
 [English documentation](0003-automatic-detection-capability-resolution-and-binary-comparison.md)
 
-- 状态：Accepted
+- 状态：Implemented
 - 日期：2026-09-07
 - 接受日期：2026-09-09
 - Owners：Platydiff 维护者
-- 实现 owner：等待显式派发实施任务后指派
+- 实现 owner：Platydiff 维护者
 
 ## 摘要
 
