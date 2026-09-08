@@ -257,7 +257,8 @@ python -m build
 
 后续阶段构成已接受的路线图，不自动授权实施：
 
-1. **Phase 2：** 自动探测、capability resolution 和 binary comparator，提议见
+1. **Phase 2：** 自动探测、capability resolution 和 binary comparator；其契约已接受
+   但尚未实施，见
    [RFC 0003](0003-automatic-detection-capability-resolution-and-binary-comparison_zh.md)。
 2. **Phase 3：** 第三方 entry-point discovery、插件 SDK 和兼容性套件。
 3. **Phase 4：** JSON/YAML 和 table/array 比较。
@@ -268,7 +269,8 @@ python -m build
 每个阶段开始前：
 
 - 每个新模态必须定义自己的 `CompareSpec`、`Change`、metric、artifact、等价关系、默认策略和失败语义；
-- Phase 2 必须确定探测歧义、候选排序、置信度报告和 capability request 模型；
+- Phase 2 实施必须遵循 RFC 0003 已接受的探测歧义、候选排序、置信度报告和
+  capability request 模型；
 - Phase 3 必须先吸收内部 text/binary registry 的经验，再发布 discovery 或插件契约；
 - 可选后端必须定义可用性、降级、版本 provenance、许可证和确定性 fallback 行为；
 - schema、枚举、默认算法或序列化字段变化需要兼容性测试和迁移说明；

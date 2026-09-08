@@ -343,12 +343,12 @@ not change this RFC from `Proposed` and does not authorize implementation:
 | U2 | HTML behavior | JavaScript-free document with native anchors/disclosure, enforceable meta CSP, and documented lack of file framing control | Security architecture |
 | U3 | File delivery | Require `--output`; atomic no-clobber by default; explicit entry-replacement overwrite; safe failure when unsupported | CLI and filesystem behavior |
 | U4 | Dependency budget | Standard library and embedded CSS only for UI-U1 | Packaging/license gate |
-| U5 | Scheduling | UI-U1 becomes eligible for separate authorization only after the Phase 2 schema decision; its view-model design may review Phase 2 | Implementation ordering |
+| U5 | Scheduling | UI-U1 becomes eligible for separate authorization only after the accepted Phase 2 schema is implemented and compatibility-tested; its view-model design may review Phase 2 | Implementation ordering |
 | U6 | TUI framework | Defer selection until UI-U2 is accepted after Phase 3 or 4 evidence | Optional dependency |
 | U7 | Desktop/local web | Defer shell choice until multimodal artifact requirements are measured | UI-U3 architecture |
 
 UI-U1 still requires a separate user authorization after the accepted Phase 2
-schema contract reaches `main` and is stable enough to implement against.
+schema is implemented on `main` and passes its compatibility gates.
 UI-U2 and UI-U3 require their own later evidence and authorization. No UI code,
 dependency, owner, or delivery schedule is approved by this decision record.
 

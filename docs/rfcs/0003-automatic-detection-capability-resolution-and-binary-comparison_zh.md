@@ -6,14 +6,14 @@
 - 日期：2026-09-07
 - 接受日期：2026-09-09
 - Owners：Platydiff 维护者
-- 实现 owner：本 RFC 进入 `main` 后由实施会话承担
+- 实现 owner：等待显式派发实施任务后指派
 
 ## 摘要
 
 本 RFC 定义 Phase 2：有界的自动模态探测、确定性能力解析，以及 strict 二进制
-比较。它在不发布第三方插件协议的前提下扩展 Phase 1 流水线。接受本 RFC 即批准
-这份实施契约；只有本 RFC 进入 `main` 后，才能从更新后的默认分支新建短生命周期
-分支并开始实施。
+比较。它在不发布第三方插件协议的前提下扩展 Phase 1 流水线。接受本 RFC 只批准
+实施契约，不会自动启动开发。只有本 RFC 进入 `main`，且用户或 review coordinator
+显式派发实施会话后，才能从更新后的 `main` 新建短生命周期分支并开始实施。
 
 本契约保持 [RFC 0001](0001-comparison-outcome-and-diff-result_zh.md) 对执行终态和
 已完成差异的分离，并遵循 [RFC 0002](0002-development-phases-and-text-slice_zh.md)
@@ -652,8 +652,9 @@ kind、spec 和 public export 都要求 constructor、round-trip、invalid-state
 
 ## 实现 commit 与门禁
 
-实施仍需等待本 RFC 进入 `main`。届时实施会话必须从更新后的 `main` 新建
-短生命周期分支，并按顺序使用以下聚焦 commit：
+实施 owner 仍未指派。本 RFC 进入 `main` 后，用户或 review coordinator 必须显式
+派发实施会话；该会话随后从更新后的 `main` 新建短生命周期分支，并按顺序使用
+以下聚焦 commit：
 
 1. `refactor(core): add bounded replayable source snapshots`
    - 门禁：snapshot 只服务 auto/binary 路径；Phase 1 显式 text eager path、stage、

@@ -6,15 +6,17 @@
 - Date: 2026-09-07
 - Accepted: 2026-09-09
 - Owners: Platydiff maintainers
-- Implementation owner: implementation session after this RFC reaches `main`
+- Implementation owner: unassigned pending explicit implementation dispatch
 
 ## Summary
 
 This RFC defines Phase 2: bounded automatic modality detection, deterministic
 capability resolution, and strict binary comparison. It extends the Phase 1
 pipeline without publishing a third-party plugin protocol. Acceptance approves
-this implementation contract; implementation starts only after this RFC reaches
-`main` on a new short-lived branch from the updated default branch.
+this implementation contract, not automatic development. Implementation starts
+only after this RFC reaches `main` and the user or review coordinator explicitly
+dispatches an implementation session on a new short-lived branch from updated
+`main`.
 
 The contract preserves the [RFC 0001](0001-comparison-outcome-and-diff-result.md)
 separation between execution outcomes and completed differences and the
@@ -731,9 +733,10 @@ remain private.
 
 ## Implementation commits and gates
 
-Implementation remains gated until this accepted RFC reaches `main`. The
-implementation session then uses a new short-lived branch from updated `main`
-and the following focused commits in order:
+Implementation remains unassigned. After this accepted RFC reaches `main`, the
+user or review coordinator must explicitly dispatch the implementation session;
+that session then uses a new short-lived branch from updated `main` and the
+following focused commits in order:
 
 1. `refactor(core): add bounded replayable source snapshots`
    - Gate: snapshots serve only auto/binary paths; the Phase 1 explicit-text

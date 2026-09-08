@@ -303,12 +303,12 @@ development-only dependency。
 | U2 | HTML 行为 | 无 JavaScript，以原生 anchor/disclosure、可兑现 meta CSP 和明确的 file framing 限制实现 | 安全架构 |
 | U3 | 文件交付 | 要求 `--output`；默认 atomic no-clobber；显式 entry-replacement overwrite；不支持时安全失败 | CLI 与文件系统行为 |
 | U4 | Dependency budget | UI-U1 只用标准库与 embedded CSS | packaging/license 门禁 |
-| U5 | 排期 | 只有 Phase 2 schema 决策完成后，UI-U1 才具备申请单独授权的条件；其 view-model 设计可评审 Phase 2 | 实现顺序 |
+| U5 | 排期 | 只有已接受的 Phase 2 schema 完成实施并通过兼容性测试后，UI-U1 才具备申请单独授权的条件；其 view-model 设计可评审 Phase 2 | 实现顺序 |
 | U6 | TUI framework | 延后到 Phase 3 或 4 提供证据且 UI-U2 被接受后选择 | optional dependency |
 | U7 | Desktop/local web | 延后到测得多模态 artifact requirement 后选择 shell | UI-U3 架构 |
 
-只有已接受的 Phase 2 schema 契约进入 `main` 且足够稳定后，UI-U1 才能另行申请用户
-实施授权。UI-U2 与 UI-U3 还需要各自的后续证据与授权。本次路线备案没有批准任何
+只有已接受的 Phase 2 schema 在 `main` 完成实施并通过兼容性门禁后，UI-U1 才能
+另行申请用户实施授权。UI-U2 与 UI-U3 还需要各自的后续证据与授权。本次路线备案没有批准任何
 UI code、dependency、owner 或交付排期。
 
 ## 后果
