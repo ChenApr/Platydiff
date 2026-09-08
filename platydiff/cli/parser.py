@@ -39,6 +39,20 @@ def _positive(value: str) -> int:
     return _number(value, positive=True)
 
 
+def _chunk(value: str) -> int:
+    parsed = _positive(value)
+    if parsed > 16 * 1024 * 1024:
+        raise argparse.ArgumentTypeError("must not exceed 16777216")
+    return parsed
+
+
+def _confidence(value: str) -> int:
+    parsed = _non_negative(value)
+    if parsed > 1000:
+        raise argparse.ArgumentTypeError("must not exceed 1000")
+    return parsed
+
+
 def _common(parser: argparse.ArgumentParser) -> None:
     defaults = ResourceLimits()
     parser.add_argument("before", metavar="BEFORE")
@@ -81,7 +95,7 @@ def _text(parser: argparse.ArgumentParser) -> None:
 
 def _binary(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
-        "--chunk-bytes", type=_positive, default=BinaryResourceLimits().chunk_bytes
+        "--chunk-bytes", type=_chunk, default=BinaryResourceLimits().chunk_bytes
     )
 
 
@@ -93,10 +107,10 @@ def _auto(parser: argparse.ArgumentParser) -> None:
         default=defaults.max_detection_bytes,
     )
     parser.add_argument(
-        "--binary-chunk-bytes", type=_positive, default=defaults.binary_chunk_bytes
+        "--binary-chunk-bytes", type=_chunk, default=defaults.binary_chunk_bytes
     )
-    parser.add_argument("--minimum-confidence", type=_non_negative, default=800)
-    parser.add_argument("--ambiguity-margin", type=_non_negative, default=100)
+    parser.add_argument("--minimum-confidence", type=_confidence, default=800)
+    parser.add_argument("--ambiguity-margin", type=_confidence, default=100)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -138,10 +152,21 @@ def parse_command(argv: list[str] | None = None) -> ParsedCommand:
         "--max-encoded-line-bytes",
         "--max-myers-work",
     }
-    if kind != "text" and any(
-        item.split("=", 1)[0] in text_flags for item in arguments
-    ):
-        parser.error("text-only options require text")
+    binary_flags = {"--chunk-bytes"}
+    auto_flags = {
+        "--max-detection-bytes",
+        "--binary-chunk-bytes",
+        "--minimum-confidence",
+        "--ambiguity-margin",
+    }
+    supplied = {item.split("=", 1)[0] for item in arguments}
+    disallowed = {
+        "text": binary_flags | auto_flags,
+        "binary": text_flags | auto_flags,
+        "auto": text_flags | binary_flags,
+    }[kind]
+    if supplied & disallowed:
+        parser.error(f"options do not apply to {kind}")
     common = dict(
         max_input_bytes=int(values["max_input_bytes"]),
         max_change_items=int(values["max_change_items"]),

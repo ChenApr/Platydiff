@@ -235,6 +235,33 @@ def test_text_only_option_is_rejected_for_binary_and_auto() -> None:
         assert result.stdout == ""
 
 
+@pytest.mark.parametrize(
+    ("kind", "option"),
+    [
+        ("text", "--chunk-bytes=1"),
+        ("binary", "--max-detection-bytes=1"),
+        ("auto", "--chunk-bytes=1"),
+    ],
+)
+def test_compare_rejects_options_from_another_modality(kind: str, option: str) -> None:
+    result = run_module("compare", "--type", kind, option, "a", "b")
+    assert result.returncode == 2
+    assert result.stdout == ""
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ("binary", "--chunk-bytes", "16777217", "a", "b"),
+        ("compare", "--type", "auto", "--minimum-confidence", "1001", "a", "b"),
+    ],
+)
+def test_phase2_cli_numeric_bounds_are_usage_errors(arguments: tuple[str, ...]) -> None:
+    result = run_module(*arguments)
+    assert result.returncode == 2
+    assert result.stdout == ""
+
+
 def test_warn_verdict_maps_to_exit_zero() -> None:
     outcome = compare(TextSource("same"), TextSource("same"), TextCompareSpec())
     assert isinstance(outcome, CompletedOutcome)
