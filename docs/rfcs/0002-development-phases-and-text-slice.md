@@ -2,7 +2,7 @@
 
 [Chinese documentation](0002-development-phases-and-text-slice_zh.md)
 
-- Status: Accepted
+- Status: Implemented
 - Date: 2026-09-06
 - Owners: Platydiff maintainers
 
@@ -10,7 +10,9 @@
 
 This RFC defines the delivery order, commit boundaries, public API gate, file layout, CLI behavior, text semantics, resource limits, and verification requirements for Platydiff's first executable vertical slice. That slice is a Python 3.12+ library and CLI that compare explicitly selected text inputs and return the contracts in [RFC 0001](0001-comparison-outcome-and-diff-result.md).
 
-This document defines the implementation contract exercised by the Phase 1 candidate in PR #3 from `feat/python-text-diff`. The candidate is not delivered until it is merged and released.
+The Phase 1 implementation was merged into the default branch by PR #3. Its
+required compatibility, CLI, algorithm, and packaging checks passed before
+merge. It remains unreleased.
 
 Automatic format detection, binary comparison, third-party plugin discovery, and other modalities are later phases. Their appearance in the roadmap does not authorize implementation. Each phase must return to the contract gates in this RFC before development starts.
 
@@ -256,7 +258,9 @@ Contract tests must cover every outcome variant, serialization round trips, unkn
 
 Later phases form an accepted roadmap, not automatic authorization to implement them:
 
-1. **Phase 2:** automatic detection, capability resolution, and a binary comparator.
+1. **Phase 2:** automatic detection, capability resolution, and a binary comparator,
+   with an accepted but not yet implemented contract in
+   [RFC 0003](0003-automatic-detection-capability-resolution-and-binary-comparison.md).
 2. **Phase 3:** third-party entry-point discovery, a plugin SDK, and a compatibility suite.
 3. **Phase 4:** JSON/YAML and table/array comparison.
 4. **Phase 5:** image comparison.
@@ -266,7 +270,8 @@ Later phases form an accepted roadmap, not automatic authorization to implement 
 Before each phase begins:
 
 - every new modality must define its `CompareSpec`, `Change`, metrics, artifacts, equivalence relation, policy defaults, and failure semantics;
-- Phase 2 must settle detection ambiguity, candidate ranking, confidence reporting, and the capability-request model;
+- Phase 2 implementation must follow RFC 0003's accepted detection ambiguity,
+  candidate ranking, confidence reporting, and capability-request model;
 - Phase 3 must use lessons from the internal text and binary registries before publishing discovery or plugin contracts;
 - optional backends must define availability, degradation, version provenance, licensing, and deterministic fallback behavior;
 - schema, enum, default-algorithm, or serialized-field changes require compatibility tests and migration guidance;

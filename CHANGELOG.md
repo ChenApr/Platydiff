@@ -6,6 +6,10 @@ All notable changes to Platydiff are documented in this file.
 
 ### Added
 
+- Accepted the Phase 2 automatic detection, internal capability resolution,
+  and exact binary comparison contract; implementation remains planned.
+- Recorded the terminal/HTML-first human review UI roadmap without authorizing
+  UI implementation or scheduling.
 - Python 3.12 package and `platydiff` console entry point.
 - Schema-v1 comparison outcomes, completed results, validation, and strict JSON
   serialization from RFC 0001.

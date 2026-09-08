@@ -2,7 +2,7 @@
 
 [English documentation](0002-development-phases-and-text-slice.md)
 
-- 状态：Accepted
+- 状态：Implemented
 - 日期：2026-09-06
 - 负责人：Platydiff 维护者
 
@@ -10,7 +10,8 @@
 
 本 RFC 定义 Platydiff 首个可执行纵向切片的交付顺序、commit 边界、公共 API 门禁、文件布局、CLI 行为、文本语义、资源限制和验证要求。该切片是 Python 3.12+ 库和 CLI，用于比较显式指定的文本输入，并返回 [RFC 0001](0001-comparison-outcome-and-diff-result_zh.md) 定义的契约。
 
-本文定义的实现契约正由 `feat/python-text-diff` 分支上的 Phase 1 候选 PR #3 验证；在合并并发布前，该候选尚未交付。
+Phase 1 实现已由 PR #3 合并到默认分支。要求的兼容性、CLI、算法和打包检查在
+合并前通过。它尚未发布。
 
 自动格式探测、二进制比较、第三方插件发现和其他模态属于后续阶段。它们出现在路线图中并不表示已授权实现。每个阶段开始开发前都必须回到本 RFC 的契约门禁。
 
@@ -256,7 +257,9 @@ python -m build
 
 后续阶段构成已接受的路线图，不自动授权实施：
 
-1. **Phase 2：** 自动探测、capability resolution 和 binary comparator。
+1. **Phase 2：** 自动探测、capability resolution 和 binary comparator；其契约已接受
+   但尚未实施，见
+   [RFC 0003](0003-automatic-detection-capability-resolution-and-binary-comparison_zh.md)。
 2. **Phase 3：** 第三方 entry-point discovery、插件 SDK 和兼容性套件。
 3. **Phase 4：** JSON/YAML 和 table/array 比较。
 4. **Phase 5：** image 比较。
@@ -266,7 +269,8 @@ python -m build
 每个阶段开始前：
 
 - 每个新模态必须定义自己的 `CompareSpec`、`Change`、metric、artifact、等价关系、默认策略和失败语义；
-- Phase 2 必须确定探测歧义、候选排序、置信度报告和 capability request 模型；
+- Phase 2 实施必须遵循 RFC 0003 已接受的探测歧义、候选排序、置信度报告和
+  capability request 模型；
 - Phase 3 必须先吸收内部 text/binary registry 的经验，再发布 discovery 或插件契约；
 - 可选后端必须定义可用性、降级、版本 provenance、许可证和确定性 fallback 行为；
 - schema、枚举、默认算法或序列化字段变化需要兼容性测试和迁移说明；
