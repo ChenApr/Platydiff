@@ -104,12 +104,18 @@ class CompareResourceLimitError(DomainError):
 
 
 class InputOutputError(DomainError):
-    def __init__(self, message: str, *, retryable: bool = True) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        retryable: bool = True,
+        stage: PipelineStage = PipelineStage.SOURCING,
+    ) -> None:
         super().__init__(
             message,
             code="io_error",
             status_code=500,
-            stage=PipelineStage.SOURCING,
+            stage=stage,
             retryable=retryable,
         )
 

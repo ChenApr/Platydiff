@@ -976,6 +976,36 @@ class TextHunk:
 
 
 @dataclass(frozen=True, slots=True)
+class BinarySpan:
+    """One maximal observed mismatch range without embedded byte payload."""
+
+    kind: Literal["binary_span"] = field(default="binary_span", init=False)
+    before_offset: int = 0
+    before_length: int = 0
+    after_offset: int = 0
+    after_length: int = 0
+
+    def __post_init__(self) -> None:
+        for name in (
+            "before_offset",
+            "before_length",
+            "after_offset",
+            "after_length",
+        ):
+            _bounded_integer(getattr(self, name), name, 0, _MAX_EXACT_INTEGER)
+        if self.before_length == self.after_length == 0:
+            raise ValueError("a binary span must contain changed bytes")
+        if self.before_offset != self.after_offset:
+            raise ValueError("binary span offsets must share the aligned position")
+        if (
+            self.before_length > 0
+            and self.after_length > 0
+            and self.before_length != self.after_length
+        ):
+            raise ValueError("replacement spans must have equal positive lengths")
+
+
+@dataclass(frozen=True, slots=True)
 class ExtensionChange:
     kind: str
     plugin_id: str
@@ -990,7 +1020,7 @@ class ExtensionChange:
         _json_safe(self.payload)
 
 
-type Change = TextHunk | ExtensionChange
+type Change = TextHunk | BinarySpan | ExtensionChange
 
 
 @dataclass(frozen=True, slots=True)
@@ -1041,6 +1071,26 @@ class ChangeSet:
             or self.limit_reason is not None
         ):
             raise ValueError("invalid partial ChangeSet")
+        binary_items = [item for item in self.items if isinstance(item, BinarySpan)]
+        if binary_items and len(binary_items) != len(self.items):
+            raise ValueError("built-in change kinds must not be mixed")
+        if binary_items:
+            _validate_binary_spans(tuple(binary_items))
+
+
+def _validate_binary_spans(spans: tuple[BinarySpan, ...]) -> None:
+    trailing_seen = False
+    previous_end = -1
+    for index, span in enumerate(spans):
+        is_trailing = span.before_length == 0 or span.after_length == 0
+        if is_trailing:
+            if trailing_seen or index != len(spans) - 1:
+                raise ValueError("a trailing binary span must be the final item")
+            trailing_seen = True
+        else:
+            if span.before_offset <= previous_end:
+                raise ValueError("replacement binary spans must not overlap or touch")
+            previous_end = span.before_offset + span.before_length
 
 
 @dataclass(frozen=True, slots=True)

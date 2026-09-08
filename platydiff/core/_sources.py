@@ -164,7 +164,9 @@ class _PathSnapshot(SourceSnapshot):
         except SourceChangedError:
             raise
         except OSError as error:
-            raise InputOutputError("A source could not be read.") from error
+            raise InputOutputError(
+                "A source could not be read.", stage=stage
+            ) from error
 
     def ensure_unchanged(self, *, stage: PipelineStage) -> None:
         if self._descriptor < 0:
@@ -172,7 +174,9 @@ class _PathSnapshot(SourceSnapshot):
         try:
             current = _path_metadata(self._descriptor)
         except OSError as error:
-            raise InputOutputError("A source could not be inspected.") from error
+            raise InputOutputError(
+                "A source could not be inspected.", stage=stage
+            ) from error
         if current != self.metadata:
             raise SourceChangedError(stage=stage)
 

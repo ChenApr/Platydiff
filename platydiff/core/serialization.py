@@ -15,6 +15,7 @@ from platydiff.core.models import (
     AutoTextOptions,
     BinaryCompareSpec,
     BinaryResourceLimits,
+    BinarySpan,
     CapabilityAttempt,
     CapabilityProblem,
     Change,
@@ -822,6 +823,14 @@ def _hunk_to_data(hunk: TextHunk) -> JsonObject:
 def _change_to_data(change: Change) -> JsonObject:
     if isinstance(change, TextHunk):
         return _hunk_to_data(change)
+    if isinstance(change, BinarySpan):
+        return {
+            "kind": change.kind,
+            "before_offset": change.before_offset,
+            "before_length": change.before_length,
+            "after_offset": change.after_offset,
+            "after_length": change.after_length,
+        }
     return {
         "kind": change.kind,
         "plugin_id": change.plugin_id,
@@ -844,7 +853,7 @@ def serialized_change_size(change: Change) -> int:
     )
 
 
-def _change_from_data(value: JsonValue) -> TextHunk | ExtensionChange:
+def _change_from_data(value: JsonValue) -> TextHunk | BinarySpan | ExtensionChange:
     data = _object(value, "change")
     kind = _string(_required(data, "kind"), "change kind")
     if kind == "text_hunk":
@@ -885,6 +894,20 @@ def _change_from_data(value: JsonValue) -> TextHunk | ExtensionChange:
             ),
             lines=tuple(lines),
         )
+    if kind == "binary_span":
+        try:
+            return BinarySpan(
+                before_offset=_integer(
+                    _required(data, "before_offset"), "before_offset"
+                ),
+                before_length=_integer(
+                    _required(data, "before_length"), "before_length"
+                ),
+                after_offset=_integer(_required(data, "after_offset"), "after_offset"),
+                after_length=_integer(_required(data, "after_length"), "after_length"),
+            )
+        except ValueError as error:
+            raise SerializationError(str(error)) from error
     if "." in kind:
         return ExtensionChange(
             kind=kind,
