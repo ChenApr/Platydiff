@@ -174,12 +174,15 @@ class StageRunner:
         )
 
 
-def _validate_request(before: Source, after: Source, spec: CompareSpec) -> None:
+def _validate_request(
+    before: Source, after: Source, spec: CompareSpec
+) -> TextCompareSpec:
     if not isinstance(spec, TextCompareSpec):
         raise InvalidSpecError("The comparison specification is not supported.")
     source_types = (PathSource, BytesSource, TextSource)
     if not isinstance(before, source_types) or not isinstance(after, source_types):
         raise InvalidSpecError("The source type is not supported.")
+    return spec
 
 
 def _read_regular_path(path: PathSource, max_bytes: int) -> bytes:
@@ -272,15 +275,16 @@ def run_comparison(
     """Run one explicit comparison and convert only expected domain failures."""
     stages = StageRunner(clock)
     try:
-        stages.run(
+        validated_spec = stages.run(
             PipelineStage.VALIDATING, lambda: _validate_request(before, after, spec)
         )
         sourced_before, sourced_after = stages.run(
-            PipelineStage.SOURCING, lambda: _source_pair(before, after, spec)
+            PipelineStage.SOURCING,
+            lambda: _source_pair(before, after, validated_spec),
         )
-        executor = stages.run(PipelineStage.RESOLVING, lambda: resolver(spec))
+        executor = stages.run(PipelineStage.RESOLVING, lambda: resolver(validated_spec))
         stages.record_selected_capability()
-        completion = executor(sourced_before, sourced_after, spec, stages)
+        completion = executor(sourced_before, sourced_after, validated_spec, stages)
     except DomainError as error:
         return FailedOutcome(
             execution=stages.execution(()),

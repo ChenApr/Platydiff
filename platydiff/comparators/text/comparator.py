@@ -458,6 +458,8 @@ def compare_text(
     stages: StageRunner,
 ) -> ComparisonCompletion:
     """Execute the staged strict Phase 1 text comparison."""
+    if not isinstance(generic_spec, TextCompareSpec):
+        raise RuntimeError("text comparator received a non-text specification")
     spec = generic_spec
     lines_before, lines_after = stages.run(
         PipelineStage.DECODING,
