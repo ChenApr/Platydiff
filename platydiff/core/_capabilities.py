@@ -148,39 +148,36 @@ class CapabilityCatalog:
         modality = request.resolved_modality
         if modality is None and request.requested_modality != "auto":
             modality = request.requested_modality
-        compatible: list[CapabilityRecord] = []
-        rejected: list[CapabilityAttempt] = []
-        for record in sorted(self._records.values(), key=_record_sort_key):
-            reason = _rejection_reason(record, request, modality)
-            if reason is None:
-                compatible.append(record)
-            else:
-                rejected.append(
-                    CapabilityAttempt(
-                        record.capability_id,
-                        record.backend_id,
-                        "rejected",
-                        reason,
-                    )
-                )
-        if not compatible:
-            return Resolution(None, tuple(rejected))
-        selected = compatible[0]
-        rejected.extend(
+        ranked = tuple(sorted(self._records.values(), key=_record_sort_key))
+        selected = next(
+            (
+                record
+                for record in ranked
+                if _rejection_reason(record, request, modality) is None
+            ),
+            None,
+        )
+        rejected = tuple(
             CapabilityAttempt(
                 record.capability_id,
                 record.backend_id,
                 "rejected",
-                "lower_priority",
+                _rejection_reason(record, request, modality) or "lower_priority",
             )
-            for record in compatible[1:]
+            for record in ranked
+            if record is not selected
         )
-        rejected.append(
-            CapabilityAttempt(
-                selected.capability_id, selected.backend_id, "selected", None
-            )
+        if selected is None:
+            return Resolution(None, rejected)
+        return Resolution(
+            selected,
+            (
+                *rejected,
+                CapabilityAttempt(
+                    selected.capability_id, selected.backend_id, "selected", None
+                ),
+            ),
         )
-        return Resolution(selected, tuple(rejected))
 
 
 def request_from_spec(

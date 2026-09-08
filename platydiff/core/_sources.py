@@ -65,6 +65,8 @@ class SourceSnapshot(ABC):
         if max_bytes < 0:
             raise ValueError("max_bytes must be non-negative")
         limit = min(max_bytes, self._max_input_bytes)
+        if limit == 0:
+            return b""
         chunks: list[bytes] = []
         remaining = limit
         for chunk in self.iter_chunks(max(1, min(limit, 64 * 1024)), stage=stage):
@@ -75,7 +77,9 @@ class SourceSnapshot(ABC):
             remaining -= len(selected)
             if remaining == 0:
                 break
-        return b"".join(chunks)
+        prefix = b"".join(chunks)
+        self.ensure_unchanged(stage=stage)
+        return prefix
 
     @abstractmethod
     def iter_chunks(self, chunk_bytes: int, *, stage: PipelineStage) -> Iterator[bytes]:

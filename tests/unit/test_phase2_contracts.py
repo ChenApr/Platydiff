@@ -303,6 +303,30 @@ def test_capability_catalog_is_order_independent_and_rejects_duplicates() -> Non
         catalog.register(high)
 
 
+def test_capability_attempts_keep_rejections_in_capability_rank_order() -> None:
+    request = request_from_spec(
+        AutoCompareSpec(), (SourceKind.BYTES, SourceKind.BYTES)
+    ).with_resolved_modality("text")
+    catalog = CapabilityCatalog()
+    for record in (
+        _capability("mismatch", "binary", priority=2),
+        _capability("selected", "text", priority=0),
+        _capability("lower", "text", priority=1),
+    ):
+        catalog.register(record)
+
+    resolution = catalog.resolve(request)
+
+    assert tuple(
+        (attempt.capability_id, attempt.disposition, attempt.reason_code)
+        for attempt in resolution.attempts
+    ) == (
+        ("lower", "rejected", "lower_priority"),
+        ("mismatch", "rejected", "modality_mismatch"),
+        ("selected", "selected", None),
+    )
+
+
 def test_capability_catalog_records_every_stable_rejection_reason() -> None:
     request = request_from_spec(
         AutoCompareSpec(), (SourceKind.BYTES, SourceKind.BYTES)

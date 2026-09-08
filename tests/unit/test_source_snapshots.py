@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
 from platydiff import BytesSource, PathSource, TextSource
-from platydiff.core._sources import open_source_snapshot
+from platydiff.core._sources import SourceSnapshot, open_source_snapshot
 from platydiff.core.models import PipelineStage, SourceKind
 from platydiff.core.problems import (
     InputOutputError,
@@ -127,3 +128,44 @@ def test_read_prefix_respects_zero_and_snapshot_limit() -> None:
     with open_source_snapshot(BytesSource(b"abc"), max_input_bytes=3) as snapshot:
         assert snapshot.read_prefix(0, stage=PipelineStage.DETECTING) == b""
         assert snapshot.read_prefix(100, stage=PipelineStage.DETECTING) == b"abc"
+
+
+def test_zero_prefix_budget_does_not_advance_source_iterator() -> None:
+    class SpySnapshot(SourceSnapshot):
+        source_kind = SourceKind.BYTES
+        label = None
+        size_bytes = 3
+
+        def __init__(self) -> None:
+            super().__init__(max_input_bytes=3)
+            self.iterator_advances = 0
+
+        def iter_chunks(
+            self, chunk_bytes: int, *, stage: PipelineStage
+        ) -> Iterator[bytes]:
+            del chunk_bytes, stage
+            self.iterator_advances += 1
+            yield b"abc"
+
+    snapshot = SpySnapshot()
+    assert snapshot.read_prefix(0, stage=PipelineStage.DETECTING) == b""
+    assert snapshot.iterator_advances == 0
+
+
+def test_bounded_path_prefix_checks_integrity_before_return(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "mutable-prefix"
+    path.write_bytes(b"abc")
+    real_read = os.read
+
+    def mutate_after_read(descriptor: int, count: int) -> bytes:
+        data = real_read(descriptor, count)
+        path.write_bytes(b"changed-after-prefix")
+        return data
+
+    with open_source_snapshot(PathSource(path), max_input_bytes=32) as snapshot:
+        monkeypatch.setattr(os, "read", mutate_after_read)
+        with pytest.raises(SourceChangedError) as raised:
+            snapshot.read_prefix(1, stage=PipelineStage.DETECTING)
+    assert raised.value.stage is PipelineStage.DETECTING

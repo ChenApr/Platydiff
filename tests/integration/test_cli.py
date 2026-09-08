@@ -31,12 +31,15 @@ from platydiff.core.serialization import dumps_outcome, loads_outcome
 from platydiff.renderers.terminal import render_terminal
 
 
-def run_module(*arguments: str) -> subprocess.CompletedProcess[str]:
+def run_module(
+    *arguments: str, cwd: Path | None = None
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", "platydiff", *arguments],
         check=False,
         capture_output=True,
         text=True,
+        cwd=cwd,
     )
 
 
@@ -249,6 +252,19 @@ def test_compare_rejects_options_from_another_modality(kind: str, option: str) -
     assert result.stdout == ""
 
 
+def test_option_terminator_preserves_dash_prefixed_binary_path(tmp_path: Path) -> None:
+    before = tmp_path / "--context-lines=1"
+    after = tmp_path / "other"
+    before.write_bytes(b"same")
+    after.write_bytes(b"same")
+
+    result = run_module("binary", "--", before.name, after.name, cwd=tmp_path)
+
+    assert result.returncode == 0
+    assert "equal: pass" in result.stdout
+    assert result.stderr == ""
+
+
 @pytest.mark.parametrize(
     "arguments",
     [
@@ -260,6 +276,39 @@ def test_phase2_cli_numeric_bounds_are_usage_errors(arguments: tuple[str, ...]) 
     result = run_module(*arguments)
     assert result.returncode == 2
     assert result.stdout == ""
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        (
+            "compare",
+            "--type",
+            "auto",
+            "--max-detection-bytes",
+            str(2**53 + 1),
+            "before",
+            "after",
+        ),
+        (
+            "compare",
+            "--type",
+            "binary",
+            "--max-input-bytes",
+            str(2**53 + 1),
+            "before",
+            "after",
+        ),
+    ],
+)
+def test_phase2_cli_exact_integer_overflow_is_a_clean_usage_error(
+    arguments: tuple[str, ...],
+) -> None:
+    result = run_module(*arguments)
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert "usage:" in result.stderr
+    assert "Traceback" not in result.stderr
 
 
 def test_warn_verdict_maps_to_exit_zero() -> None:

@@ -59,6 +59,22 @@ def test_detection_no_match_and_ambiguity_are_unavailable() -> None:
     assert no_match.execution.stages[-1].disposition.value == "unavailable"
 
 
+def test_zero_detection_budget_runs_without_content_inspection() -> None:
+    outcome = compare(
+        BytesSource(b"not empty"),
+        BytesSource(b"also not empty"),
+        AutoCompareSpec(limits=AutoResourceLimits(max_detection_bytes=0)),
+    )
+    assert isinstance(outcome, UnavailableOutcome)
+    assert outcome.execution.detection is not None
+    assert outcome.execution.stages[-1].stage.value == "detecting"
+    assert {
+        candidate.evidence_codes
+        for source in outcome.execution.detection.sources
+        for candidate in source.candidates
+    } == {("content_not_inspected",)}
+
+
 def test_late_invalid_utf8_fails_decoding_without_binary_fallback() -> None:
     spec = AutoCompareSpec(limits=AutoResourceLimits(max_detection_bytes=1))
     outcome = compare(BytesSource(b"a\xff"), BytesSource(b"a\xff"), spec)

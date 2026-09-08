@@ -159,7 +159,10 @@ def parse_command(argv: list[str] | None = None) -> ParsedCommand:
         "--minimum-confidence",
         "--ambiguity-margin",
     }
-    supplied = {item.split("=", 1)[0] for item in arguments}
+    option_arguments = (
+        arguments[: arguments.index("--")] if "--" in arguments else arguments
+    )
+    supplied = {item.split("=", 1)[0] for item in option_arguments}
     disallowed = {
         "text": binary_flags | auto_flags,
         "binary": text_flags | auto_flags,
@@ -167,6 +170,20 @@ def parse_command(argv: list[str] | None = None) -> ParsedCommand:
     }[kind]
     if supplied & disallowed:
         parser.error(f"options do not apply to {kind}")
+    if kind in ("binary", "auto"):
+        exact_limit_names = {
+            "max_input_bytes",
+            "max_change_items",
+            "max_change_payload_bytes",
+        }
+        if kind == "auto":
+            exact_limit_names.add("max_detection_bytes")
+        overflow = next(
+            (name for name in sorted(exact_limit_names) if int(values[name]) > 2**53),
+            None,
+        )
+        if overflow is not None:
+            parser.error(f"--{overflow.replace('_', '-')} must not exceed {2**53}")
     common = dict(
         max_input_bytes=int(values["max_input_bytes"]),
         max_change_items=int(values["max_change_items"]),
