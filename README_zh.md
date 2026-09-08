@@ -7,8 +7,9 @@ Diff 引擎。Phase 1 已在默认分支实现：它通过类型化 Python API �
 比较显式指定的文本来源，并输出终端结果或 schema-v1 JSON outcome 契约。
 该实现尚未发布。
 
-其他模态和自动探测仍是计划能力。Platydiff 不会根据扩展名、内容或 Python 类型
-猜测输入是文本。
+其他模态和自动探测仍是计划能力；其已接受的 Phase 2 契约见
+[RFC 0003](docs/rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison_zh.md)，
+但尚未实施。Platydiff 不会根据扩展名、内容或 Python 类型猜测输入是文本。
 
 ## 开发环境安装
 

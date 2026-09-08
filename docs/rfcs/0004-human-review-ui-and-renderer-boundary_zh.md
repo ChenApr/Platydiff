@@ -4,14 +4,16 @@
 
 - 状态：Proposed
 - 日期：2026-09-07
+- 路线决策备案日期：2026-09-09
 - Owners：Platydiff 维护者
-- 实现 owner：等待接受后指派
+- 实现 owner：等待 UI 的单独实施授权后指派
 
 ## 摘要
 
-本 RFC 提议 Platydiff 的人类评审展示架构。近期假设是改进 terminal renderer 并
-增加 self-contained HTML report；只有得到实际证据后，才继续考虑可选 TUI，随后
-再考虑本地 Web 或桌面应用。本 RFC 不授权 UI 实现。
+本 RFC 提议 Platydiff 的人类评审展示架构。用户于 2026-09-09 批准 U1-U7 作为
+路线方向：首个候选是改进 terminal renderer 并增加 self-contained HTML report；
+只有得到实际证据后，才继续考虑可选 TUI，随后再考虑本地 Web 或桌面应用。该批准
+只记录方向与边界，不授权 UI 实施或排期。
 
 每种界面都消费经过验证的 `CompareOutcome`；renderer 或 UI 不得重新计算 relation、
 verdict、fidelity、metric、policy evaluation、change completeness 或 problem 含义。
@@ -290,21 +292,24 @@ development-only dependency。
 不得把 UI-U2 或 UI-U3 与 UI-U1 合并。merge 前，独立 review 必须确认 view model 不
 重新解释 RFC 0001，恶意内容不能逃逸其上下文，且 JSON 行为保持兼容。
 
-## 决策账本
+## 已批准的路线决策
 
-以下决策需要人类明确接受：
+用户于 2026-09-09 批准 U1-U7 作为路线方向。该批准不会把本 RFC 从 `Proposed`
+改为其他状态，也不授权实施：
 
-| ID | 决策 | 建议 | 阻断项 |
+| ID | 决策 | 已批准路线边界 | 约束对象 |
 | --- | --- | --- | --- |
 | U1 | 首个美化 surface | 从同一 view model 改进 terminal 并增加 self-contained HTML | UI-U1 范围 |
 | U2 | HTML 行为 | 无 JavaScript，以原生 anchor/disclosure、可兑现 meta CSP 和明确的 file framing 限制实现 | 安全架构 |
 | U3 | 文件交付 | 要求 `--output`；默认 atomic no-clobber；显式 entry-replacement overwrite；不支持时安全失败 | CLI 与文件系统行为 |
 | U4 | Dependency budget | UI-U1 只用标准库与 embedded CSS | packaging/license 门禁 |
-| U5 | 排期 | 仅在 Phase 2 schema 决策后开始 UI-U1，但允许其 view-model 设计评审 Phase 2 | 实现顺序 |
+| U5 | 排期 | 只有 Phase 2 schema 决策完成后，UI-U1 才具备申请单独授权的条件；其 view-model 设计可评审 Phase 2 | 实现顺序 |
 | U6 | TUI framework | 延后到 Phase 3 或 4 提供证据且 UI-U2 被接受后选择 | optional dependency |
 | U7 | Desktop/local web | 延后到测得多模态 artifact requirement 后选择 shell | UI-U3 架构 |
 
-已接受答案必须写入 normative section，并在 RFC 改变状态前离开未决 ledger。
+只有已接受的 Phase 2 schema 契约进入 `main` 且足够稳定后，UI-U1 才能另行申请用户
+实施授权。UI-U2 与 UI-U3 还需要各自的后续证据与授权。本次路线备案没有批准任何
+UI code、dependency、owner 或交付排期。
 
 ## 后果
 

@@ -2,26 +2,28 @@
 
 [Chinese documentation](0003-automatic-detection-capability-resolution-and-binary-comparison_zh.md)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-07
+- Accepted: 2026-09-09
 - Owners: Platydiff maintainers
-- Implementation owner: unassigned pending acceptance
+- Implementation owner: implementation session after this RFC reaches `main`
 
 ## Summary
 
-This RFC proposes Phase 2: bounded automatic modality detection, deterministic
+This RFC defines Phase 2: bounded automatic modality detection, deterministic
 capability resolution, and strict binary comparison. It extends the Phase 1
-pipeline without publishing a third-party plugin protocol. Nothing in this RFC
-authorizes implementation while its status is `Proposed`.
+pipeline without publishing a third-party plugin protocol. Acceptance approves
+this implementation contract; implementation starts only after this RFC reaches
+`main` on a new short-lived branch from the updated default branch.
 
-The proposal preserves the [RFC 0001](0001-comparison-outcome-and-diff-result.md)
+The contract preserves the [RFC 0001](0001-comparison-outcome-and-diff-result.md)
 separation between execution outcomes and completed differences and the
 [RFC 0002](0002-development-phases-and-text-slice.md) callback gate for later
 phases. Explicit text behavior remains compatible with Phase 1.
 
 ## Scope
 
-Phase 2 would add:
+Phase 2 adds:
 
 - an explicit `AutoCompareSpec` and an explicit `BinaryCompareSpec`;
 - bounded inspection of path, byte, and text sources;
@@ -31,7 +33,7 @@ Phase 2 would add:
 - `platydiff binary` and an auto-detection CLI route;
 - compatibility tests for every existing Phase 1 route and schema payload.
 
-Phase 2 would not add:
+Phase 2 does not add:
 
 - third-party entry-point discovery, a plugin SDK, or a public registry;
 - encoding detection beyond the existing explicit UTF-8 choices;
@@ -293,15 +295,14 @@ threshold, and tie handling. Phase 2 does not add filename overrides or a
 "best effort" switch. If auto selection is unavailable, the message must tell
 the user to choose `text` or `binary` explicitly.
 
-The numeric minimum and ambiguity margin are acceptance decisions listed in the
-decision ledger. The draft spec defaults are 800 and 100. For any accepted
-values, the table, minimum comparison, margin comparison, and total ordering
-make selection fully computable. The minimum test happens first; if the top
+The accepted numeric minimum is 800 and the accepted ambiguity margin is 100.
+The table, minimum comparison, margin comparison, and total ordering make
+selection fully computable. The minimum test happens first; if the top
 candidate is below it, the result is `detection_no_match` even if candidates
 are tied. With one eligible candidate its lead is treated as unbounded. With
 multiple candidates, `top_score - runner_up_score >= ambiguity_margin` is
-required. Accepted values remain explicit in the normalized auto spec and
-provenance.
+required. Both values remain explicit in the normalized auto spec and
+provenance. Fixtures must validate these constants rather than recalibrate them.
 
 Detection classifies only the bounded prefix. If it selects text and strict
 full-input decoding later encounters invalid UTF-8, execution ends as
@@ -507,7 +508,7 @@ runs only after clean EOF.
 
 ### Semantics and algorithm
 
-The proposed built-in comparator has:
+The built-in comparator has:
 
 ```text
 comparator_id: binary
@@ -561,7 +562,7 @@ a successful outcome.
 
 ### Binary changes, metrics, and limits
 
-The proposed built-in `BinarySpan` has `kind="binary_span"` and contains:
+The built-in `BinarySpan` has `kind="binary_span"` and contains:
 
 ```text
 before_offset: zero-based byte offset
@@ -642,7 +643,7 @@ platydiff compare --type text BEFORE AFTER
 platydiff text BEFORE AFTER
 ```
 
-Phase 2 proposes:
+Phase 2 adds these explicit routes:
 
 ```text
 platydiff compare --type binary BEFORE AFTER
@@ -650,9 +651,9 @@ platydiff binary BEFORE AFTER
 platydiff compare --type auto BEFORE AFTER
 ```
 
-Whether omitted `--type` means auto or remains a usage error is unresolved.
-Until that decision is accepted, documentation and tests must use the explicit
-`--type auto` form. Text-only flags must be rejected for binary or auto routes
+Omitting `--type` remains an exit-2 usage error with no outcome; automatic
+detection is entered only through explicit `--type auto`. Text-only flags must
+be rejected for binary or auto routes
 unless their meaning is defined by the selected spec. Existing shell exits stay
 `0/1/2/3`; detection or resolution unavailability maps to `3`, and parser
 misuse maps to `2` without an outcome.
@@ -669,24 +670,19 @@ provide. The current reader rejects unknown built-in spec and change kinds, so
 adding `AutoCompareSpec`, `BinaryCompareSpec`, or `binary_span` is not readable
 by an older Phase 1 reader even though the source change is additive.
 
-Before implementation, maintainers must choose one ledger option:
+Phase 2 extends the unreleased schema v1 once before the first public release.
+Every Phase 1 payload remains byte-for-byte identical where behavior is
+unchanged, and migration notes state that pre-release readers had no
+forward-compatibility guarantee. At the first public release, closed unions are
+frozen; any later new closed-union kind requires a schema successor.
 
-1. extend unreleased schema v1 before the first public release, preserve every
-   Phase 1 payload byte-for-byte where behavior is unchanged, and document that
-   pre-release readers had no forward-compatibility guarantee; or
-2. introduce schema v2 and define explicit v1/v2 producer and reader behavior.
-
-The recommendation is option 1 because version `0.1.0.dev0` remains unreleased,
-but it is a release-policy decision, not an implementation assumption. After
-the first public release, a new closed-union kind requires a schema successor.
-
-Within the chosen schema, changes must be additive: existing required fields,
+Within schema v1, changes must be additive: existing required fields,
 enum meanings, outcome semantics, problem mappings, exit codes, and Phase 1
 golden JSON remain unchanged. Optional fields require default-on-read behavior.
 Unknown extension changes remain preservable; unknown non-namespaced built-in
 kinds remain rejected. `ExecutionRecord.detection` is the only new optional
 wire field; producers omit it for every explicit comparison and readers treat
-absence as no detection stage. New problem codes proposed by this RFC are:
+absence as no detection stage. New problem codes defined by this RFC are:
 
 | Code | Status | Outcome | Stage |
 | --- | ---: | --- | --- |
@@ -713,8 +709,9 @@ remain private.
   special files on supported platforms;
 - platform metadata unavailable on one OS is omitted or marked unavailable,
   never fabricated;
-- Windows and POSIX path behavior must have explicit tests even though baseline
-  CI may remain Linux/Python 3.12 until the platform matrix is accepted;
+- Linux on Python 3.12 is the minimum Phase 2 merge gate. Windows and POSIX path
+  behavior require explicit tests, and Windows CI must be green before the
+  project claims cross-platform Phase 2 support;
 - malicious byte sequences and terminal controls cannot alter JSON validity or
   terminal control flow.
 
@@ -732,10 +729,11 @@ remain private.
 | Provenance | typed detection wire golden/round trip, detector/comparator/backend versions, thresholds, ranking, attempts, transformations, hashes, limits and actual usage; no inspected bytes |
 | Packaging | zero new runtime dependencies, Ruff, strict mypy, full pytest, build, wheel/sdist inspection, green default-branch CI |
 
-## Proposed implementation commits and gates
+## Implementation commits and gates
 
-Implementation remains unassigned until this RFC is accepted. A future code
-session should use focused commits in this order:
+Implementation remains gated until this accepted RFC reaches `main`. The
+implementation session then uses a new short-lived branch from updated `main`
+and the following focused commits in order:
 
 1. `refactor(core): add bounded replayable source snapshots`
    - Gate: snapshots serve only auto/binary paths; the Phase 1 explicit-text
@@ -762,27 +760,23 @@ maps every accepted RFC clause to code/tests, all required commands pass, CI is
 green, dependency/license impact is recorded, and no Phase 3 plugin API or UI
 work is included.
 
-## Decision ledger
+## Approved decisions
 
-These decisions require explicit human acceptance. Defaults below are
-recommendations, not authorization:
+The user approved D1-D6 on 2026-09-09. They are normative parts of this RFC:
 
-| ID | Decision | Recommendation | Blocks |
+| ID | Decision | Approved contract | Governs |
 | --- | --- | --- | --- |
 | D1 | Auto CLI entry | Require `--type auto` in Phase 2; keep omitted `--type` as exit-2 usage error | CLI contract |
-| D2 | Confidence policy | Integer 0..1000, minimum 800, ambiguity margin 100; fixture-calibrate before acceptance | Detector constants and snapshots |
+| D2 | Confidence policy | Integer 0..1000, minimum 800, ambiguity margin 100; fixture validation is an implementation gate | Detector constants and snapshots |
 | D3 | Schema evolution | Extend unreleased schema v1 once before first release; freeze closed unions at release | Public models and serialization |
 | D4 | Binary input default | Keep the existing 16 MiB per-input default for Phase 2; raise only with evidence and explicit limits | Limits and large-file claims |
 | D5 | Auto text semantics | Auto-selected text uses strict UTF-8, preserved newlines, and no other normalization | Auto spec normalization |
 | D6 | Platform gate | Add Windows CI before claiming cross-platform Phase 2 support; Linux remains the minimum merge gate | Support statement |
 
-Any accepted answer must be copied into the normative section and removed from
-the unresolved ledger before this RFC changes to `Accepted`.
-
 ## Consequences
 
-This proposal makes automatic behavior auditable and conservative: ambiguity
+This contract makes automatic behavior auditable and conservative: ambiguity
 is visible, explicit intent wins, exact binary comparison never relies on a
 digest alone, and plugin publication waits for evidence from two built-ins. It
-also exposes a real pre-release schema decision that must be resolved before
-code begins rather than hidden inside implementation details.
+also records the pre-release schema decision explicitly so implementation
+cannot silently change it.

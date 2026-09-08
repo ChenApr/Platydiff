@@ -4,15 +4,18 @@
 
 - Status: Proposed
 - Date: 2026-09-07
+- Roadmap decisions recorded: 2026-09-09
 - Owners: Platydiff maintainers
-- Implementation owner: unassigned pending acceptance
+- Implementation owner: unassigned pending separate UI authorization
 
 ## Summary
 
 This RFC proposes a human-review presentation architecture for Platydiff. The
-near-term hypothesis is an improved terminal renderer plus a self-contained
-HTML report, followed only when justified by an optional TUI and then a local
-web or desktop application. It does not authorize UI implementation.
+user approved U1-U7 as roadmap direction on 2026-09-09: the first candidate is
+an improved terminal renderer plus a self-contained HTML report, followed only
+when justified by an optional TUI and then a local web or desktop application.
+This records direction and boundaries only; it does not authorize UI
+implementation or scheduling.
 
 Every interface consumes a validated `CompareOutcome`; no renderer or UI may
 recompute relation, verdict, fidelity, metrics, policy evaluations, change
@@ -329,22 +332,25 @@ Do not combine UI-U2 or UI-U3 with UI-U1. Independent review must confirm that
 the view model does not reinterpret RFC 0001, that malicious content cannot
 escape its context, and that JSON behavior remains compatible before merge.
 
-## Decision ledger
+## Approved roadmap decisions
 
-These decisions require explicit human acceptance:
+The user approved U1-U7 as roadmap direction on 2026-09-09. This approval does
+not change this RFC from `Proposed` and does not authorize implementation:
 
-| ID | Decision | Recommendation | Blocks |
+| ID | Decision | Approved roadmap boundary | Governs |
 | --- | --- | --- | --- |
 | U1 | First polished surface | Improve terminal and add self-contained HTML from one view model | UI-U1 scope |
 | U2 | HTML behavior | JavaScript-free document with native anchors/disclosure, enforceable meta CSP, and documented lack of file framing control | Security architecture |
 | U3 | File delivery | Require `--output`; atomic no-clobber by default; explicit entry-replacement overwrite; safe failure when unsupported | CLI and filesystem behavior |
 | U4 | Dependency budget | Standard library and embedded CSS only for UI-U1 | Packaging/license gate |
-| U5 | Scheduling | Start UI-U1 only after Phase 2 schema decision, but allow its view-model design to review Phase 2 | Implementation ordering |
+| U5 | Scheduling | UI-U1 becomes eligible for separate authorization only after the Phase 2 schema decision; its view-model design may review Phase 2 | Implementation ordering |
 | U6 | TUI framework | Defer selection until UI-U2 is accepted after Phase 3 or 4 evidence | Optional dependency |
 | U7 | Desktop/local web | Defer shell choice until multimodal artifact requirements are measured | UI-U3 architecture |
 
-Accepted answers must move into normative sections and leave the unresolved
-ledger before the RFC changes status.
+UI-U1 still requires a separate user authorization after the accepted Phase 2
+schema contract reaches `main` and is stable enough to implement against.
+UI-U2 and UI-U3 require their own later evidence and authorization. No UI code,
+dependency, owner, or delivery schedule is approved by this decision record.
 
 ## Consequences
 

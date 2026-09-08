@@ -8,8 +8,10 @@ implemented on the default branch: it compares explicitly selected text
 sources through a typed Python API or CLI and emits terminal output or the
 schema-v1 JSON outcome contract. The implementation remains unreleased.
 
-Other modalities and automatic detection remain planned. Platydiff never
-guesses that an input is text from its extension, content, or Python type.
+Other modalities and automatic detection remain planned. Their accepted Phase
+2 contract is [RFC 0003](docs/rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison.md),
+but it is not implemented yet. Platydiff never guesses that an input is text
+from its extension, content, or Python type.
 
 ## Install for development
 

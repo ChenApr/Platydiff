@@ -2,18 +2,20 @@
 
 [English documentation](0003-automatic-detection-capability-resolution-and-binary-comparison.md)
 
-- 状态：Proposed
+- 状态：Accepted
 - 日期：2026-09-07
+- 接受日期：2026-09-09
 - Owners：Platydiff 维护者
-- 实现 owner：等待接受后指派
+- 实现 owner：本 RFC 进入 `main` 后由实施会话承担
 
 ## 摘要
 
-本 RFC 提议 Phase 2：有界的自动模态探测、确定性能力解析，以及 strict 二进制
-比较。它在不发布第三方插件协议的前提下扩展 Phase 1 流水线。本 RFC 处于
-`Proposed` 时，其中任何内容都不授权实现。
+本 RFC 定义 Phase 2：有界的自动模态探测、确定性能力解析，以及 strict 二进制
+比较。它在不发布第三方插件协议的前提下扩展 Phase 1 流水线。接受本 RFC 即批准
+这份实施契约；只有本 RFC 进入 `main` 后，才能从更新后的默认分支新建短生命周期
+分支并开始实施。
 
-本提议保持 [RFC 0001](0001-comparison-outcome-and-diff-result_zh.md) 对执行终态和
+本契约保持 [RFC 0001](0001-comparison-outcome-and-diff-result_zh.md) 对执行终态和
 已完成差异的分离，并遵循 [RFC 0002](0002-development-phases-and-text-slice_zh.md)
 对后续阶段的 callback 门禁。显式文本行为继续兼容 Phase 1。
 
@@ -267,13 +269,12 @@ eligible pair candidate 使用如下全序：
 Phase 2 不增加文件名 override 或“best effort”开关。auto 选择 unavailable 时，
 消息必须提示用户显式选择 `text` 或 `binary`。
 
-最低值和 ambiguity margin 的数值属于 decision ledger 中的接受决策。draft spec
-默认值是 800 和 100。任意接受值下，评分表、minimum 比较、margin 比较与全序都使
-结果可完全计算。先执行 minimum test；top candidate 低于 minimum 时，即使候选同分
+已接受的最低值为 800，ambiguity margin 为 100。评分表、minimum 比较、margin 比较
+与全序使结果可完全计算。先执行 minimum test；top candidate 低于 minimum 时，即使候选同分
 也产生 `detection_no_match`。只有一个 eligible candidate 时，其领先视为无穷大。
 多个 candidate 时要求
-`top_score - runner_up_score >= ambiguity_margin`。接受值继续显式记录于 normalized
-auto spec 与 provenance。
+`top_score - runner_up_score >= ambiguity_margin`。两个值继续显式记录于 normalized
+auto spec 与 provenance。fixture 必须验证这些常量，而不是重新校准它们。
 
 探测只分类有界 prefix。如果选中 text 后，strict full-input decoding 在后续发现非法
 UTF-8，execution 在 `decoding` 以 `failed/decode_error` 结束，不得 retry 或 fallback
@@ -460,7 +461,7 @@ serialized payload 逐字节兼容，或提供获批 migration 时，才可统�
 
 ### 语义与算法
 
-提议的内置 comparator 为：
+内置 comparator 为：
 
 ```text
 comparator_id: binary
@@ -504,7 +505,7 @@ Python API 继续传播 `KeyboardInterrupt`、`SystemExit` 和 `MemoryError`。s
 
 ### Binary change、metric 与 limits
 
-提议的内置 `BinarySpan` 使用 `kind="binary_span"`，包含：
+内置 `BinarySpan` 使用 `kind="binary_span"`，包含：
 
 ```text
 before_offset: zero-based byte offset
@@ -577,7 +578,7 @@ platydiff compare --type text BEFORE AFTER
 platydiff text BEFORE AFTER
 ```
 
-Phase 2 提议：
+Phase 2 增加以下显式路由：
 
 ```text
 platydiff compare --type binary BEFORE AFTER
@@ -585,8 +586,8 @@ platydiff binary BEFORE AFTER
 platydiff compare --type auto BEFORE AFTER
 ```
 
-省略 `--type` 是进入 auto 还是继续作为用法错误，尚未决定。在该决策被接受前，
-文档与测试必须使用显式 `--type auto`。text-only flag 必须在 binary 或 auto 路由被
+省略 `--type` 继续是不产生 outcome 的 exit-2 用法错误；只有显式 `--type auto`
+才进入自动探测。text-only flag 必须在 binary 或 auto 路由被
 拒绝，除非选定 spec 已定义其含义。现有 shell exit `0/1/2/3` 保持不变；探测或
 解析 unavailable 映射为 `3`，parser misuse 映射为不产生 outcome 的 `2`。
 
@@ -600,20 +601,16 @@ Phase 2 不得声称 schema v1 不具备的前向兼容性。当前 reader 拒�
 和 change kind，因此即使源码变更是加法，增加 `AutoCompareSpec`、
 `BinaryCompareSpec` 或 `binary_span` 也不能被旧 Phase 1 reader 读取。
 
-实现前，维护者必须选择一个 ledger 选项：
+Phase 2 在第一次公开发布前扩展一次尚未发布的 schema v1。行为未变化时，每个
+Phase 1 payload 必须逐字节保持不变；migration note 必须说明预发布 reader 没有
+前向兼容保证。第一次公开发布时冻结 closed union；此后新增 closed-union kind
+必须使用 schema successor。
 
-1. 在第一次公开发布前扩展尚未发布的 schema v1；行为未变化时，保持每个 Phase 1
-   payload 逐字节不变，并说明预发布 reader 没有前向兼容保证；或
-2. 引入 schema v2，并明确 v1/v2 producer 与 reader 行为。
-
-建议 option 1，因为版本仍为 `0.1.0.dev0` 且未发布；但这是 release policy 决策，
-不是实现假设。第一次公开发布后，新的 closed-union kind 需要 schema successor。
-
-在选定 schema 内，变更必须为加法：现有 required field、enum 含义、outcome 语义、
+在 schema v1 内，变更必须为加法：现有 required field、enum 含义、outcome 语义、
 problem mapping、exit code 和 Phase 1 golden JSON 保持不变。optional field 必须有
 读取默认值。未知 extension change 继续可保留；未知的非命名空间内置 kind 继续拒绝。
 `ExecutionRecord.detection` 是唯一新增 optional wire field；producer 对每个显式比较
-省略它，reader 把 absent 解释为没有 detection stage。本 RFC 提议的新 problem code 为：
+省略它，reader 把 absent 解释为没有 detection stage。本 RFC 定义的新 problem code 为：
 
 | Code | Status | Outcome | Stage |
 | --- | ---: | --- | --- |
@@ -635,8 +632,8 @@ kind、spec 和 public export 都要求 constructor、round-trip、invalid-state
 - 输入字节不得进入 diagnostic、log、filename、HTML 或 terminal output；
 - path opening 与 descriptor validation 要在支持平台测试 symlink swap 和 special file；
 - 某 OS 不可用的平台 metadata 必须省略或标为 unavailable，不能伪造；
-- 即使 baseline CI 在平台矩阵接受前仍为 Linux/Python 3.12，也必须明确测试 Windows
-  与 POSIX 路径行为；
+- Linux/Python 3.12 是 Phase 2 最低 merge gate。Windows 与 POSIX 路径行为必须有
+  显式测试；在项目声称 Phase 2 跨平台支持前，Windows CI 必须为绿色；
 - 恶意字节序列与 terminal control 不得改变 JSON 有效性或 terminal control flow。
 
 ## 接受矩阵
@@ -653,9 +650,10 @@ kind、spec 和 public export 都要求 constructor、round-trip、invalid-state
 | Provenance | typed detection wire golden/round trip、detector/comparator/backend 版本、阈值、排序、attempt、transformation、hash、limits 和实际用量；不含 inspected bytes |
 | Packaging | 零新增 runtime dependency、Ruff、strict mypy、完整 pytest、build、wheel/sdist 检查、默认分支 CI 绿色 |
 
-## 提议的实现 commit 与门禁
+## 实现 commit 与门禁
 
-在 RFC 接受前，实现工作不指派。未来代码会话应按顺序使用以下聚焦 commit：
+实施仍需等待本 RFC 进入 `main`。届时实施会话必须从更新后的 `main` 新建
+短生命周期分支，并按顺序使用以下聚焦 commit：
 
 1. `refactor(core): add bounded replayable source snapshots`
    - 门禁：snapshot 只服务 auto/binary 路径；Phase 1 显式 text eager path、stage、
@@ -681,24 +679,21 @@ kind、spec 和 public export 都要求 constructor、round-trip、invalid-state
 CI 绿色、dependency/license 影响已记录，且 PR 不包含 Phase 3 plugin API 或 UI 工作
 时，实现 PR 才可合并。
 
-## 决策账本
+## 已批准决策
 
-以下决策需要人类明确接受；下列默认只是建议，不是授权：
+用户于 2026-09-09 批准 D1-D6；它们是本 RFC 的规范性组成部分：
 
-| ID | 决策 | 建议 | 阻断项 |
+| ID | 决策 | 已批准契约 | 约束对象 |
 | --- | --- | --- | --- |
 | D1 | Auto CLI 入口 | Phase 2 要求 `--type auto`；省略 `--type` 继续为 exit-2 用法错误 | CLI 契约 |
-| D2 | Confidence policy | 整数 0..1000，最低 800，ambiguity margin 100；接受前用 fixture 校准 | Detector 常量与 snapshot |
+| D2 | Confidence policy | 整数 0..1000，最低 800，ambiguity margin 100；fixture 验证是实施门禁 | Detector 常量与 snapshot |
 | D3 | Schema 演进 | 首次发布前扩展一次未发布 schema v1；发布时冻结 closed union | 公共 model 与 serialization |
 | D4 | Binary input 默认值 | Phase 2 保持现有每输入 16 MiB；只有证据和显式 limit 才提高 | limits 与大文件声明 |
 | D5 | Auto text 语义 | auto 选中 text 后使用 strict UTF-8、保留 newline，不做其他 normalization | Auto spec normalization |
 | D6 | 平台门禁 | 声明跨平台 Phase 2 支持前加入 Windows CI；Linux 仍是最低 merge gate | 支持声明 |
 
-任何已接受答案都必须写回 normative section，并在本 RFC 转为 `Accepted` 前从未决
-账本移除。
-
 ## 后果
 
-本提议使自动行为可审计且保守：歧义可见、显式意图优先、精确二进制比较从不只
-依赖 digest，并让插件发布等待两个内置能力的证据。它也暴露了真实的预发布 schema
-决策，要求在代码开始前处理，而不是把它隐藏在实现细节中。
+本契约使自动行为可审计且保守：歧义可见、显式意图优先、精确二进制比较从不只
+依赖 digest，并让插件发布等待两个内置能力的证据。它也显式记录预发布 schema
+决策，使实施无法静默改变它。

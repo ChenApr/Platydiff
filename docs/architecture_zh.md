@@ -190,9 +190,9 @@ DiffResult
 - 媒体和 PDF 解析运行在有超时、内存、磁盘和进程限制的工作单元中。
 - 任何自动降采样、裁剪、重采样或颜色转换都必须出现在结果来源信息中。
 - 比较任务支持取消和阶段级错误，单个渲染器失败不应破坏已有核心结果。
-- 所有人类评审界面必须位于已验证 outcome 语义的下游。提议的 renderer 与 UI 顺序
-  见 [RFC 0004](rfcs/0004-human-review-ui-and-renderer-boundary_zh.md)；该 RFC 为
-  Proposed 时不授权实现。
+- 所有人类评审界面必须位于已验证 outcome 语义的下游。已备案的 renderer 与 UI
+  路线见 [RFC 0004](rfcs/0004-human-review-ui-and-renderer-boundary_zh.md)。路线方向
+  已获批准，但该 RFC 保持 Proposed 时仍未授权实施或排期。
 
 ## 6. 各模态基本原理
 
@@ -236,7 +236,7 @@ PDF 同时包含文本、绘制指令、字体、图片和页面布局。应提�
 
 ## 7. 里程碑
 
-分阶段交付计划及实现门禁由 [RFC 0002](rfcs/0002-development-phases-and-text-slice_zh.md) 定义。提议中的 Phase 2 探测、内部能力解析和精确二进制契约见 [RFC 0003](rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison_zh.md)。下方版本分组描述产品方向；它们不覆盖 RFC 中更狭窄且需要显式授权的阶段，也不表示相关能力已经实现。
+分阶段交付计划及实现门禁由 [RFC 0002](rfcs/0002-development-phases-and-text-slice_zh.md) 定义。已接受的 Phase 2 探测、内部能力解析和精确二进制契约见 [RFC 0003](rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison_zh.md)；在完成实施与验证前，它仍是计划能力。下方版本分组描述产品方向；它们不覆盖 RFC 中更狭窄且需要显式授权的阶段，也不表示相关能力已经实现。
 
 Phase 1 已在默认分支实现，包含 Python 包、schema-v1 契约、显式文本流水线、
 线性空间 Myers 算法、CLI 以及 terminal/JSON renderer。它尚未发布。下列其他

@@ -191,8 +191,9 @@ After interfaces stabilize, performance-critical paths may use Rust extensions, 
 - Record every automatic downsampling, crop, resampling operation, or color conversion in result provenance.
 - Support cancellation and stage-level errors. A renderer failure must not invalidate an already produced core result.
 - Keep every human review surface downstream of validated outcome semantics. The
-  proposed renderer and UI sequence is defined in [RFC 0004](rfcs/0004-human-review-ui-and-renderer-boundary.md)
-  and is not authorized while that RFC remains Proposed.
+  recorded renderer and UI roadmap is defined in [RFC 0004](rfcs/0004-human-review-ui-and-renderer-boundary.md).
+  Its direction is approved, but implementation and scheduling are not
+  authorized while that RFC remains Proposed.
 
 ## 6. Modality fundamentals
 
@@ -236,7 +237,7 @@ Statistical comparison can include KS tests, Wasserstein distance, chi-squared t
 
 ## 7. Milestones
 
-The staged delivery plan and its implementation gates are defined by [RFC 0002](rfcs/0002-development-phases-and-text-slice.md). The proposed Phase 2 detection, internal resolution, and exact-binary contract is [RFC 0003](rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison.md). The version groupings below describe product direction; they do not override the RFCs' narrower, explicitly authorized phases or imply that a capability is implemented.
+The staged delivery plan and its implementation gates are defined by [RFC 0002](rfcs/0002-development-phases-and-text-slice.md). The accepted Phase 2 detection, internal resolution, and exact-binary contract is [RFC 0003](rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison.md); it remains planned until implemented and verified. The version groupings below describe product direction; they do not override the RFCs' narrower, explicitly authorized phases or imply that a capability is implemented.
 
 Phase 1 is implemented on the default branch and contains the Python package,
 schema-v1 contracts, explicit text pipeline, linear-space Myers algorithm,
