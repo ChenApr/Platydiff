@@ -112,3 +112,21 @@ class InputOutputError(DomainError):
             stage=PipelineStage.SOURCING,
             retryable=retryable,
         )
+
+
+class SourceChangedError(DomainError):
+    """A source changed after its snapshot was established."""
+
+    def __init__(self, *, stage: PipelineStage) -> None:
+        if stage not in (
+            PipelineStage.DETECTING,
+            PipelineStage.DECODING,
+            PipelineStage.COMPARING,
+        ):
+            raise ValueError("source changes must be reported at an observing stage")
+        super().__init__(
+            "A source changed while it was being compared.",
+            code="source_changed",
+            status_code=409,
+            stage=stage,
+        )
