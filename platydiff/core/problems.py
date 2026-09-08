@@ -32,6 +32,41 @@ class DomainError(Exception):
         self.retryable = retryable
 
 
+class UnavailableError(DomainError):
+    """A deterministic detection or capability selection failure."""
+
+
+class DetectionUnavailableError(UnavailableError):
+    def __init__(self, *, ambiguous: bool) -> None:
+        super().__init__(
+            "Automatic detection could not select a type; "
+            "choose text or binary explicitly.",
+            code="detection_ambiguous" if ambiguous else "detection_no_match",
+            status_code=409 if ambiguous else 415,
+            stage=PipelineStage.DETECTING,
+        )
+
+
+class CapabilityUnavailableError(UnavailableError):
+    def __init__(self, *, backend_missing: bool = False) -> None:
+        super().__init__(
+            "No compatible comparison capability is available.",
+            code="backend_unavailable" if backend_missing else "capability_unavailable",
+            status_code=503 if backend_missing else 501,
+            stage=PipelineStage.RESOLVING,
+        )
+
+
+class SourceTypeUnsupportedError(DomainError):
+    def __init__(self) -> None:
+        super().__init__(
+            "The source type is not supported.",
+            code="source_type_unsupported",
+            status_code=415,
+            stage=PipelineStage.SOURCING,
+        )
+
+
 class InvalidSpecError(DomainError):
     def __init__(self, message: str) -> None:
         super().__init__(
