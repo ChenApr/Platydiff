@@ -88,7 +88,8 @@ The core layer must not depend directly on heavyweight media or PDF engines. Com
 
 ## 4. Abstract interfaces
 
-The following Python pseudocode describes the plugin boundary without prescribing a final class hierarchy or framework:
+The following Python pseudocode is an early modality-pipeline sketch, not a
+public plugin protocol or final class hierarchy:
 
 ```python
 class DiffPlugin(Protocol):
@@ -110,6 +111,13 @@ class DiffPlugin(Protocol):
         spec: CompareSpec,
     ) -> DiffResult: ...
 ```
+
+The evidence-based Phase 3 proposal is
+[RFC 0005](rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility.md).
+It keeps current registries and source snapshots private, makes discovery
+explicit and allowlisted, and gives the host ownership of stages, resources,
+provenance, and outcome construction. It is `Proposed`: no entry-point group,
+SDK API, or third-party execution is implemented or authorized.
 
 ### 4.1 CompareSpec
 
@@ -237,7 +245,7 @@ Statistical comparison can include KS tests, Wasserstein distance, chi-squared t
 
 ## 7. Milestones
 
-The staged delivery plan and its implementation gates are defined by [RFC 0002](rfcs/0002-development-phases-and-text-slice.md). Phase 2 bounded detection, internal resolution, and exact binary comparison implement [RFC 0003](rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison.md). The version groupings below describe product direction and do not imply that later capabilities are implemented.
+The staged delivery plan and its implementation gates are defined by [RFC 0002](rfcs/0002-development-phases-and-text-slice.md). Phase 2 bounded detection, internal resolution, and exact binary comparison implement [RFC 0003](rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison.md). The proposed Phase 3 plugin boundary is [RFC 0005](rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility.md); it has not been accepted or implemented. The version groupings below describe product direction and do not imply that later capabilities are implemented.
 
 Phases 1 and 2 contain the Python package, schema-v1 contracts, explicit text,
 bounded text/binary detection, exact binary comparison, CLI, and terminal/JSON

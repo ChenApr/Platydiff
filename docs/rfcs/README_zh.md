@@ -20,5 +20,6 @@
 | [0002](0002-development-phases-and-text-slice_zh.md) | Implemented | 为首个 Python/text 切片设置门禁，并把后续能力置于显式契约评审之后 |
 | [0003](0003-automatic-detection-capability-resolution-and-binary-comparison_zh.md) | Implemented | 定义有界自动探测、确定性内部能力解析和精确二进制比较 |
 | [0004](0004-human-review-ui-and-renderer-boundary_zh.md) | Proposed | 保持人类评审界面位于 validated outcome 下游，并分阶段规划 terminal、HTML、TUI 和 desktop 工作 |
+| [0005](0005-third-party-plugin-discovery-sdk-and-compatibility_zh.md) | Proposed | 定义显式第三方 discovery、版本化 SDK、确定性 capability execution 与兼容性证据 |
 
 计划中的行为在实现并完成验证前，必须继续明确标记为计划能力。
