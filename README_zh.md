@@ -7,7 +7,8 @@ Diff 引擎。Phase 1 与 Phase 2 已实现显式文本、精确二进制，以�
 文本/二进制自动探测。Phase 3 还加入 immutable plugin host、显式选择的文本/二进制
 detector、comparator 与有界 renderer 执行、schema-v2 provider provenance、CLI opt-in
 参数和 compatibility receipt profile。既有三参数 API 与默认 CLI 仍只使用内建能力并
-保持 schema-v1 contract。当前仍未发布。
+保持内建能力；既有 text/binary/auto 调用保持 schema-v1 contract，显式 Phase 4
+P4-A1 JSON 路径则返回 schema v3。当前仍未发布。
 
 ## 开发环境安装
 
@@ -80,6 +81,24 @@ platydiff compare --type auto before.dat after.dat
 自动探测从不隐式启用；省略 `--type` 是用法错误。探测只读取有界前缀，二进制
 比较以有界 chunk 流式读取并比较真实字节。详见[自动探测与二进制比较指南](docs/binary-comparison_zh.md)。
 
+## 显式比较 JSON
+
+```bash
+platydiff json before.json after.json
+platydiff compare --type json --format json before.json after.json
+```
+
+JSON 比较严格遵循 RFC 8259 并比较语义：object member 顺序和 string escape 拼写不参与
+比较，array 保持 positional；默认 `--number-mode value` 会把 `1`、`1.0` 与 `1e0`
+视为相等。使用 `--number-mode lexical` 可精确比较合法 number token。返回的 schema-v3
+change 使用 canonical JSON Pointer 与 typed fact。若需省略 value fact，必须在比较前选择
+`--detail digest_only`；path、input hash、count 与可复现 evidence digest 仍是 pseudonymous
+metadata，并不构成机密性脱敏。
+
+JSON 只允许显式、内建比较，不会被 `auto` 选择。JSON 命令会在 discovery 前拒绝 plugin、
+detector、comparator 与 plugin-renderer 参数。完整契约、限制、schema migration 与失败行为见
+[JSON 比较指南](docs/json-comparison_zh.md)。
+
 ## 显式启用插件
 
 插件默认绝不加载。重复使用 `--plugin` 可 allowlist 精确的已安装插件 ID；第三方
@@ -103,14 +122,14 @@ options 与有界 host sink。它产生的 text/bytes 不经 fallback 写入 std
 
 ## 已实现与计划能力
 
-Phase 1、Phase 2 与 P3-A/P3-B/P3-C 插件门禁已实现：
+Phase 1、Phase 2、P3-A/P3-B/P3-C 插件门禁与 P4-A1 已实现：
 
 - Python 3.12+ 库与 `platydiff` CLI；
 - schema-v1 `CompareOutcome` 和 `DiffResult` JSON 序列化；
 - strict 行级文本比较；
 - 确定性、线性辅助空间的 Myers insert/delete 编辑脚本；
 - 具有有界 change 明细的 terminal 与 JSON renderer；
-- 同时支持 schema-v1 与 schema-v2 outcome 的 terminal 与 JSON renderer；
+- 支持 schema-v1、schema-v2 与 schema-v3 outcome 的 terminal 与 JSON renderer；
 - 有界、确定性的文本/二进制探测与内部 capability resolution；
 - collision-safe 的精确二进制比较和不携带 payload 的 change span；
 - immutable SDK-v1 manifest 与 capability/dependency/platform inventory；
@@ -120,13 +139,17 @@ Phase 1、Phase 2 与 P3-A/P3-B/P3-C 插件门禁已实现：
   lifecycle stage，并支持自动比较精确 pin 内建 comparator 与严格的 declared-backend
   provenance，以及 host 侧 output-limit/exact-semantics 校验；
 - schema-v2 provider、attempt 与 plugin-host provenance，以及 typed v1-to-v2 upgrader；
-  `PluginHost.compare()` 始终返回 schema v2；
+  既有 `PluginHost.compare()` 调用返回 schema v2，而 schema-v3 JSON intent 会在 resolution
+  阶段被拒绝，因为 SDK v1.1 仍只支持 text/binary；
 - 有界第三方 renderer handle、显式 CLI plugin/capability 参数、确定性 compatibility
   receipt，以及跨边界 failure-isolation profile。
+- schema-v3 outcome、显式 v1/v2-to-v3 migration、typed structured change、严格有界 JSON
+  decoding、value/lexical number semantics、JSON Pointer alignment、确定性 evidence digest，
+  以及显式 Python/CLI JSON 路径。
 
 计划中、尚未实现：
 
-- JSON/YAML、表格、数组、图片、源代码、PDF、音频和视频；
+- YAML、表格、数组、图片、源代码、PDF、音频和视频；
 - stdin、目录、递归比较和配置文件；
 - color、HTML、JUnit 和 patch artifact。
 

@@ -149,22 +149,25 @@ retaining every completed run. A structurally valid run that cannot be weakly
 referenced is rejected safely during resolution before any lifecycle method is
 called.
 
-Every host comparison returns schema v2, including built-in selections. Schema
-v2 records the enabled/loaded provider snapshot, versioned attempts, and selected
-provider provenance. The existing three-argument `compare()` and a CLI command
-without plugin/capability flags remain schema v1. A CLI command that enables or
-pins a plugin capability uses the host and schema v2. If an unexpected CLI
-failure occurs after discovery, the failure outcome preserves the exact loaded
+Every supported SDK-v1.1 host comparison returns schema v2, including built-in
+text/binary selections. Schema v2 records the enabled/loaded provider snapshot,
+versioned attempts, and selected provider provenance. Phase 4 JSON intent is
+outside SDK v1.1 and returns schema-v3 resolving-stage
+`capability_unavailable`; JSON CLI routes reject plugin flags before discovery.
+The existing three-argument text/binary/auto `compare()` and a legacy CLI command
+without plugin/capability flags remain schema v1. A legacy CLI command that
+enables or pins a plugin capability uses the host and schema v2. If an unexpected
+CLI failure occurs after discovery, the failure outcome preserves the exact loaded
 provider snapshot; a discovery failure records the enabled IDs with no loaded
-providers. Readers accept both
-versions, and `upgrade_outcome_v1_to_v2()` adds an empty host context without
-changing v1 result meaning. Schema-v1 models and
+providers. Readers accept schema v1, v2, and v3, and
+`upgrade_outcome_v1_to_v2()` adds an empty host context without changing v1
+result meaning. Schema-v1 models and
 encoders reject schema-v2 nested values. Schema-v2 construction and reading
 cross-check provider-backed attempts against the loaded host snapshot and the
 selected comparator/detector provenance, require selected comparator versions
 to match result provenance, and apply SDK-grade distribution/version identity
-validation. The built-in terminal and JSON renderers accept both outcome schema
-versions without recomputing result semantics.
+validation. The built-in terminal and JSON renderers accept all three outcome
+schema versions without recomputing result semantics.
 
 ## Author a bounded renderer
 

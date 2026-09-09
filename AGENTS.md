@@ -22,9 +22,11 @@ The repository contains the implemented Phase 1 explicit-text and Phase 2
 automatic/binary Python library and CLI plus the Phase 3 P3-A/P3-B/P3-C public
 plugin SDK, discovery, execution host, schema-v2 provenance, bounded renderer,
 explicit CLI selection, and compatibility receipts. It remains unreleased. New
-modalities, configuration files, automatic installation, arbitrary artifacts,
-HTML, and review UI remain planned; never describe them as implemented, and
-report only verification commands actually run.
+Phase 4 gate P4-A1 adds schema-v3 contracts and explicit built-in semantic JSON
+comparison. YAML, tables, arrays, other new modalities, configuration files,
+automatic installation, arbitrary artifacts, HTML, and review UI remain planned;
+never describe them as implemented, and report only verification commands
+actually run.
 
 ## Repository structure
 
@@ -33,7 +35,7 @@ Currently present:
 - `README.md`: project goals, scope, and design principles. `README_zh.md` is its Chinese translation.
 - `docs/architecture.md`: authoritative architecture, interface direction, modality fundamentals, milestones, and compliance boundaries. `docs/architecture_zh.md` is its Chinese translation.
 - `pyproject.toml`: Python packaging metadata and the standard development-tool configuration.
-- `platydiff/`: the implemented Phase 1/2 library and CLI plus the Phase 3 SDK, discovery, execution host, renderer boundary, and CLI opt-in.
+- `platydiff/`: the implemented Phase 1/2 library and CLI, Phase 3 plugin boundary, and Phase 4 P4-A1 schema-v3/JSON path.
 - `tests/`: unit, integration, contract, algorithm, CLI, and packaging regression tests.
 
 Target structure:

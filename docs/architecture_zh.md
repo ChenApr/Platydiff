@@ -216,9 +216,11 @@ DiffResult
 
 源代码解析为语法树后匹配节点，可弱化排版变化并表达节点插入、删除、更新和移动。JSON、YAML、TOML、XML 应解析为带类型的树或映射，再依据字段路径比较；键排序、数字表示和无关元数据属于可配置的规范化阶段。
 
-显式 JSON 与受约束 YAML 1.2 比较契约已在
-[RFC 0006](rfcs/0006-structured-data-comparison_zh.md) 中接受，但仍未实现。接受契约不会
-扩展既有 text/binary automatic-detection 或 plugin-SDK 契约，也不授权实现门禁。
+Phase 4 门禁 P4-A1 已实现 [RFC 0006](rfcs/0006-structured-data-comparison_zh.md)
+中的显式 JSON 与 schema-v3 部分：严格有界 RFC 8259 decoding、value/lexical number
+semantics、JSON Pointer alignment、typed structured change 与确定性 evidence digest。
+受约束 YAML 1.2 contract 仍在未实现的 P4-A2 门禁之后。JSON 仍只允许显式、内建比较，
+不会扩展 text/binary automatic detection 或 SDK v1.1。
 
 语法相同不等于运行语义相同。AST 比较需要明确其解析器版本、错误恢复策略和宏/预处理边界。
 
@@ -255,11 +257,12 @@ equivalence 仍是后续契约回调。
 
 分阶段交付计划及实现门禁由 [RFC 0002](rfcs/0002-development-phases-and-text-slice_zh.md) 定义。Phase 2 的有界探测、内部能力解析和精确二进制比较已实现 [RFC 0003](rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison_zh.md)。Phase 3 门禁 P3-A、P3-B 与 P3-C 已实现 [RFC 0005](rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility_zh.md) 的 SDK declaration/discovery、显式选择的 detector/comparator/renderer 执行、schema-v2 provenance、显式 CLI opt-in 与 compatibility receipt。下方版本分组只描述产品方向，不表示后续能力已经实现。
 
-Phase 1 至 Phase 3 包含 Python 包、schema-v1/v2 契约、显式文本、有界文本/二进制
+Phase 1 至 Phase 3 以及 Phase 4 门禁 P4-A1 包含 Python 包、schema-v1/v2/v3 契约、
+显式文本、有界文本/二进制
 探测、精确二进制比较、CLI、terminal/JSON renderer 与显式 plugin boundary，且仍未
-发布。Phase 4 structured-data 契约已在
-[RFC 0006](rfcs/0006-structured-data-comparison_zh.md) 中接受，但仍未实现且需要单独门禁授权。
-下列其他模态与 renderer 仍是计划能力。
+发布；P4-A1 另加入显式 semantic JSON comparison。
+[RFC 0006](rfcs/0006-structured-data-comparison_zh.md) 中其余 YAML、table 与 array 门禁仍
+未实现且需要单独授权。下列其他模态与 renderer 仍是计划能力。
 
 ### v0.1：核心闭环
 
