@@ -241,9 +241,19 @@ A one-pixel translation can create a large apparent difference. Registration, cr
 
 Audio comparison first applies explicit sample-rate, channel, and sample-format policies, then aligns by timestamp or cross-correlation. It can compare PCM waveforms, STFT or Mel spectra, SNR, or perceptual quality. Millisecond delays, gain changes, and resampling can all break exact sample comparison, so the system must distinguish “identical signal” from “perceptually similar.” ViSQOL, PESQ/POLQA, and comparable systems belong in optional backends rather than core dependencies.
 
+[RFC 0009](rfcs/0009-audio-and-video-comparison.md) proposes explicit audio
+contracts for encoded bytes, decoded samples, waveform/numeric, spectral, and
+perceptual relations. It remains proposed and does not authorize
+implementation.
+
 ### 6.6 Video
 
 Video comparison requires demuxing, decoding, timeline alignment, explicit frame-rate and resolution policies, and color-space normalization before computing per-frame metrics such as PSNR, SSIM, or VMAF and aggregating them over time. Detecting edits, inserted frames, and reordered shots requires shot segmentation, frame fingerprints, or feature-sequence matching; quality metrics alone are insufficient. Audio tracks should be compared as a separate modality and associated with the video timeline.
+
+[RFC 0009](rfcs/0009-audio-and-video-comparison.md) also proposes explicit
+video contracts for stream structure, decoded frames, frame metrics,
+perceptual video, and audio-track association. It remains proposed and does not
+authorize implementation.
 
 ### 6.7 PDF
 
@@ -275,7 +285,8 @@ terminal/JSON renderers, and the explicit plugin boundary. They remain
 unreleased. Phase 4 structured-data contracts are accepted in
 [RFC 0006](rfcs/0006-structured-data-comparison.md) but remain unimplemented and
 require separate gate authorization. Every other modality and renderer below is
-planned.
+planned. Phase 7 audio/video contracts are proposed in
+[RFC 0009](rfcs/0009-audio-and-video-comparison.md); they are not implemented.
 
 ### v0.1: Core loop
 
