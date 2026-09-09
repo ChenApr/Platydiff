@@ -224,6 +224,19 @@ def test_schema_v2_rejects_provenance_provider_not_loaded_by_host() -> None:
         outcome_from_data(data)
 
 
+def test_schema_v2_rejects_external_comparator_with_deleted_provider() -> None:
+    data = deepcopy(_plugin_completed_data())
+    result = cast(JsonObject, data["result"])
+    provenance = cast(JsonObject, result["provenance"])
+    provenance["provider"] = None
+    execution = cast(JsonObject, data["execution"])
+    attempts = cast(list[object], execution["attempts"])
+    selected = cast(JsonObject, attempts[-1])
+    selected["provider"] = None
+    with pytest.raises(SerializationError, match="provider"):
+        outcome_from_data(data)
+
+
 def test_schema_v2_rejects_selected_attempt_that_disagrees_with_result() -> None:
     data = deepcopy(_plugin_completed_data())
     execution = cast(JsonObject, data["execution"])
@@ -284,6 +297,32 @@ def test_schema_v2_rejects_detector_provider_that_disagrees_with_detection() -> 
     detection = cast(JsonObject, execution["detection"])
     detection["detector_id"] = "org.example.scidiff.other_detector"
     with pytest.raises(SerializationError, match="detector"):
+        outcome_from_data(data)
+
+
+def test_schema_v2_rejects_external_detector_with_deleted_provider() -> None:
+    detector = _DetectorHandle()
+    host, _ = _capability(detector, CapabilityKind.DETECTOR)
+    outcome = host.compare(
+        BytesSource(b"ascii"),
+        BytesSource(b"ascii"),
+        AutoCompareSpec(),
+        detector_id=detector.capability_id,
+    )
+    assert isinstance(outcome, CompletedOutcomeV2)
+    data = deepcopy(outcome_to_data(outcome))
+    result = cast(JsonObject, data["result"])
+    provenance = cast(JsonObject, result["provenance"])
+    provenance["detector_provider"] = None
+    execution = cast(JsonObject, data["execution"])
+    attempts = cast(list[object], execution["attempts"])
+    detector_attempt = next(
+        cast(JsonObject, attempt)
+        for attempt in attempts
+        if cast(JsonObject, attempt)["capability_id"] == detector.capability_id
+    )
+    detector_attempt["provider"] = None
+    with pytest.raises(SerializationError, match="detector provider"):
         outcome_from_data(data)
 
 
