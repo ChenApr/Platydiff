@@ -204,7 +204,9 @@ def manifest() -> PluginManifestV1:
 Renderer 只得到 validated outcome 副本、presentation options 与 host-owned sink；不会
 得到 source、path、registry、artifact root 或 comparison callback。每次调用只能选择
 `write_text()` 或 `write_bytes()` 之一。Sink 强制精确 UTF-8 byte budget 与声明的 media
-type。生成 terminal text 的 renderer 必须转义恶意 control character；CLI 会在 plugin
+type。`text/*` media type 始终采用严格 UTF-8 text mode，包括通过 `write_bytes()` 提供的
+bytes；无效 UTF-8 会导致 rendering 失败，有效 bytes 仍需通过 CLI terminal safety 检查。
+生成 terminal text 的 renderer 必须转义恶意 control character；CLI 会在 plugin
 text 写入 stdout 前拒绝 BOM、bidi control 与除 newline 外的 C0/C1 control。Renderer
 不得重算 relation、verdict、metric、completeness 或其他 comparison fact。SDK v1 不
 提供任意文件写入、HTML policy 或 UI behavior。
@@ -272,7 +274,8 @@ evidence summary。Canonical JSON 会把这些结果与精确 suite/host version
 distribution identity、协商后的 SDK 与 outcome schema version，以及 backend/platform
 inventory 一起记录；SHA-256 digest 覆盖 normalized per-profile result。Evidence 在 result
 构造时会被递归快照，并在 receipt 输出时再次校验；任何包含 `/` 或 `\` 的字符串都会被拒绝，
-防止嵌入式本地路径进入 receipt。只有全部 profile
+防止嵌入式本地路径进入 receipt。每一层 evidence key 也必须是有界的 lowercase ASCII
+identifier。只有全部 profile
 都 passed 时，整体 result 才是 `conforms` 并出现唯一允许的
 `conforms to Platydiff plugin profile X under suite version Y.` 声明；failed 或 mixed
 receipt 不包含 conformance claim。

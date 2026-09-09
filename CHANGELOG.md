@@ -35,6 +35,8 @@ All notable changes to Platydiff are documented in this file.
 - Preserved the exact loaded-provider snapshot in schema-v2 CLI failures after
   discovery, and made compatibility-receipt evidence deeply immutable,
   path-free, and revalidated at emission.
+- Enforced strict UTF-8 text mode for `text/*` renderer output even when a plugin
+  writes bytes, and constrained every nested receipt-evidence key.
 
 - Preserved schema v2 and exact enabled-plugin context at every plugin-enabled
   CLI exception boundary, rejected unsafe third-party terminal controls before

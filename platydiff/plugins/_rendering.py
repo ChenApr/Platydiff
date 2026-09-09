@@ -125,6 +125,8 @@ class RenderedOutputV1:
             raise ValueError("data must be bytes")
         if type(self.is_text) is not bool:
             raise ValueError("is_text must be a boolean")
+        if self.media_type.startswith("text/") and not self.is_text:
+            raise ValueError("text media output must use strict UTF-8 text mode")
         if not isinstance(self.provider, ProviderIdentity):
             raise ValueError("provider must be a ProviderIdentity")
         if not renderer_id.startswith(f"{self.provider.plugin_id}."):
@@ -153,6 +155,7 @@ class _BoundedSink:
         self._maximum = options.max_output_bytes
         self._data = bytearray()
         self._mode: str | None = None
+        self._write_api: str | None = None
         self._invalid = False
         self._overflowed = False
 
@@ -181,9 +184,7 @@ class _BoundedSink:
         if not isinstance(untrusted, str):
             self._invalid = True
             raise TypeError("renderer text output must be a string")
-        if self._mode is not None and self._mode != "text":
-            self._invalid = True
-            raise TypeError("renderer output modes must not be mixed")
+        self._select_write_api("text")
         if len(value) > self.remaining_bytes:
             self._overflowed = True
             raise PluginResourceLimitErrorV1(
@@ -201,7 +202,22 @@ class _BoundedSink:
         if not isinstance(untrusted, bytes):
             self._invalid = True
             raise TypeError("renderer binary output must be bytes")
-        self._write(value, "bytes")
+        self._select_write_api("bytes")
+        mode = "bytes"
+        if self.media_type.startswith("text/"):
+            try:
+                value.decode("utf-8", errors="strict")
+            except UnicodeDecodeError:
+                self._invalid = True
+                raise
+            mode = "text"
+        self._write(value, mode)
+
+    def _select_write_api(self, mode: str) -> None:
+        if self._write_api is not None and self._write_api != mode:
+            self._invalid = True
+            raise TypeError("renderer output modes must not be mixed")
+        self._write_api = mode
 
     def _write(self, value: bytes, mode: str) -> None:
         if self._mode is not None and self._mode != mode:

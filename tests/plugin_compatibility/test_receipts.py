@@ -277,6 +277,26 @@ def test_profile_result_requires_non_sensitive_normalized_evidence(
         )
 
 
+@pytest.mark.parametrize(
+    "malicious_key",
+    [
+        "nested/path",
+        r"nested\path",
+        "nested\x1bkey",
+        "k" * 256,
+    ],
+)
+def test_profile_result_rejects_malicious_nested_evidence_keys(
+    malicious_key: str,
+) -> None:
+    with pytest.raises(ValueError, match="evidence keys"):
+        CompatibilityProfileResultV1(
+            MANIFEST_PROFILE_ID,
+            True,
+            {"nested": {malicious_key: "value"}},
+        )
+
+
 def test_profile_result_deeply_snapshots_mutable_evidence() -> None:
     original: JsonObject = {
         "assertions": 1,

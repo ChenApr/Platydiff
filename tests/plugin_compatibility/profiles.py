@@ -81,10 +81,21 @@ def _normalized_evidence(value: object, *, key: str | None = None) -> JsonValue:
     if isinstance(value, dict):
         if not all(isinstance(item, str) for item in value):
             raise ValueError("profile evidence keys must be strings")
+        normalized_keys = tuple(_normalized_evidence_key(item) for item in value)
         return {
-            item: _normalized_evidence(value[item], key=item) for item in sorted(value)
+            item: _normalized_evidence(value[item], key=item)
+            for item in sorted(normalized_keys)
         }
     raise ValueError("profile evidence must contain only JSON values")
+
+
+def _normalized_evidence_key(value: str) -> str:
+    if len(value.encode("utf-8")) > 255 or not _PROFILE_ID.fullmatch(value):
+        raise ValueError(
+            "profile evidence keys must be stable lowercase ASCII identifiers "
+            "and path-free"
+        )
+    return value
 
 
 @dataclass(frozen=True, slots=True, init=False)

@@ -433,6 +433,49 @@ def test_plugin_renderer_hostile_terminal_controls_fail_safely(
     assert captured.err == "platydiff: rendering failed safely\n"
 
 
+@pytest.mark.parametrize("payload", [b"\x1b]0;spoofed\x07", b"\xff"])
+def test_plugin_renderer_text_bytes_fail_safely(
+    payload: bytes,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class UnsafeBytesRenderer(_Renderer):
+        def render(
+            self,
+            outcome: AnyCompareOutcome,
+            options: RendererPresentationOptionsV1,
+            sink: RendererSinkV1,
+        ) -> None:
+            del outcome, options
+            sink.write_bytes(payload)
+
+    before, after = write_pair(tmp_path, b"same", b"same")
+    module = importlib.import_module("platydiff.cli.main")
+    renderer = UnsafeBytesRenderer()
+    host = _renderer_host(renderer)
+    monkeypatch.setattr(
+        module.PluginHost, "discover", staticmethod(lambda _policy: host)
+    )
+
+    status = module.main(
+        [
+            "text",
+            "--plugin",
+            "org.example.scidiff",
+            "--renderer",
+            renderer.capability_id,
+            str(before),
+            str(after),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert status == 3
+    assert captured.out == ""
+    assert captured.err == "platydiff: rendering failed safely\n"
+
+
 def test_two_routes_use_the_same_result_path(tmp_path: Path) -> None:
     before, after = write_pair(tmp_path, b"a\nb\n", b"a\nx\n")
     text_result = run_module("text", "--format", "json", str(before), str(after))

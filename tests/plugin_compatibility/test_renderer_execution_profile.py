@@ -130,6 +130,22 @@ def test_renderer_sink_supports_exact_bounded_utf8_and_binary_output() -> None:
     assert binary.data == b"\x00\xff"
 
 
+def test_text_media_type_rejects_invalid_utf8_written_as_bytes() -> None:
+    class InvalidTextBytesRenderer(_Renderer):
+        def render(
+            self,
+            outcome: AnyCompareOutcome,
+            options: RendererPresentationOptionsV1,
+            sink: RendererSinkV1,
+        ) -> None:
+            del outcome, options
+            sink.write_bytes(b"\xff")
+
+    renderer = InvalidTextBytesRenderer()
+    with pytest.raises(RendererExecutionError):
+        _renderer_host(renderer).render(_outcome(), renderer_id=renderer.capability_id)
+
+
 def test_renderer_output_overflow_is_typed_safe_and_preserves_outcome() -> None:
     renderer = _Renderer()
     host = _renderer_host(renderer)
@@ -199,6 +215,7 @@ def test_rendered_output_public_constructor_validates_every_field() -> None:
         {"backend_version": None},
         {"backend_id": "BAD/PATH", "backend_version": "1"},
         {"data": b"\xff", "is_text": True},
+        {"media_type": "text/plain; charset=utf-8", "is_text": False},
     )
     for changes in invalid_values:
         with pytest.raises(ValueError):

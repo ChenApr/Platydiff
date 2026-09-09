@@ -230,7 +230,9 @@ The renderer receives a validated copy of the outcome, presentation options,
 and a host-owned sink only. It receives no source, path, registry, artifact
 root, or comparison callback. Use either `write_text()` or `write_bytes()` for
 one invocation, never both. The sink enforces the exact UTF-8 byte budget and
-declared media type. Renderers must escape hostile controls before producing
+declared media type. A `text/*` media type always uses strict UTF-8 text mode,
+including bytes supplied through `write_bytes()`; invalid UTF-8 fails rendering,
+and valid bytes remain subject to the CLI terminal-safety check. Renderers must escape hostile controls before producing
 terminal text; the CLI rejects BOM, bidi controls, and C0/C1 controls other than
 newline before writing plugin text to stdout. Renderers must not recompute
 relation, verdict, metrics, completeness, or any other comparison fact. SDK v1
@@ -306,7 +308,8 @@ plugin/distribution identity, negotiated SDK and outcome schema versions, and
 backend/platform inventory. The SHA-256 digest covers the normalized per-profile
 results. Evidence is recursively snapshotted at result construction and
 revalidated when the receipt is emitted; strings containing `/` or `\` are
-rejected so embedded local paths cannot enter a receipt. Overall `conforms` and the permitted
+rejected so embedded local paths cannot enter a receipt. Every nested evidence
+key must also be a bounded lowercase ASCII identifier. Overall `conforms` and the permitted
 `conforms to Platydiff plugin profile X under suite version Y.` claims appear
 only when every included profile passed; a failed or mixed receipt contains no
 conformance claim.
