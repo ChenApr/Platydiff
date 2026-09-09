@@ -18,10 +18,11 @@ Platydiff 是面向科研数据、实验回归和竞赛工作流的可扩展多�
 - Pillow、OpenCV、scikit-image、Tree-sitter、FFmpeg 和 PDF 后端均为可选插件或外部后端。
 - 性能热点可在接口稳定后使用 Rust 扩展，但不得让核心 API 依赖具体 FFI。
 
-仓库现已包含已实现的 Phase 1 显式文本、Phase 2 自动/二进制 Python 库和 CLI，
-以及 Phase 3 P3-A 公共插件 SDK declaration 与显式 discovery catalog；当前仍未发布。
-插件 capability execution、schema-v2 provider provenance、CLI 插件选择、后续模态与
-更丰富的 renderer 仍处于计划阶段；不得描述为已实现，且只报告实际运行过的验证命令。
+仓库现已包含已实现的 Phase 1 显式文本、Phase 2 自动/二进制 Python 库和 CLI，以及
+Phase 3 P3-A/P3-B/P3-C 公共插件 SDK、discovery、execution host、schema-v2
+provenance、有界 renderer、显式 CLI selection 与 compatibility receipt；当前仍未发布。
+新模态、配置文件、自动安装、任意 artifact、HTML 与 review UI 仍处于计划阶段；不得
+描述为已实现，且只报告实际运行过的验证命令。
 
 ## 仓库结构
 
@@ -30,7 +31,7 @@ Platydiff 是面向科研数据、实验回归和竞赛工作流的可扩展多�
 - `README.md`：英文权威版，说明项目目标、覆盖范围和设计原则；`README_zh.md` 为中文翻译。
 - `docs/architecture.md`：英文权威架构文档；`docs/architecture_zh.md` 为中文翻译。
 - `pyproject.toml`：Python 打包元数据与标准开发工具配置。
-- `platydiff/`：已实现的 Phase 1/2 库与 CLI，以及 P3-A SDK 和 discovery。
+- `platydiff/`：已实现的 Phase 1/2 库与 CLI，以及 Phase 3 SDK、discovery、execution host、renderer boundary 与 CLI opt-in。
 - `tests/`：单元、集成、契约、算法、CLI 与打包回归测试。
 
 目标结构：

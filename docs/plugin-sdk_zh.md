@@ -2,11 +2,10 @@
 
 [English documentation](plugin-sdk.md)
 
-Phase 3 门禁 P3-A 与 P3-B 实现了
+Phase 3 门禁 P3-A、P3-B 与 P3-C 实现了
 [RFC 0005](rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility_zh.md)
-中的 declaration、discovery、显式选择的 detector/comparator 执行与 provider
-provenance。Renderer 执行、CLI 插件参数和发布的 compatibility receipt 仍由 P3-C
-门禁控制。
+中的 declaration、discovery、显式选择的 detector/comparator 执行、有界 renderer
+执行、CLI opt-in、provider provenance 与 compatibility receipt。
 
 ## 声明一个 SDK-v1 manifest
 
@@ -132,7 +131,8 @@ reference 的 run 会在任何 lifecycle method 调用前，于 resolving stage 
 
 每次 host comparison 都返回 schema v2，包括最终选择内建能力的情况。schema v2 记录
 enabled/loaded provider snapshot、带版本的 attempt 与 selected-provider provenance。
-现有三参数 `compare()` 和 CLI 仍返回 schema v1。reader 同时接受两个版本；
+现有三参数 `compare()` 和不含 plugin/capability 参数的 CLI 命令仍返回 schema v1；
+启用或 pin 插件 capability 的 CLI 命令经 host 返回 schema v2。reader 同时接受两个版本；
 `upgrade_outcome_v1_to_v2()` 在不改变 v1 result 含义的前提下添加空 host context。
 Schema-v1 model 与 encoder 拒绝嵌套 schema-v2 value；schema-v2 构造与读取会将
 provider-backed attempt 与 loaded host snapshot、selected comparator/detector provenance
@@ -140,6 +140,138 @@ provider-backed attempt 与 loaded host snapshot、selected comparator/detector 
 distribution/version identity 执行 SDK 同级校验。内建 terminal 与 JSON renderer 同时
 接受两个 outcome schema 版本，且不会重算 result 语义。
 
-当前仍没有 public mutable registration method、全局第三方 catalog、renderer hook、插件
-CLI option 或发布的 compatibility receipt。私有 request、snapshot、descriptor 与
-stage runner 不会传给插件。
+## 编写有界 renderer
+
+SDK-v1.1 renderer handle 包含一个已声明 capability ID、确定性的 media type tuple、
+availability probe 与 `render()` method。通过 manifest 的 `capability_handles` tuple 将
+handle 与匹配的 `CapabilityDeclarationV1` 关联：
+
+```python
+from dataclasses import dataclass
+
+from platydiff.core.models import AnyCompareOutcome
+from platydiff.plugin_sdk import (
+    CapabilityAvailabilityV1,
+    CapabilityDeclarationV1,
+    CapabilityKind,
+    PluginManifestV1,
+    RendererPresentationOptionsV1,
+    RendererSinkV1,
+)
+
+
+@dataclass
+class SafeTextRenderer:
+    capability_id: str = "org.example.scidiff.safe_text"
+    media_types: tuple[str, ...] = ("text/plain; charset=utf-8",)
+
+    def availability(self) -> CapabilityAvailabilityV1:
+        return CapabilityAvailabilityV1(True)
+
+    def render(
+        self,
+        outcome: AnyCompareOutcome,
+        options: RendererPresentationOptionsV1,
+        sink: RendererSinkV1,
+    ) -> None:
+        del options
+        sink.write_text(f"{outcome.kind}:{outcome.schema_version}")
+
+
+def manifest() -> PluginManifestV1:
+    renderer = SafeTextRenderer()
+    declaration = CapabilityDeclarationV1(
+        capability_id=renderer.capability_id,
+        kind=CapabilityKind.RENDERER,
+        implementation_version="1.0",
+    )
+    return PluginManifestV1(
+        manifest_schema_version=1,
+        plugin_id="org.example.scidiff",
+        plugin_version="1.0",
+        api_major=1,
+        minimum_api_minor=1,
+        maximum_api_minor=1,
+        required_host_features=("host.execution.v1",),
+        capabilities=(declaration,),
+        license_expression="Apache-2.0",
+        capability_handles=(renderer,),
+    )
+```
+
+Renderer 只得到 validated outcome 副本、presentation options 与 host-owned sink；不会
+得到 source、path、registry、artifact root 或 comparison callback。每次调用只能选择
+`write_text()` 或 `write_bytes()` 之一。Sink 强制精确 UTF-8 byte budget 与声明的 media
+type。生成 terminal text 的 renderer 必须转义恶意 control character，且不得重算
+relation、verdict、metric、completeness 或其他 comparison fact。SDK v1 不提供任意文件
+写入、HTML policy 或 UI behavior。
+
+Python 调用方只在 comparison 之后选择 renderer：
+
+```python
+from platydiff import PluginDiscoveryPolicy, PluginHost
+from platydiff.plugin_sdk import RendererPresentationOptionsV1
+
+host = PluginHost.discover(PluginDiscoveryPolicy(("org.example.scidiff",)))
+outcome = host.compare(before, after, spec)
+rendered = host.render(
+    outcome,
+    renderer_id="org.example.scidiff.safe_text",
+    options=RendererPresentationOptionsV1(max_output_bytes=1_048_576),
+)
+```
+
+`RenderedOutputV1` 记录精确的 renderer/provider identity、media type、有界 bytes 与是否
+为 UTF-8 text。renderer 缺失、不可用、输出无效、执行失败或越界时，会抛出携带原始未变
+outcome 的 typed renderer error，且不会隐式 fallback。
+
+## 从 CLI 选择插件与 capability
+
+`--plugin` 可重复使用，是精确 allowlist；它只启用加载：
+
+```bash
+platydiff compare --type auto \
+  --plugin org.example.scidiff \
+  --detector org.example.scidiff.text_binary_detector \
+  --comparator org.example.scidiff.text_exact before.dat after.dat
+
+platydiff text \
+  --plugin org.example.scidiff \
+  --renderer org.example.scidiff.safe_text \
+  --renderer-media-type "text/plain; charset=utf-8" \
+  --max-render-bytes 1048576 before.txt after.txt
+```
+
+`--detector` 仅用于自动比较。Capability ID 精确匹配；缺失或不可用时绝不选择替代项。
+重复/无效 plugin ID、无效 media type 或 limit，以及没有 `--renderer` 却提供 renderer
+专用参数，都是 exit `2` 的用法错误。Comparison unavailable/failure 与 renderer failure
+使用 exit `3`；renderer failure 只向 stderr 输出
+`platydiff: rendering failed safely`，且没有 fallback output。环境变量、配置文件、安装、
+升级、下载与依赖解析仍不在范围内。
+
+## 运行兼容性套件并创建 receipt
+
+源码发行包包含 `tests/plugin_compatibility`。请在包含待测插件与 backend 精确版本的隔离
+Python 3.12+ 环境中运行：
+
+```bash
+python -m pytest tests/plugin_compatibility
+```
+
+Profile 覆盖 manifest/API negotiation、显式 discovery、detector/comparator lifecycle、
+renderer authority 与 bounds、terminal control safety、dependency/license/platform
+inventory、确定性顺序、redaction，以及 discovery 到 CLI 的 failure-isolation matrix。
+`tests/plugin_compatibility/profiles.py` 中的 receipt helper 会生成 canonical JSON，记录
+精确 suite/host version、plugin/distribution identity、协商后的 SDK 与 outcome schema
+version、backend/platform inventory、profile ID、result 与 SHA-256 digest。只能包含实际
+运行的 profile。唯一允许的声明是
+`conforms to Platydiff plugin profile X under suite version Y.`
+
+Receipt 是 self-attestation，不是认证、背书、安全评审或再分发许可。Plugin code 是受信任
+的 in-process Python；least-authority API 只能减少误用，并不提供 sandbox。插件作者负责
+dependency pin/hash、license text、NOTICE/SBOM 义务、export control、patent review 与再
+分发许可。Platydiff 不安装或获取插件；disabled plugin 不会为了扩充 inventory 而被导入。
+
+当前没有 public mutable registration method 或全局第三方 catalog。私有 request、
+snapshot、descriptor 与 stage runner 不会传给插件。新模态、配置文件、任意 artifact、
+HTML、TUI 与 desktop review 仍是计划能力，需通过各自门禁。

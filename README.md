@@ -5,10 +5,12 @@
 `platydiff` is an extensible multimodal diff engine for scientific data,
 experimental regression testing, and competition workflows. Phases 1 and 2
 implement explicit text, exact binary, and opt-in automatic text/binary
-comparison through a typed Python API or CLI. Phase 3 gate P3-B adds immutable
-plugin hosts, explicitly selected text/binary detector and comparator execution,
-and schema-v2 provider provenance. The existing API and CLI remain built-in-only
-and keep their schema-v1 contract. The implementation remains unreleased.
+comparison through a typed Python API or CLI. Phase 3 adds immutable plugin
+hosts, explicitly selected text/binary detector, comparator, and bounded
+renderer execution, schema-v2 provider provenance, CLI opt-in flags, and a
+compatibility receipt profile. The existing three-argument API and default CLI
+remain built-in-only and keep their schema-v1 contract. The implementation
+remains unreleased.
 
 ## Install for development
 
@@ -88,9 +90,32 @@ Detection inspects only a bounded prefix; binary comparison streams bounded
 chunks and compares actual bytes. See the
 [automatic and binary guide](docs/binary-comparison.md).
 
+## Enable a plugin explicitly
+
+Plugins are never loaded by default. Repeat `--plugin` to allowlist exact
+installed plugin IDs, then pin any third-party capability by its complete ID:
+
+```bash
+platydiff text --plugin org.example.scidiff \
+  --comparator org.example.scidiff.text_exact before.txt after.txt
+
+platydiff text --plugin org.example.scidiff \
+  --renderer org.example.scidiff.safe_text \
+  --renderer-media-type "text/plain; charset=utf-8" \
+  --max-render-bytes 1048576 before.txt after.txt
+```
+
+`--detector` applies only to `compare --type auto`. Enabling a plugin without
+pinning a capability never lets it outrank a built-in. Any plugin-enabled or
+capability-pinned comparison uses schema v2; a command with no plugin flags
+retains schema v1. An explicitly selected renderer receives only the validated
+outcome, presentation options, and a bounded host sink. Its text or bytes are
+written to stdout without fallback; failure leaves stdout empty, reports a safe
+message on stderr, and exits `3`.
+
 ## Implemented and planned capabilities
 
-Implemented in Phases 1, 2, and the P3-A/P3-B plugin gates:
+Implemented in Phases 1, 2, and the P3-A/P3-B/P3-C plugin gates:
 
 - Python 3.12+ library and `platydiff` CLI;
 - schema-v1 `CompareOutcome` and `DiffResult` JSON serialization;
@@ -108,19 +133,19 @@ Implemented in Phases 1, 2, and the P3-A/P3-B plugin gates:
   for automatic comparisons, strict declared-backend provenance, and host-side
   output-limit/exact-semantics validation;
 - schema-v2 provider, attempt, and plugin-host provenance plus a typed v1-to-v2
-  upgrader. `PluginHost.compare()` always returns schema v2.
+  upgrader. `PluginHost.compare()` always returns schema v2;
+- bounded third-party renderer handles, explicit CLI plugin/capability flags,
+  deterministic compatibility receipts, and a cross-boundary failure-isolation
+  profile.
 
 Planned, not implemented:
 
-- CLI plugin flags, third-party renderer invocation, and published compatibility
-  receipts (the remaining contract is gated by
-  [RFC 0005](docs/rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility.md));
 - JSON/YAML, tables, arrays, images, source code, PDF, audio, and video;
 - stdin, directories, recursive comparison, and configuration files;
 - color, HTML, JUnit, and patch artifacts.
 
 See [the architecture](docs/architecture.md) for the broader design direction.
-See [the plugin SDK guide](docs/plugin-sdk.md) for the implemented P3-A/P3-B boundary.
+See [the plugin SDK guide](docs/plugin-sdk.md) for the implemented Phase 3 boundary.
 Algorithm provenance and known constraints are recorded in
 [the algorithm references](docs/algorithm-references.md).
 

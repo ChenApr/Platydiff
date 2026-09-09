@@ -2,11 +2,11 @@
 
 [Chinese documentation](0005-third-party-plugin-discovery-sdk-and-compatibility_zh.md)
 
-- Status: Accepted
+- Status: Implemented
 - Date: 2026-09-09
 - Accepted: 2026-09-09
 - Owners: Platydiff maintainers
-- Implementation owner: Platydiff maintainers for P3-A; P3-B/P3-C unassigned
+- Implementation owner: Platydiff maintainers
 
 ## Summary and authorization boundary
 
@@ -21,10 +21,12 @@ compatibility badge, or third-party execution behavior is implemented merely
 because this RFC is `Accepted`. Implementation requires a separately dispatched
 session on a new branch from updated `main`.
 
-Implementation note: the separately authorized P3-A gate now provides SDK-v1
-declarations and explicit discovery/catalog negotiation without capability
-execution. P3-B and P3-C remain unimplemented and separately gated, so this RFC
-remains `Accepted` rather than `Implemented`.
+Implementation note: separately authorized P3-A, P3-B, and P3-C gates now
+provide SDK-v1 declarations and discovery, detector/comparator execution,
+schema-v2 provider provenance, bounded renderer execution, explicit CLI opt-in,
+and compatibility receipts. The RFC 0004 UI, new modalities, configuration
+files, arbitrary artifacts, and automatic plugin installation remain outside
+this implementation.
 
 Phase 3 does not authorize new modalities or the UI work proposed by
 [RFC 0004](0004-human-review-ui-and-renderer-boundary.md). Its first SDK is

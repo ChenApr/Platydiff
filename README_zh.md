@@ -4,9 +4,10 @@
 
 `platydiff` 是一个面向科研数据、实验回归测试与竞赛工作流的可扩展多模态
 Diff 引擎。Phase 1 与 Phase 2 已实现显式文本、精确二进制，以及需要显式启用的
-文本/二进制自动探测。Phase 3 门禁 P3-B 还加入 immutable plugin host、显式选择的
-文本/二进制 detector/comparator 执行与 schema-v2 provider provenance。既有 API 与
-CLI 仍只使用内建能力并保持 schema-v1 contract。当前仍未发布。
+文本/二进制自动探测。Phase 3 还加入 immutable plugin host、显式选择的文本/二进制
+detector、comparator 与有界 renderer 执行、schema-v2 provider provenance、CLI opt-in
+参数和 compatibility receipt profile。既有三参数 API 与默认 CLI 仍只使用内建能力并
+保持 schema-v1 contract。当前仍未发布。
 
 ## 开发环境安装
 
@@ -79,9 +80,30 @@ platydiff compare --type auto before.dat after.dat
 自动探测从不隐式启用；省略 `--type` 是用法错误。探测只读取有界前缀，二进制
 比较以有界 chunk 流式读取并比较真实字节。详见[自动探测与二进制比较指南](docs/binary-comparison_zh.md)。
 
+## 显式启用插件
+
+插件默认绝不加载。重复使用 `--plugin` 可 allowlist 精确的已安装插件 ID；第三方
+capability 还必须用完整 ID 显式 pin：
+
+```bash
+platydiff text --plugin org.example.scidiff \
+  --comparator org.example.scidiff.text_exact before.txt after.txt
+
+platydiff text --plugin org.example.scidiff \
+  --renderer org.example.scidiff.safe_text \
+  --renderer-media-type "text/plain; charset=utf-8" \
+  --max-render-bytes 1048576 before.txt after.txt
+```
+
+`--detector` 仅适用于 `compare --type auto`。只启用插件但不 pin capability，不会让它
+覆盖内建选择。任何启用插件或 pin capability 的比较都使用 schema v2；没有插件参数的
+命令保持 schema v1。显式选择的 renderer 只获得 validated outcome、presentation
+options 与有界 host sink。它产生的 text/bytes 不经 fallback 写入 stdout；失败时 stdout
+保持为空，stderr 只输出安全消息，退出码为 `3`。
+
 ## 已实现与计划能力
 
-Phase 1、Phase 2 与 P3-A/P3-B 插件门禁已实现：
+Phase 1、Phase 2 与 P3-A/P3-B/P3-C 插件门禁已实现：
 
 - Python 3.12+ 库与 `platydiff` CLI；
 - schema-v1 `CompareOutcome` 和 `DiffResult` JSON 序列化；
@@ -98,19 +120,18 @@ Phase 1、Phase 2 与 P3-A/P3-B 插件门禁已实现：
   lifecycle stage，并支持自动比较精确 pin 内建 comparator 与严格的 declared-backend
   provenance，以及 host 侧 output-limit/exact-semantics 校验；
 - schema-v2 provider、attempt 与 plugin-host provenance，以及 typed v1-to-v2 upgrader；
-  `PluginHost.compare()` 始终返回 schema v2。
+  `PluginHost.compare()` 始终返回 schema v2；
+- 有界第三方 renderer handle、显式 CLI plugin/capability 参数、确定性 compatibility
+  receipt，以及跨边界 failure-isolation profile。
 
 计划中、尚未实现：
 
-- CLI 插件参数、第三方 renderer invocation 与发布的 compatibility receipt（剩余契约仍由
-  [RFC 0005](docs/rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility_zh.md)
-  门禁控制）；
 - JSON/YAML、表格、数组、图片、源代码、PDF、音频和视频；
 - stdin、目录、递归比较和配置文件；
 - color、HTML、JUnit 和 patch artifact。
 
 更广泛的设计方向见[架构文档](docs/architecture_zh.md)。
-已实现的 P3-A/P3-B 边界见[插件 SDK 指南](docs/plugin-sdk_zh.md)。
+已实现的 Phase 3 边界见[插件 SDK 指南](docs/plugin-sdk_zh.md)。
 算法来源与已知限制记录在[算法来源文档](docs/algorithm-references_zh.md)中。
 
 ## 许可证
