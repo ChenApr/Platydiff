@@ -12,9 +12,13 @@ from platydiff.core.models import (
     AutoResourceLimits,
     BinaryCompareSpec,
     BinaryResourceLimits,
-    CompareSpec,
+    CompareSpecV3,
+    JsonCompareSpec,
+    JsonNumberMode,
     NewlinePolicy,
     ResourceLimits,
+    StructuredDetailMode,
+    StructuredResourceLimits,
     TextCompareSpec,
     TextEncoding,
 )
@@ -124,11 +128,14 @@ def _common(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _text(parser: argparse.ArgumentParser) -> None:
-    defaults = ResourceLimits()
+def _encoding(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--encoding", choices=tuple(TextEncoding), default=TextEncoding.UTF8.value
     )
+
+
+def _text(parser: argparse.ArgumentParser) -> None:
+    defaults = ResourceLimits()
     parser.add_argument(
         "--newline", choices=tuple(NewlinePolicy), default=NewlinePolicy.PRESERVE.value
     )
@@ -166,21 +173,53 @@ def _auto(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--ambiguity-margin", type=_confidence, default=100)
 
 
+def _json(parser: argparse.ArgumentParser) -> None:
+    defaults = StructuredResourceLimits()
+    parser.add_argument(
+        "--number-mode",
+        choices=tuple(JsonNumberMode),
+        default=JsonNumberMode.VALUE.value,
+    )
+    parser.add_argument(
+        "--detail",
+        choices=tuple(StructuredDetailMode),
+        default=StructuredDetailMode.VALUES.value,
+    )
+    for name in (
+        "max_scalar_bytes",
+        "max_depth",
+        "max_nodes",
+        "max_number_digits",
+        "max_abs_exponent",
+        "max_compare_work",
+    ):
+        parser.add_argument(
+            f"--{name.replace('_', '-')}",
+            type=_non_negative,
+            default=getattr(defaults, name),
+        )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="platydiff")
     commands = parser.add_subparsers(dest="command", required=True)
     compare_parser = commands.add_parser("compare")
     compare_parser.add_argument(
-        "--type", choices=("text", "binary", "auto"), required=True
+        "--type", choices=("text", "binary", "auto", "json"), required=True
     )
-    for add in (_common, _text, _binary, _auto):
+    for add in (_common, _encoding, _text, _binary, _auto, _json):
         add(compare_parser)
     text_parser = commands.add_parser("text")
     _common(text_parser)
+    _encoding(text_parser)
     _text(text_parser)
     binary_parser = commands.add_parser("binary")
     _common(binary_parser)
     _binary(binary_parser)
+    json_parser = commands.add_parser("json")
+    _common(json_parser)
+    _encoding(json_parser)
+    _json(json_parser)
     return parser
 
 
@@ -189,7 +228,7 @@ class ParsedCommand:
     before: str
     after: str
     output_format: str
-    spec: CompareSpec
+    spec: CompareSpecV3
     enabled_plugin_ids: tuple[str, ...]
     detector_id: str | None
     comparator_id: str | None
@@ -213,7 +252,6 @@ def parse_command(argv: list[str] | None = None) -> ParsedCommand:
     values = vars(parser.parse_args(arguments))
     kind = str(values.get("type") or values["command"])
     text_flags = {
-        "--encoding",
         "--newline",
         "--context-lines",
         "--max-input-lines",
@@ -227,6 +265,17 @@ def parse_command(argv: list[str] | None = None) -> ParsedCommand:
         "--minimum-confidence",
         "--ambiguity-margin",
     }
+    encoding_flags = {"--encoding"}
+    json_flags = {
+        "--number-mode",
+        "--detail",
+        "--max-scalar-bytes",
+        "--max-depth",
+        "--max-nodes",
+        "--max-number-digits",
+        "--max-abs-exponent",
+        "--max-compare-work",
+    }
     option_arguments = (
         arguments[: arguments.index("--")] if "--" in arguments else arguments
     )
@@ -234,6 +283,15 @@ def parse_command(argv: list[str] | None = None) -> ParsedCommand:
     plugin_ids = tuple(str(item) for item in values["plugin"])
     if len(plugin_ids) != len(set(plugin_ids)):
         parser.error("--plugin values must be unique")
+    if kind == "json" and supplied & {
+        "--plugin",
+        "--detector",
+        "--comparator",
+        "--renderer",
+        "--renderer-media-type",
+        "--max-render-bytes",
+    }:
+        parser.error("plugin and plugin-renderer options do not apply to json")
     if values["detector"] is not None and kind != "auto":
         parser.error("--detector only applies to auto comparison")
     if values["renderer"] is None and (
@@ -243,13 +301,14 @@ def parse_command(argv: list[str] | None = None) -> ParsedCommand:
     if int(values["max_render_bytes"]) > 2**53:
         parser.error(f"--max-render-bytes must not exceed {2**53}")
     disallowed = {
-        "text": binary_flags | auto_flags,
-        "binary": text_flags | auto_flags,
-        "auto": text_flags | binary_flags,
+        "text": binary_flags | auto_flags | json_flags,
+        "binary": encoding_flags | text_flags | auto_flags | json_flags,
+        "auto": encoding_flags | text_flags | binary_flags | json_flags,
+        "json": text_flags | binary_flags | auto_flags,
     }[kind]
     if supplied & disallowed:
         parser.error(f"options do not apply to {kind}")
-    if kind in ("binary", "auto"):
+    if kind in ("binary", "auto", "json"):
         exact_limit_names = {
             "max_input_bytes",
             "max_change_items",
@@ -257,6 +316,17 @@ def parse_command(argv: list[str] | None = None) -> ParsedCommand:
         }
         if kind == "auto":
             exact_limit_names.add("max_detection_bytes")
+        elif kind == "json":
+            exact_limit_names.update(
+                {
+                    "max_scalar_bytes",
+                    "max_depth",
+                    "max_nodes",
+                    "max_number_digits",
+                    "max_abs_exponent",
+                    "max_compare_work",
+                }
+            )
         overflow = next(
             (name for name in sorted(exact_limit_names) if int(values[name]) > 2**53),
             None,
@@ -269,7 +339,7 @@ def parse_command(argv: list[str] | None = None) -> ParsedCommand:
         max_change_payload_bytes=int(values["max_change_payload_bytes"]),
     )
     if kind == "text":
-        spec: CompareSpec = TextCompareSpec(
+        spec: CompareSpecV3 = TextCompareSpec(
             encoding=TextEncoding(str(values["encoding"])),
             newline=NewlinePolicy(str(values["newline"])),
             context_lines=int(values["context_lines"]),
@@ -286,7 +356,7 @@ def parse_command(argv: list[str] | None = None) -> ParsedCommand:
                 **common, chunk_bytes=int(values["chunk_bytes"])
             )
         )
-    else:
+    elif kind == "auto":
         defaults = AutoResourceLimits()
         spec = AutoCompareSpec(
             minimum_confidence=int(values["minimum_confidence"]),
@@ -298,6 +368,21 @@ def parse_command(argv: list[str] | None = None) -> ParsedCommand:
                 max_myers_work=defaults.max_myers_work,
                 max_detection_bytes=int(values["max_detection_bytes"]),
                 binary_chunk_bytes=int(values["binary_chunk_bytes"]),
+            ),
+        )
+    else:
+        spec = JsonCompareSpec(
+            encoding=TextEncoding(str(values["encoding"])),
+            number_mode=JsonNumberMode(str(values["number_mode"])),
+            detail_mode=StructuredDetailMode(str(values["detail"])),
+            limits=StructuredResourceLimits(
+                **common,
+                max_scalar_bytes=int(values["max_scalar_bytes"]),
+                max_depth=int(values["max_depth"]),
+                max_nodes=int(values["max_nodes"]),
+                max_number_digits=int(values["max_number_digits"]),
+                max_abs_exponent=int(values["max_abs_exponent"]),
+                max_compare_work=int(values["max_compare_work"]),
             ),
         )
     return ParsedCommand(

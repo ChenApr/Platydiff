@@ -12,12 +12,15 @@ from platydiff.core.models import (
     AnyCompareOutcome,
     CompletedOutcome,
     CompletedOutcomeV2,
+    CompletedOutcomeV3,
     ExecutionProblem,
     ExecutionProblemV2,
     ExecutionRecord,
     ExecutionRecordV2,
     FailedOutcome,
     FailedOutcomeV2,
+    FailedOutcomeV3,
+    JsonCompareSpec,
     PathSource,
     PipelineStage,
     PluginHostExecutionRecord,
@@ -34,7 +37,9 @@ from platydiff.renderers.terminal import _terminal_text_is_safe, render_terminal
 
 def _internal_error_outcome(
     plugin_host: PluginHostExecutionRecord | None = None,
-) -> FailedOutcome | FailedOutcomeV2:
+    *,
+    schema_v3: bool = False,
+) -> FailedOutcome | FailedOutcomeV2 | FailedOutcomeV3:
     stamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     stage = StageRecord(
         PipelineStage.VALIDATING,
@@ -52,6 +57,19 @@ def _internal_error_outcome(
                 0,
                 (stage,),
                 plugin_host=plugin_host,
+            ),
+            problem=ExecutionProblemV2(
+                "internal_error", 500, PipelineStage.VALIDATING, message
+            ),
+        )
+    if schema_v3:
+        return FailedOutcomeV3(
+            execution=ExecutionRecordV2(
+                stamp,
+                stamp,
+                0,
+                (stage,),
+                plugin_host=None,
             ),
             problem=ExecutionProblemV2(
                 "internal_error", 500, PipelineStage.VALIDATING, message
@@ -84,7 +102,7 @@ def _plugin_host_snapshot(host: PluginHost) -> PluginHostExecutionRecord:
 
 def exit_code(outcome: AnyCompareOutcome) -> int:
     """Map an outcome to the stable Phase 1 shell exit contract."""
-    if isinstance(outcome, (CompletedOutcome, CompletedOutcomeV2)):
+    if isinstance(outcome, (CompletedOutcome, CompletedOutcomeV2, CompletedOutcomeV3)):
         return 1 if outcome.result.verdict is Verdict.FAIL else 0
     return 3
 
@@ -120,7 +138,8 @@ def main(argv: list[str] | None = None) -> int:
                 else PluginHostExecutionRecord(command.enabled_plugin_ids, ())
             )
             if command.uses_plugin_host
-            else None
+            else None,
+            schema_v3=isinstance(command.spec, JsonCompareSpec),
         )
 
     try:
