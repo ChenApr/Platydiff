@@ -11,7 +11,9 @@ import pytest
 
 from platydiff import (
     AutoCompareSpec,
+    BinaryCompareSpec,
     BytesSource,
+    CompletedOutcome,
     CompletedOutcomeV2,
     FailedOutcomeV2,
     PathSource,
@@ -20,6 +22,7 @@ from platydiff import (
     TextCompareSpec,
     TextSource,
     UnavailableOutcomeV2,
+    compare,
 )
 from platydiff.core.models import (
     ChangeCompleteness,
@@ -29,7 +32,10 @@ from platydiff.core.models import (
     DiagnosticSeverity,
     DiffSummary,
     ExtensionChange,
+    Fidelity,
+    Relation,
     ResourceUsage,
+    Verdict,
 )
 from platydiff.core.serialization import (
     dumps_outcome,
@@ -125,6 +131,8 @@ def test_comparator_profile_invokes_each_stage_once_and_is_repeatable() -> None:
     assert first.result.relation is second.result.relation
     assert first.result.summary == second.result.summary
     assert first.result.metrics == second.result.metrics
+    assert loads_outcome(dumps_outcome(first)) == first
+    assert loads_outcome(dumps_outcome(second)) == second
 
 
 def test_source_access_outside_declared_stage_fails_visibly() -> None:
@@ -274,6 +282,187 @@ def test_foreign_extension_namespace_is_rejected() -> None:
     assert outcome.problem.stage.value == "aggregating"
 
 
+def test_invalid_top_level_plugin_fact_is_an_aggregating_failure() -> None:
+    facts = replace(_facts(), relation="equal")  # type: ignore[arg-type]
+    outcome = _compare(_ConfiguredHandle(aggregate_facts=facts))
+    assert isinstance(outcome, FailedOutcomeV2)
+    assert outcome.problem.code == "plugin_execution_failure"
+    assert outcome.problem.stage.value == "aggregating"
+    assert outcome.execution.attempts[-1].disposition == "failed"
+    assert outcome.execution.attempts[-1].reason_code == "plugin_execution_failure"
+
+
+def test_invalid_nested_plugin_enum_is_an_aggregating_failure() -> None:
+    diagnostic = Diagnostic(
+        "plugin_warning",
+        DiagnosticSeverity.WARNING,
+        None,
+        "safe warning",
+    )
+    object.__setattr__(diagnostic, "severity", "warning")
+    facts = replace(_facts(), diagnostics=(diagnostic,))
+    outcome = _compare(_ConfiguredHandle(aggregate_facts=facts))
+    assert isinstance(outcome, FailedOutcomeV2)
+    assert outcome.problem.code == "plugin_execution_failure"
+    assert outcome.problem.stage.value == "aggregating"
+
+
+@pytest.mark.parametrize(
+    ("spec", "source", "modality"),
+    [
+        (TextCompareSpec(), TextSource("same"), "text"),
+        (BinaryCompareSpec(), BytesSource(b"same"), "binary"),
+    ],
+)
+def test_current_specs_reject_plugin_partial_change_facts(
+    spec: TextCompareSpec | BinaryCompareSpec,
+    source: TextSource | BytesSource,
+    modality: str,
+) -> None:
+    facts = replace(
+        _facts(),
+        summary=DiffSummary(None, ()),
+        changes=ChangeSet(
+            ChangeCompleteness.PARTIAL,
+            (),
+            None,
+            0,
+            None,
+            ChangeSelection.ALGORITHM_PARTIAL,
+            None,
+        ),
+    )
+    handle = _ConfiguredHandle(modality=modality, aggregate_facts=facts)
+    host, _ = _capability(handle, CapabilityKind.COMPARATOR, backend=True)
+    outcome = host.compare(
+        source,
+        source,
+        spec,
+        comparator_id=handle.capability_id,
+    )
+    assert isinstance(outcome, FailedOutcomeV2)
+    assert outcome.problem.code == "plugin_execution_failure"
+    assert outcome.problem.stage.value == "aggregating"
+    assert outcome.execution.attempts[-1].disposition == "failed"
+
+
+@pytest.mark.parametrize(
+    ("spec", "source", "modality"),
+    [
+        (TextCompareSpec(), TextSource("same"), "text"),
+        (BinaryCompareSpec(), BytesSource(b"same"), "binary"),
+    ],
+)
+def test_current_specs_reject_degraded_plugin_fidelity(
+    spec: TextCompareSpec | BinaryCompareSpec,
+    source: TextSource | BytesSource,
+    modality: str,
+) -> None:
+    handle = _ConfiguredHandle(
+        modality=modality,
+        aggregate_facts=replace(_facts(), fidelity=Fidelity.DEGRADED),
+    )
+    host, _ = _capability(handle, CapabilityKind.COMPARATOR, backend=True)
+    outcome = host.compare(
+        source,
+        source,
+        spec,
+        comparator_id=handle.capability_id,
+    )
+    assert isinstance(outcome, FailedOutcomeV2)
+    assert outcome.problem.code == "plugin_execution_failure"
+    assert outcome.problem.stage.value == "aggregating"
+    assert outcome.execution.attempts[-1].disposition == "failed"
+
+
+@pytest.mark.parametrize(
+    ("relation", "verdict", "expected_type"),
+    [
+        (Relation.EQUAL, Verdict.PASS, CompletedOutcomeV2),
+        (Relation.DIFFERENT, Verdict.FAIL, CompletedOutcomeV2),
+        (Relation.DIFFERENT, Verdict.PASS, FailedOutcomeV2),
+        (Relation.EQUAL, Verdict.FAIL, FailedOutcomeV2),
+        (Relation.EQUAL, Verdict.WARN, FailedOutcomeV2),
+    ],
+)
+def test_current_strict_policy_validates_plugin_relation_verdict_mapping(
+    relation: Relation,
+    verdict: Verdict,
+    expected_type: type[CompletedOutcomeV2] | type[FailedOutcomeV2],
+) -> None:
+    base = _facts()
+    facts = replace(
+        base,
+        relation=relation,
+        verdict=verdict,
+        evaluations=tuple(
+            replace(evaluation, verdict=verdict) for evaluation in base.evaluations
+        ),
+    )
+    outcome = _compare(_ConfiguredHandle(aggregate_facts=facts))
+    assert isinstance(outcome, expected_type)
+    if isinstance(outcome, FailedOutcomeV2):
+        assert outcome.problem.code == "plugin_execution_failure"
+        assert outcome.problem.stage.value == "aggregating"
+
+
+@pytest.mark.parametrize(
+    ("plugin_modality", "opposite_result"),
+    [
+        (
+            "text",
+            compare(BytesSource(b"a"), BytesSource(b"b"), BinaryCompareSpec()),
+        ),
+        (
+            "binary",
+            compare(TextSource("a\n"), TextSource("b\n"), TextCompareSpec()),
+        ),
+    ],
+)
+def test_plugin_builtin_change_kinds_must_match_resolved_modality(
+    plugin_modality: str,
+    opposite_result: object,
+) -> None:
+    assert isinstance(opposite_result, CompletedOutcome)
+    result = opposite_result.result
+    facts = replace(
+        _facts(),
+        relation=result.relation,
+        verdict=result.verdict,
+        fidelity=result.fidelity,
+        summary=result.summary,
+        changes=result.changes,
+        metrics=result.metrics,
+        evaluations=result.evaluations,
+        artifacts=result.artifacts,
+        transformations=result.provenance.transformations,
+        algorithm_id=result.provenance.algorithm_id,
+        resources=result.provenance.resources,
+    )
+    handle = _ConfiguredHandle(
+        modality=plugin_modality,
+        aggregate_facts=facts,
+    )
+    host, _ = _capability(handle, CapabilityKind.COMPARATOR, backend=True)
+    source: TextSource | BytesSource
+    spec: TextCompareSpec | BinaryCompareSpec
+    if plugin_modality == "text":
+        source = TextSource("same")
+        spec = TextCompareSpec()
+    else:
+        source = BytesSource(b"same")
+        spec = BinaryCompareSpec()
+    outcome = host.compare(
+        source,
+        source,
+        spec,
+        comparator_id=handle.capability_id,
+    )
+    assert isinstance(outcome, FailedOutcomeV2)
+    assert outcome.problem.code == "plugin_execution_failure"
+    assert outcome.problem.stage.value == "aggregating"
+
+
 @pytest.mark.parametrize(
     "resource_name",
     ["host.plugin_before_source_bytes", "host.plugin_after_source_bytes"],
@@ -346,9 +535,7 @@ def test_plugin_change_payload_limit_uses_canonical_utf8_schema_bytes() -> None:
 
     exact = _compare(
         _ConfiguredHandle(aggregate_facts=facts),
-        TextCompareSpec(
-            limits=ResourceLimits(max_change_payload_bytes=payload_bytes)
-        ),
+        TextCompareSpec(limits=ResourceLimits(max_change_payload_bytes=payload_bytes)),
     )
     below = _compare(
         _ConfiguredHandle(aggregate_facts=facts),
@@ -361,6 +548,55 @@ def test_plugin_change_payload_limit_uses_canonical_utf8_schema_bytes() -> None:
     assert isinstance(below, FailedOutcomeV2)
     assert below.problem.code == "plugin_execution_failure"
     assert below.problem.stage.value == "aggregating"
+
+
+@pytest.mark.parametrize(
+    ("limit", "limit_reason", "expected_type"),
+    [
+        (0, "change_items", CompletedOutcomeV2),
+        (999, "change_items", FailedOutcomeV2),
+        (999, "change_payload_bytes", FailedOutcomeV2),
+        (0, None, FailedOutcomeV2),
+    ],
+)
+def test_plugin_truncation_metadata_must_match_effective_spec(
+    limit: int,
+    limit_reason: str | None,
+    expected_type: type[CompletedOutcomeV2] | type[FailedOutcomeV2],
+) -> None:
+    base = _facts()
+    facts = replace(
+        base,
+        relation=Relation.DIFFERENT,
+        verdict=Verdict.FAIL,
+        evaluations=tuple(
+            replace(evaluation, verdict=Verdict.FAIL) for evaluation in base.evaluations
+        ),
+        summary=DiffSummary(1, ()),
+        changes=ChangeSet(
+            ChangeCompleteness.TRUNCATED,
+            (),
+            1,
+            0,
+            1,
+            ChangeSelection.SOURCE_ORDER_PREFIX,
+            limit,
+            limit_reason,  # type: ignore[arg-type]
+        ),
+    )
+    outcome = _compare(
+        _ConfiguredHandle(aggregate_facts=facts),
+        TextCompareSpec(
+            limits=ResourceLimits(
+                max_change_items=0,
+                max_change_payload_bytes=0,
+            )
+        ),
+    )
+    assert isinstance(outcome, expected_type)
+    if isinstance(outcome, FailedOutcomeV2):
+        assert outcome.problem.code == "plugin_execution_failure"
+        assert outcome.problem.stage.value == "aggregating"
 
 
 def test_unsafe_diagnostic_detail_is_rejected_without_disclosure() -> None:
@@ -575,6 +811,7 @@ def test_auto_exact_comparator_pin_rejects_invalid_shapes_without_fallback(
     assert attempt.reason_code == reason_code
     assert (attempt.provider is not None) is expected_provider
     if shape == "detector":
+        assert isinstance(handle, _DetectorHandle)
         assert handle.seen == []
 
 

@@ -1,10 +1,11 @@
-"""Human-readable Phase 1 outcome rendering."""
+"""Human-readable schema-v1 and schema-v2 outcome rendering."""
 
 from __future__ import annotations
 
 from platydiff.core.models import (
-    CompareOutcome,
+    AnyCompareOutcome,
     CompletedOutcome,
+    CompletedOutcomeV2,
     ExtensionChange,
     TextHunk,
 )
@@ -49,9 +50,9 @@ def _render_hunk(hunk: TextHunk) -> list[str]:
     return output
 
 
-def render_terminal(outcome: CompareOutcome) -> str:
+def render_terminal(outcome: AnyCompareOutcome) -> str:
     """Render fields already decided by the pipeline."""
-    if not isinstance(outcome, CompletedOutcome):
+    if not isinstance(outcome, (CompletedOutcome, CompletedOutcomeV2)):
         return (
             f"{outcome.kind} [{outcome.problem.code}/{outcome.problem.status_code}] "
             f"at {outcome.problem.stage.value}: "

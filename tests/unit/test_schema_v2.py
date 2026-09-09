@@ -47,6 +47,8 @@ from platydiff.plugin_sdk import (
     SourceServiceV1,
 )
 from platydiff.plugins import PluginCatalogV1
+from platydiff.renderers.json import render_json
+from platydiff.renderers.terminal import render_terminal
 from tests.unit.test_contracts import STAMP, completed_outcome, stage
 from tests.unit.test_plugin_host_execution import (
     _capability,
@@ -120,6 +122,7 @@ def test_provider_identity_rejects_invalid_distribution_name() -> None:
         comparator_id=handle.capability_id,
     )
     assert isinstance(outcome, CompletedOutcomeV2)
+    assert isinstance(outcome.result.provenance, ComparisonProvenanceV2)
     provider = outcome.result.provenance.provider
     assert provider is not None
 
@@ -128,7 +131,9 @@ def test_provider_identity_rejects_invalid_distribution_name() -> None:
 
 
 @pytest.mark.parametrize("field_name", ["capability_version", "backend_version"])
-@pytest.mark.parametrize("invalid_version", ["", "bad\nversion", "bad/path", "x" * 1025])
+@pytest.mark.parametrize(
+    "invalid_version", ["", "bad\nversion", "bad/path", "x" * 1025]
+)
 def test_attempt_versions_enforce_sdk_identity_text(
     field_name: str,
     invalid_version: str,
@@ -244,6 +249,14 @@ def _v1_terminal_outcomes() -> tuple[
             ),
         ),
     )
+
+
+def test_builtin_renderers_accept_v1_and_v2_terminal_outcomes() -> None:
+    for original in _v1_terminal_outcomes():
+        upgraded = upgrade_outcome_v1_to_v2(original)
+        assert render_terminal(upgraded) == render_terminal(original)
+        assert render_json(upgraded) == dumps_outcome(upgraded, pretty=True)
+        assert loads_outcome(render_json(upgraded)) == upgraded
 
 
 def test_schema_v1_models_reject_schema_v2_nested_values() -> None:

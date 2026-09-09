@@ -625,7 +625,9 @@ def _handles_are_valid(manifest: PluginManifestV1) -> bool:
                     return False
             else:
                 return False
-    except (AttributeError, KeyError, TypeError, ValueError):
+    except (KeyboardInterrupt, SystemExit, MemoryError):
+        raise
+    except Exception:
         return False
     return True
 

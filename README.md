@@ -97,6 +97,7 @@ Implemented in Phases 1, 2, and the P3-A/P3-B plugin gates:
 - strict line-oriented text comparison;
 - deterministic linear-space Myers insert/delete edit scripts;
 - terminal and JSON renderers with bounded change details;
+- terminal and JSON readers for both schema-v1 and schema-v2 outcomes;
 - bounded deterministic text/binary detection and internal capability resolution;
 - collision-safe exact binary comparison with payload-free change spans;
 - immutable SDK-v1 manifests and capability/dependency/platform inventory;
@@ -104,7 +105,8 @@ Implemented in Phases 1, 2, and the P3-A/P3-B plugin gates:
   and deterministic conflict quarantine;
 - explicitly pinned SDK-v1.1 detector/comparator handles with host-owned bounded
   source access and lifecycle stages, including exact built-in comparator pins
-  for automatic comparisons;
+  for automatic comparisons, strict declared-backend provenance, and host-side
+  output-limit/exact-semantics validation;
 - schema-v2 provider, attempt, and plugin-host provenance plus a typed v1-to-v2
   upgrader. `PluginHost.compare()` always returns schema v2.
 
