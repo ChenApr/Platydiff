@@ -294,8 +294,12 @@ require separate gate authorization. Every other modality and renderer below is
 planned. Phase 5 image contracts are proposed in
 [RFC 0007](rfcs/0007-image-comparison.md); they are not implementation
 authorization and require the actual merged schema-v3 predecessor to be
-revalidated first. Phase 7 audio/video contracts are proposed in
-[RFC 0009](rfcs/0009-audio-and-video-comparison.md); they are not implemented.
+revalidated first. Phase 6 source/PDF contracts are proposed in
+[RFC 0008](rfcs/0008-source-code-and-pdf-comparison.md) with schema-v5
+allocation; Phase 7 audio/video contracts are proposed in
+[RFC 0009](rfcs/0009-audio-and-video-comparison.md) with schema-v6 allocation.
+They are not implemented, and public schema merges must respect predecessor
+order even when design and backend research proceed concurrently.
 
 ### v0.1: Core loop
 

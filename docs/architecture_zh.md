@@ -281,8 +281,10 @@ Phase 1 至 Phase 3 包含 Python 包、schema-v1/v2 契约、显式文本、有
 [RFC 0006](rfcs/0006-structured-data-comparison_zh.md) 中接受，但仍未实现且需要单独门禁授权。
 Phase 5 图片契约已在 [RFC 0007](rfcs/0007-image-comparison_zh.md) 中提出；它不构成实现授权，
 且必须先重新验证实际合并的 schema-v3 前驱。下列其他模态与 renderer 仍是计划能力。
-Phase 7 audio/video 契约已在 [RFC 0009](rfcs/0009-audio-and-video-comparison_zh.md)
-中提议；它们尚未实现。
+Phase 6 source/PDF 契约已在 [RFC 0008](rfcs/0008-source-code-and-pdf-comparison_zh.md)
+中提出，并分配 schema-v5；Phase 7 audio/video 契约已在
+[RFC 0009](rfcs/0009-audio-and-video-comparison_zh.md) 中提出，并分配 schema-v6。它们尚未实现；
+即使 design 与 backend research 并发推进，public schema merge 也必须遵守前驱顺序。
 
 ### v0.1：核心闭环
 

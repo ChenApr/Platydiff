@@ -34,7 +34,7 @@
 | RFC 0005 实现的 SDK v1.1 只覆盖 text/binary detector、comparator 与 renderer handle。 | 音视频插件需要 SDK-v2 后继 RFC；SDK v1.1 不能引入媒体 spec 或内建媒体 change kind。 |
 | RFC 0006 接受 schema v3 用于结构化数据，但后续门禁启动时必须重新验证其实现状态。 | 音视频 schema 决策必须从已实现 v1/v2 和已接受 v3 迁移，不能假设未合并 P4-A1 行为。 |
 | RFC 0007 提议 schema v4 作为首个 image slice，前提是通过实际合并的 schema-v3 前驱审计。 | Phase 7 不得与 Phase 5 争用 v4，也不得重开冻结前驱；媒体需要单独的全局 schema successor。 |
-| RFC 0008 提议 source-code/PDF 契约，并保持重量级后端、artifact、auto detection 和 SDK v2 分离。 | 媒体也采用同样分离：后端和可选 artifact 是独立门禁。 |
+| RFC 0008 提议 source-code/PDF 契约，现协调为 schema v5，并保持重量级后端、artifact、auto detection 和 SDK v2 分离。 | Phase 7 使用下一个全局 successor schema v6。媒体也采用同样分离：后端和可选 artifact 是独立门禁。 |
 | 当前运行时依赖为空；音视频后端仍是架构层计划。 | 任何依赖或 subprocess path 进入前，必须审查 codec、model、patent、export 与 FFmpeg build/license 影响。 |
 | P4-A1 和 Phase 5 实现工作仍可能缺失，或与 `main` 分歧。 | 只能把这些工作当作设计证据；本文中所有依赖代码状态的假设都是后续 revalidation gate。 |
 
@@ -54,7 +54,7 @@ Phase 7 目标包括：
   deinterlace、tone-map、color conversion、track dropping 或 synchronization change；
 - 对 corrupt、truncated、hostile、long-duration、high-rate、high-channel-count、high-resolution、
   high-frame-count 和 multi-stream input 的资源与安全规则；
-- 与已实现 v1/v2、实际 P4 schema-v3 前驱和 Phase 5 schema-v4 预留兼容，并在实现开始时重新验证。
+- 与已实现 v1/v2、实际 P4 schema-v3 前驱、Phase 5 schema-v4 预留和 Phase 6 schema-v5 预留兼容，并在实现开始时重新验证。
 
 Phase 7 不包含：
 
@@ -78,7 +78,7 @@ Phase 7 不包含：
 | --- | --- | --- |
 | P7X1 | 音视频比较保持 explicit-only；既有 auto 仍只支持 text/binary。 | 未定义昂贵 probe 与 ambiguity 就把媒体 candidate 加入 RFC 0003。 |
 | P7X2 | 将音频和视频拆分为独立授权门禁。 | 把所有 time-based media 当作一个实现批次。 |
-| P7X3 | 审计实际 P4 schema-v3 前驱和 Phase 5 schema-v4 预留后，使用全局分配的媒体 schema successor。 | 扩展 v1/v2 closed union、重开 v3、复用 image v4，或假设已接受但未实现的 schema-v3 细节。 |
+| P7X3 | 审计实际 P4 schema-v3 前驱、Phase 5 schema-v4 预留和 Phase 6 schema-v5 预留后，使用全局分配的 schema v6 media successor。 | 扩展 v1/v2 closed union、重开 v3、复用 image v4 或 source/PDF v5，或假设已接受但未实现的前驱细节。 |
 | P7X4 | SDK v1.1 下拒绝 audio/video plugin comparator；媒体模态需要 SDK v2。 | 允许 plugin 安装引入媒体 spec 或 change kind。 |
 | P7X5 | 保持 RFC 0004 artifact/UI 工作独立；首批比较门禁可以不产生文件。 | 让 decoding 或 rendering 隐式写出 preview、thumbnail、clip、heatmap 或 waveform。 |
 | P7X6 | 后端执行开始后，禁止改变 relation 的 fallback。 | 失败时静默按 byte、另一 codec/backend、低保真 decode 或 perceptual metric 重试。 |
@@ -100,34 +100,37 @@ Phase 7 不包含：
 
 ## Schema 与兼容性契约
 
-Phase 7 使用全局分配的媒体 schema successor。暂定分配为 schema v5，因为 RFC 0006 将
-schema v3 预留给 structured data，RFC 0007 在实际 P4-A1 前驱审计通过后将 schema v4
-预留给 image。后续实现门禁必须重新验证 `main` 状态，并在仓库级 schema ledger 中记录最终
-schema 编号后才可写代码。它不得重开 schema v3、占用 schema v4，或与其他模态并行分配冲突的
-successor。
+Phase 7 使用全局分配的 schema v6 media successor。分配顺序是稳定人工决策：P4 structured data
+使用 schema v3，P5 image 使用 schema v4，P6 source/PDF 使用 schema v5，P7 audio/video 使用
+schema v6。Design、backend、dependency 与 fixture research 可以跨 phase 并发推进，但 public
+schema implementation 与 merge 必须遵守此前驱顺序及其兼容性 fixture。后续实现门禁必须重新验证
+`main` 状态，并在仓库级 schema ledger 中记录最终 schema 编号后才可写代码。它不得重开 schema
+v3、占用 schema v4 或 v5，或与其他模态并行分配冲突的 successor。
 
 媒体 successor 是实际合并前驱链的 additive semantic successor：
 
 ```python
-CompareSpecV5 = CompareSpecV4 | AudioCompareSpec | VideoCompareSpec
-ChangeV5 = ChangeV4 | AudioChange | VideoChange
+CompareSpecV6 = CompareSpecV5 | AudioCompareSpec | VideoCompareSpec
+ChangeV6 = ChangeV5 | AudioChange | VideoChange
 ```
 
 如果 P4-A1 schema v3 没有在 `main` 上实现、实际实现与 RFC 0006 不一致，或 Phase 5 schema
-v4 缺失或改变其分配，Phase 7 实现门禁必须停止并先修订本文。媒体 schema 工作依赖真实的
-v3 reader、writer、upgrader 与 fixture，而不是只依赖已接受的设计文本。无论哪种情况：
+v4 缺失或改变其分配，或 Phase 6 schema v5 缺失或改变其分配，Phase 7 实现门禁必须停止并先
+修订本文。媒体 schema 工作依赖真实的 v3/v4/v5 reader、writer、upgrader 与 fixture，而不是只依赖
+已接受的设计文本。无论哪种情况：
 
 - 既有内建 text、binary 与 auto 调用保持 schema v1；
 - 既有 `PluginHost` text/binary 调用保持 schema v2；
 - 已合并 Phase 4 structured-data 调用保持实际实现的 schema v3；
 - 已合并 Phase 5 image 调用保持 schema v4；
+- 已合并 Phase 6 source/PDF 调用保持 schema v5；
 - audio/video 内建 spec 使用选定媒体 successor，即使 validation、sourcing、resolution、decode
   或 backend 阶段失败也是如此；
-- 选定媒体 reader 接受 v1/v2/v3/v4/media-successor payload，并先按显式 schema version 分派，
+- 选定媒体 reader 接受 v1/v2/v3/v4/v5/v6 payload，并先按显式 schema version 分派，
   再检查 spec 或 change kind；
-- v1/v2/v3/v4-to-media upgrader 保留原始事实，只加入文档化的中性默认值，例如空媒体字段集合；
-- byte-stable v1/v2 fixture、P4 schema-v3 fixture、P5 schema-v4 fixture 与新的 media round-trip
-  fixture 保持在兼容性 corpus 中；
+- v1/v2/v3/v4/v5-to-v6 upgrader 保留原始事实，只加入文档化的中性默认值，例如空媒体字段集合；
+- byte-stable v1/v2 fixture、P4 schema-v3 fixture、P5 schema-v4 fixture、P6 schema-v5 fixture 与
+  新的 media round-trip fixture 保持在兼容性 corpus 中；
 - 每个新的 media fixture 都包含期望 JSON schema version、public spec/change name、metric name、
   ordering、omitted/null field 与 failure reason code；
 - audio/video outcome 不存在自动 downgrade。只有 media-free result 的事实能由目标前驱表示时，
@@ -148,9 +151,9 @@ source view、lifecycle stage、backend role、sandboxing、artifact authority�
 | 既有显式 `PluginHost` | v2 | text、binary、解析到二者的 auto | SDK v1.1 | 既有 v2 fixture 与 receipt 继续有效。 |
 | 已合并 Phase 4 path | v3 | 显式 json/yaml/table/array | 无 | 实际 v3 model、migration 与 fixture 是前驱。 |
 | 提议中的 Phase 5 image path | v4 | 显式 static PNG image | 无 | 媒体不得复用 v4，也不得要求 image 实现改变。 |
-| 提议中的 Phase 6 source/PDF path | 未指定 | source-code/PDF | 单独授权前无 | 只作为设计证据；不是 Phase 7 依赖。 |
-| 提议中的 Phase 7 audio path | 媒体 successor，暂定 v5 | 显式 audio | 首批门禁无 | 产生 validated audio spec、change、metric、transformation 与 failure。 |
-| 提议中的 Phase 7 video path | 媒体 successor，暂定 v5 | 显式 video | 首批门禁无 | backend 与 worker contract 冻结前保持 pending。 |
+| 提议中的 Phase 6 source/PDF path | v5 | source-code/PDF | 单独授权前无 | 前驱 schema 预留；design evidence 可并发推进，但 media merge 等待 v5 fixture。 |
+| 提议中的 Phase 7 audio path | v6 | 显式 audio | 首批门禁无 | 产生 validated audio spec、change、metric、transformation 与 failure。 |
+| 提议中的 Phase 7 video path | v6 | 显式 video | 首批门禁无 | backend 与 worker contract 冻结前保持 pending。 |
 | 对 media-looking bytes 使用既有 auto | v1 | 仅 text 或 binary | 仅既有规则 | detection evidence 与 result 不变。 |
 | 未来 SDK v2 或 media auto | 未指定 | 未指定 | 未指定 | 需要后继 RFC。 |
 
@@ -287,8 +290,10 @@ Offset 与 drift compensation 是 transformation，需记录参数、观测估�
 或 ambiguity fact。Timeline candidate 按 exact timestamp match、较小 absolute offset、较小 absolute
 drift、较小 before coordinate、较小 after coordinate 排序。Correlation candidate 按较高 deterministic
 score、较小 absolute offset、较小 absolute drift、较小 before coordinate、较小 after coordinate 排序。
-如果两个 alignment 在配置 margin 下不可区分、drift 超过 policy，或 search budget 耗尽，outcome 是
-`failed/alignment_failed` 或 `failed/compare_resource_limit`，而不是近似完成的 equality claim。
+如果两个 alignment 在配置 margin 下不可区分、drift 超过 policy，或 search budget 耗尽，outcome
+对 budget exhaustion 使用 `failed/compare_resource_limit`，对无法使用的 decoded timing fact 使用
+`failed/decode_error`，而不是近似完成的 equality claim。Media-specific `alignment_failed` problem
+code 需要后续 RFC 0001 registry update 后才可使用。
 
 提议的内建 audio change 为：
 
@@ -389,14 +394,16 @@ class AudioResourceLimits:
     max_change_payload_bytes: int = 4 * 1024 * 1024
 ```
 
-默认值仍是暂定，接受前必须基于选定后端重新验证。Limit check 必须在 allocation、decode、packet
-expansion、metadata materialization、comparison work 或 temp-file write 之前执行。Limit 值为 `0`
-表示该资源没有预算：zero decoded bytes 只接受选中 relation 不需要 decoded byte 的输入；zero
-duration 只接受 zero-duration decoded stream；zero packets 拒绝任何会读取 packet 的 stream；zero
-change items 仍计算 overall relation 与 total count，但输出 truncated empty change list。
-`max_resident_buffer_bytes` 限制 live decoded/sample buffer，而不只是 total output bytes。
-`max_materialized_bytes` 限制传给 backend 的 host-owned snapshot 与 temporary materialization。所有
-counter 都是 monotonic，并在 chunk boundary 先检查再预留下一个 buffer。
+对于使用 `stdlib_wave_pcm` 的 P7-A1，这些是 proposed normative default value。Implementation 仍需
+benchmark gate 证明它们 deterministic、bounded 且 practical，但接受 P7-S0/audio decision 不再延后
+这些 default value 本身。Limit check 必须在 allocation、decode、packet expansion、metadata
+materialization、comparison work 或 temp-file write 之前执行。Limit 值为 `0` 表示该资源没有预算：
+zero decoded bytes 只接受选中 relation 不需要 decoded byte 的输入；zero duration 只接受
+zero-duration decoded stream；zero packets 拒绝任何会读取 packet 的 stream；zero change items 仍计算
+overall relation 与 total count，但输出 truncated empty change list。`max_resident_buffer_bytes` 限制
+live decoded/sample buffer，而不只是 total output bytes。`max_materialized_bytes` 限制传给 backend 的
+host-owned snapshot 与 temporary materialization。所有 counter 都是 monotonic，并在 chunk boundary
+先检查再预留下一个 buffer。
 
 Corrupt、truncated、unsupported-codec、hostile-container、over-duration、huge-sample-rate、
 huge-channel-count、decode-bomb、infinite stream、packet-storm、metadata-bomb、backend-hang、
@@ -505,8 +512,9 @@ matching 必须定义 score unit，并用相同 score unit 定义 ambiguity marg
 
 Missing frame、duplicate frame、duplicate timestamp、dropped frame、inserted frame、stream add/remove
 和 drift 是一等 observation 或 failure。任何 frame matching policy 都必须指定确定性 tie-break。
-Ambiguity、unsupported timestamp structure 或 alignment 超预算是 `failed/alignment_failed` 或
-`failed/compare_resource_limit`，不是隐藏的内容差异。
+Ambiguity、unsupported timestamp structure 或 alignment 超预算对 budget exhaustion 使用
+`failed/compare_resource_limit`，对无法使用的 decoded timing fact 使用 `failed/decode_error`，不是隐藏的
+内容差异。Media-specific `alignment_failed` problem code 需要后续 RFC 0001 registry update 后才可使用。
 
 提议的内建 video change 为：
 
@@ -565,11 +573,12 @@ coordinate 可为 null。
 | `video.psnr` | peak signal-to-noise ratio | `db` | `higher_is_better` | `minimum` | zero error 为 positive infinity；无 compared pixel 时省略 |
 | `video.ssim` | 显式配置的 SSIM-style score | `ratio` | `higher_is_better` | 按 spec 为 `minimum` 或 `mean` | 省略 metric |
 | `video.vmaf` | 命名 VMAF model score | `score` | `higher_is_better` | model-defined | 省略 metric |
-| `video.audio_tracks_changed` | selected audio track 中 audio evaluation 非 pass 的数量 | `tracks` | `lower_is_better` | `count` | zero |
+| `video.audio_tracks_changed` | delegated relation 为 different 或 timeline association fact 改变的 selected audio track 数量 | `tracks` | `lower_is_better` | `count` | zero |
 
 Metric 是事实，本身绝不定义 policy。Per-view evaluation 引用 metric，并包含 threshold、tolerance、
-inclusive boundary、verdict、fidelity 与 completeness。`video.audio_tracks_changed` 统计 verdict
-非 pass 的 delegated audio evaluation；它不复制或重新解释 audio metric。
+inclusive boundary、verdict、fidelity 与 completeness。`video.audio_tracks_changed` 统计 observed
+delegated relation difference 或 association fact change；它不依赖 pass/fail policy，不复制 audio
+metric，也不重新解释 audio evaluation verdict。
 
 PSNR 必须定义 peak value、component selection、averaging、bit depth、range 与 color representation。
 SSIM-style metric 必须定义 windowing、color plane、boundary handling、constant、aggregation 与
@@ -604,14 +613,16 @@ class VideoResourceLimits:
     max_change_payload_bytes: int = 4 * 1024 * 1024
 ```
 
-默认值仍是暂定，必须重新验证。Limit check 必须在 allocation、decode、packet expansion、metadata
-materialization、frame buffering、comparison work 或 temp-file write 之前执行。Limit 值为 `0` 表示该
-资源没有预算：zero frames 拒绝任何包含 frame 的 decoded-frame view；zero decoded bytes 只允许不需要
-decoded frame 的 view；zero packets 拒绝 packet read；zero change items 仍计算 overall relation 与
-total count，但输出 truncated empty change list。`max_resident_buffer_bytes` 限制 live decoded
-frame/audio buffer；`max_total_decoded_bytes` 限制累计 decoded media；`max_materialized_bytes` 限制
-host-owned snapshot 与 temporary materialization。Counter 都是 monotonic，并在 chunk/frame boundary
-先检查再预留下一个 buffer。
+Video resource value 在 P7-V1 backend amendment 冻结 backend 与 worker profile 前是 non-normative
+planning placeholder。接受 P7-S0 或 audio default 不会冻结这些 video default。完成 amendment 后，
+limit check 必须在 allocation、decode、packet expansion、metadata materialization、frame buffering、
+comparison work 或 temp-file write 之前执行。Limit 值为 `0` 表示该资源没有预算：zero frames 拒绝
+任何包含 frame 的 decoded-frame view；zero decoded bytes 只允许不需要 decoded frame 的 view；zero
+packets 拒绝 packet read；zero change items 仍计算 overall relation 与 total count，但输出 truncated
+empty change list。`max_resident_buffer_bytes` 限制 live decoded frame/audio buffer；
+`max_total_decoded_bytes` 限制累计 decoded media；`max_materialized_bytes` 限制 host-owned snapshot 与
+temporary materialization。Counter 都是 monotonic，并在 chunk/frame boundary 先检查再预留下一个
+buffer。
 
 Adversarial test 包括 malformed container、unsupported codec、resolution bomb、huge frame count、
 long duration、many stream、packet storm、metadata bomb、decompression bomb、infinite/non-terminating
@@ -661,20 +672,23 @@ lost information 与 policy impact，否则禁止 degraded fidelity。
 
 | Stage | 责任 | Failure 或 unavailable reason |
 | --- | --- | --- |
-| `validate_spec` | 验证 schema version、relation/view set、public option name、nullability、ordering 与 limit value。 | `failed/invalid_spec` |
-| `snapshot_source` | 获取 immutable host-owned source bytes、label、hash 与 mutation check。 | `failed/source_unreadable`、`failed/source_changed`、`failed/source_type_unsupported` |
-| `resolve_backend` | 选择匹配请求 relation/view 与冻结 capability profile 的 backend。 | `unavailable/backend_unavailable`、`unavailable/capability_unavailable` |
-| `materialize` | 为选中 backend 创建有界 host-owned file 或 descriptor。 | `failed/materialization_limit`、`failed/materialization_error` |
-| `decode` | 在 limit 内解析 container packet、metadata、sample、frame、timestamp 与 side data。 | `failed/decode_error`、`failed/compare_resource_limit` |
-| `normalize_ir` | 构建显式 IR，并记录每个请求的 representation transform。 | `failed/normalization_error`、`failed/unsupported_transform` |
-| `align` | 确定性匹配 sample、timestamp、frame、stream 或 delegated audio track。 | `failed/alignment_failed`、`failed/compare_resource_limit` |
-| `compare` | 产生 metric 与 change observation，且不改变 policy semantics。 | `failed/comparator_error`、`failed/compare_resource_limit` |
-| `aggregate` | 构建 per-relation/view evaluation 与唯一 overall result。 | `failed/aggregation_error` |
-| `render` | 只展示 validated fact，不重读或 decode media。 | `failed/render_error` |
+| `validating` | 验证 schema version、relation/view set、public option name、nullability、ordering 与 limit value。 | `failed/invalid_spec` |
+| `sourcing` | 获取 immutable host-owned source bytes、label、hash、mutation check 与有界 materialization。 | `failed/source_not_found`、`failed/source_type_unsupported`、`failed/source_changed`、`failed/resource_limit_exceeded`、`failed/io_error` |
+| `resolving` | 选择匹配请求 relation/view 与冻结 capability profile 的 backend。 | `unavailable/backend_unavailable`、`unavailable/capability_unavailable` |
+| `decoding` | 在 limit 内解析 container packet、metadata、sample、frame、timestamp、side data 与 backend decode output。 | `failed/decode_error`、`failed/resource_limit_exceeded`、`failed/io_error` |
+| `normalizing` | 构建显式 IR，并记录每个请求的 representation transform。不支持的 requested transform 应更早在 `validating` 拒绝。 | `failed/decode_error`、`failed/resource_limit_exceeded`、`failed/internal_error` |
+| `aligning` | 确定性匹配 sample、timestamp、frame、stream 或 delegated audio track。 | `failed/compare_resource_limit`、`failed/decode_error` |
+| `comparing` | 产生 policy-neutral metric 与 change observation，且不改变 policy semantics。 | `failed/compare_resource_limit`、`failed/io_error`、`failed/internal_error` |
+| `aggregating` | 构建 per-relation/view evaluation 与唯一 overall result。 | `failed/internal_error` |
 
-Failed 或 unavailable outcome 记录达到的最深 stage、已知 backend role、适用时的 limit name，以及
-是否 terminate、kill、reap 或 cleanup 过 child process。Completed media outcome 不得把 stage failure
-隐藏在 empty change list 中。
+P7-S0 不引入新的 problem code。Media implementation 只有通过单独 RFC 0001 registry update 固定
+status、HTTP-style code、合法 stage 与 JSON fixture 后，才可增加 `alignment_failed`、`timeout`
+或 `unsupported_transform` 等 code。在此之前复用上方 RFC 0001/RFC 0003 code。Renderer execution
+位于 `CompareOutcome` 之外；renderer failure 不得改写已经完成、unavailable 或 failed 的比较 outcome。
+
+Failed 或 unavailable outcome 记录达到的最深 public stage、已知 backend role、适用时的 limit name，
+以及是否 terminate、kill、reap 或 cleanup 过 child process。Completed media outcome 不得把 stage
+failure 隐藏在 empty change list 中。
 
 ## 依赖、许可证、专利、出口与 fixture 分析
 
@@ -724,7 +738,7 @@ thumbnail、打开文件、获取 remote resource 或重新解释 relation/verdi
 3. `feat(cli): add explicit audio comparison commands`
 4. `docs: document audio exact comparison contracts`
 
-Gate：media schema-successor migration test 基于实际 v3/v4 前驱链通过；既有 v1/v2/v3/v4 fixture
+Gate：schema-v6 media migration test 基于实际 v3/v4/v5 前驱链通过；既有 v1/v2/v3/v4/v5 fixture
 保持兼容；`encoded_bytes` 与 `decoded_samples` 保持独立；唯一首个 backend 是针对 uncompressed
 PCM WAV 的 `stdlib_wave_pcm`；不存在隐藏 resampling/remixing/gain 或 integer-to-float conversion；
 empty、single-sample、different、corrupt、unsupported、over-limit、limit-zero、endianness、
@@ -819,7 +833,7 @@ dependency/license review，以及 secret/path leak scan。Optional-backend suit
 | Video color/pixels | pixel format、bit depth、full/limited range、transfer/primaries/matrix、ICC/HDR metadata、chroma subsampling/siting、alpha、orientation/rotation、interlacing、PSNR/SSIM-style boundary |
 | Hostile media | corrupt/truncated file、unsupported codec、malformed container、decode bomb、huge sample rate/channel count、huge resolution/frame count、long duration、packet storm、metadata bomb、limit-zero case、hang、crash |
 | Backends | missing backend、incompatible version、version mismatch、只使用 host-owned snapshot/materialization、protocol/device allowlist、stderr redaction、timeout terminate/kill/reap、temp cleanup、exit-code validation、path redaction、有界 stdout/stderr/temp file、无 network/device access |
-| Lifecycle | validate、snapshot、resolve、materialize、decode、normalize、align、compare、aggregate 与 render stage failure，包含 stable reason code，且 stage failure 不得产生 completed equality |
+| Lifecycle | canonical `validating`、`sourcing`、`resolving`、`decoding`、`normalizing`、`aligning`、`comparing` 与 `aggregating` stage failure，包含 stable reason code，且 stage failure 不得产生 completed equality；renderer failure 保持在 `CompareOutcome` 之外 |
 | Contracts | media schema-successor migration fixture、继承 v1/v2/v3/v4 fixture、spec/change invariant rejection、relation/view set ordering、metric/evaluation separation、non-finite JSON value、启用时 artifact-reference validation、既有 text/binary/auto/plugin/CLI 行为不变 |
 | Corpora | synthetic 或明确许可的小型 fixture、source script、hash、provenance note、无受限或个人媒体 |
 

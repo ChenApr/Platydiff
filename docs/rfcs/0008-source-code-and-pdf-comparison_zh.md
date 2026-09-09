@@ -23,15 +23,16 @@
 
 ## 证据账本
 
-| `origin/main` `cbc7e36` 上的当前证据 | Phase 6 约束 |
+| `origin/main` `fde2bd4` 上的当前证据 | Phase 6 约束 |
 | --- | --- |
 | RFC 0001 将 failed/unavailable 执行终态与 completed `DiffResult` 事实分离。 | parser、backend、resource、encryption、sandbox 与 rendering 失败不得变成空或伪造的差异。 |
 | RFC 0002 要求每个新模态在实现前定义 spec、change、metric、artifact、等价关系、policy、failure 与 gate。 | 本 RFC 只记录契约与门禁，不启动代码工作。 |
 | RFC 0003 保持自动探测有界且只对 text/binary 封闭。 | Source/PDF 不参与 auto detection；filename、MIME、grammar 或 PDF magic probe 不改变既有 auto 行为。 |
-| RFC 0003 的 snapshot path 管理有界 replay、hash、mutation check 与安全 label。 | Source/PDF gate 依赖它前必须重新验证 snapshot 实现；并发 Phase 4/5 工作不是证据。 |
+| RFC 0003 的 snapshot path 管理有界 replay、hash、mutation check 与安全 label。 | Source/PDF gate 依赖它前必须重新验证 snapshot 实现；并发 Phase 4/5 工作只作为设计证据。 |
 | RFC 0004 要求 renderer 与 UI 消费 validated outcome，不重读 source 或重算事实。 | Source/PDF renderer 只能展示 validated fact 与 inert artifact ref；page image 与 heatmap 需要 artifact gate。 |
 | RFC 0005 实现的 SDK v1.1 只覆盖 text/binary detector、comparator 与 renderer handle。 | Source/PDF plugin comparator 需要显式 SDK-v2 callback，不能通过 SDK v1.1 添加。 |
-| RFC 0006 接受 schema v3 用于 structured-data 内建 spec/change，但其门禁仍未实现。 | Phase 6 只有在重新验证实际实现状态后才能扩展 schema v3；若 v3 已发布，可能需要 schema successor。 |
+| RFC 0006 接受 schema v3 用于 structured-data 内建 spec/change，但其门禁仍未实现。 | Phase 6 必须在 public schema implementation 前审计实际 schema-v3 前驱。 |
+| RFC 0007 在实际 schema-v3 前驱审计后，为首个 image slice 预留 schema v4。 | Phase 6 source/PDF 使用下一个全局 successor schema v5，且不争用或重开 image v4。 |
 | 当前运行时依赖为零，PDF/source backend 还只是架构层计划。 | Tree-sitter、PDF parser、renderer、font 与 subprocess tool 需要独立依赖、license、platform 与 security review。 |
 
 该账本只说明设计约束，不证明未来 backend、parser、artifact writer 或 schema migration
@@ -49,7 +50,7 @@ Phase 6 目标包括：
 - 显式 PDF spec，并分别命名 binary、extracted-text、object/metadata 与 rendered-page view；
 - PDF parser、text extraction、rendering、sandbox、timeout、resource limit 与 hostile
   document feature 的后端边界；
-- 与 v1、v2 以及已接受 v3 migration 规则兼容；
+- 与 v1、v2、实际 P4 schema-v3 前驱和 Phase 5 schema-v4 预留兼容；
 - 明确 SDK-v2、artifact、detection 与 UI callback gate。
 
 Phase 6 不包括：
@@ -71,11 +72,11 @@ Phase 6 不包括：
 | ID | 提议决策 | 未选择的替代方案 |
 | --- | --- | --- |
 | P6X1 | Source-code 与 PDF 比较保持 explicit-only；既有 auto 仍只支持 text/binary。 | 不定义 ambiguity 与 attribution 就把 source/PDF candidate 加入 RFC 0003 detection。 |
-| P6X2 | 只有当 v3 仍未发布且 implementation start 已重新验证 v3 时，Phase 6 内建 spec/change 才使用 schema v3；否则需要 schema successor。 | 扩展 v1/v2 closed union，或在实际实现前假设 RFC 0006 的细节。 |
+| P6X2 | 审计实际 v3 前驱与 Phase 5 v4 预留后，Phase 6 内建 source/PDF spec/change variant 使用全局分配的 schema v5 successor。 | 扩展 v1/v2 closed union、重开 v3、复用 image v4，或在实际实现前假设 RFC 0006 的细节。 |
 | P6X3 | SDK v1.1 下拒绝 source/PDF plugin comparator；第三方 source/PDF modality 需要 SDK v2。 | 允许 plugin 安装引入 source/PDF spec 或内建 change kind。 |
 | P6X4 | 独立授权 source-code 与 PDF 实现门禁。 | 因为二者都需要 parser 而把 Phase 6 当作一个批次。 |
 | P6X5 | 保持 RFC 0004 artifact/UI 工作独立；Phase 6 fact 只有在 artifact writer gate 后才能引用 artifact。 | 让 PDF rendering 隐式创建 page image 或 HTML report。 |
-| P6X6 | 每个依赖代码状态的假设都是 revalidation gate，包括 P4-A1 和未来 Phase 5 工作。 | 把并发未合并工作当成设计证据。 |
+| P6X6 | 每个依赖代码状态的假设都是 revalidation gate，包括 P4-A1 和 Phase 5 工作。 | 把并发未合并工作当成实现或合并证据。 |
 | P6X7 | 后端/parser 开始后，禁止改变比较 relation 的 fallback。 | 失败时静默 fallback 到 text、binary、另一个 parser、另一个 renderer 或 approximate semantics。 |
 | SC1 | 增加显式 `SourceCodeCompareSpec`，并要求 `language` 与 `relation` 字段。 | 从 suffix/content 推断语言，或复用 `TextCompareSpec`。 |
 | SC2 | 首批 source language 为 `python` 与 `javascript`；`typescript`、`c`、`cpp`、`rust`、`go`、`java`、notebook、template 与 generated-code policy 延后。 | 从后端 package 中可用的所有 grammar 同时开始。 |
@@ -100,36 +101,40 @@ Phase 6 不包括：
 
 ## Schema 与兼容性契约
 
-如果 Phase 6 开始时 schema v3 仍未发布，且 RFC 0006 的 v3 基础已经实现，Phase 6
-内建能力按如下方式扩展 v3：
+Phase 6 使用全局分配的 schema v5 successor。分配顺序是稳定人工决策：P4 structured data
+使用 schema v3，P5 image 使用 schema v4，P6 source/PDF 使用 schema v5，P7 audio/video 使用
+schema v6。Design、backend、dependency 与 fixture research 可以跨 phase 并发推进，但 public
+schema implementation 与 merge 必须遵守此前驱顺序及其兼容性 fixture。
+
+Schema v5 是实际合并 schema-v4 前驱的 additive semantic successor：
 
 ```python
-CompareSpecV3 = (
-    AutoCompareSpec | TextCompareSpec | BinaryCompareSpec
-    | JsonCompareSpec | YamlCompareSpec | TableCompareSpec | ArrayCompareSpec
-    | SourceCodeCompareSpec | PdfCompareSpec
-)
-ChangeV3 = (
-    TextHunk | BinarySpan | StructuredChange | TableChange | ArrayChange
-    | SourceCodeChange | PdfChange | ExtensionChange
-)
+CompareSpecV5 = CompareSpecV4 | SourceCodeCompareSpec | PdfCompareSpec
+ChangeV5 = ChangeV4 | SourceCodeChange | PdfChange
 ```
 
-如果 schema v3 已经带 closed union 发布，Phase 6 必须使用 schema successor，而不是就地
-扩展 v3。无论哪种情况：
+如果 P4-A1 schema v3 没有在 `main` 上实现、实际实现与 RFC 0006 不一致，或 Phase 5 schema
+v4 缺失或改变其分配，Phase 6 实现门禁必须停止并先修订本文。Source/PDF schema 工作依赖真实的
+v3/v4 reader、writer、upgrader 与 fixture，而不是只依赖已接受的设计文本。无论哪种情况：
 
 - 既有内建 text、binary 与 auto 调用保持 schema v1；
 - 既有 `PluginHost` text/binary 调用保持 schema v2；
-- 内建 source-code 与 PDF spec 使用实现门禁选定的新 schema，即使在 resolution 前失败也是如此；
-- 被选 schema 的 reader 接受 v1/v2/该 schema；
-- 显式 v1/v2/v3 migration helper 保留原始事实，只加入文档化的中性默认值；
-- source-code 或 PDF outcome 不存在自动 downgrade；
+- 已合并 Phase 4 structured-data 调用保持实际实现的 schema v3；
+- 已合并 Phase 5 image 调用保持 schema v4；
+- 内建 source-code 与 PDF spec 使用 schema v5，即使 validation、sourcing、resolution、
+  parser/backend、rendered-page backend、alignment 或 comparison 阶段失败也是如此；
+- v5 reader 接受 v1/v2/v3/v4/v5 payload，并先按显式 schema version 分派，再检查 spec 或
+  change kind；
+- 显式 v1/v2/v3/v4-to-v5 migration helper 保留原始事实，只加入文档化的中性默认值；
+- byte-stable v1/v2 fixture、P4 schema-v3 fixture、P5 schema-v4 fixture 与 P6 v5 round-trip
+  fixture 保持在兼容性 corpus 中；
+- source-code 或 PDF outcome 不存在自动 downgrade。只有事实能由目标旧 schema 表示时，才允许
+  lossless helper downgrade；
 - unknown built-in spec/change kind 仍然非法；unknown namespaced extension change 保持 RFC 0001 行为。
 
 选定 schema 必须为每个新 spec field、change kind、metric、evaluation rule、
-transformation ID、backend identity 与 problem detail 定义稳定 JSON 名称。由于 RFC 0006
-在本 RFC 起草时已接受但未实现，每个 Phase 6 implementation gate 开始时都必须重新验证
-schema v3 假设。
+transformation ID、backend identity 与 problem detail 定义稳定 JSON 名称。每个 Phase 6
+implementation gate 开始时与 merge 前都必须重新验证 schema predecessor 假设。
 
 ## 设计-契约矩阵
 
@@ -504,10 +509,9 @@ embedded file、获取 remote asset 或派生新 view。
 3. `feat(cli): add explicit source-code comparison commands`
 4. `docs: document source-code comparison contracts`
 
-Gate：选定 schema migration test 通过；既有 v1/v2 与任何已实现 v3 fixture 保持兼容；
-`language` 是必填；不存在自动语言探测或 text fallback；lexical relation 对 Python 与
-JavaScript 有确定性 token/text fixture；limit、Unicode、newline、malformed input 与
-renderer escaping 均有测试。
+Gate：schema-v5 migration test 基于实际 v3/v4 前驱链通过；既有 v1/v2/v3/v4 fixture 保持兼容；
+`language` 是必填；不存在自动语言探测或 text fallback；lexical relation 对 Python 与 JavaScript
+有确定性 token/text fixture；limit、Unicode、newline、malformed input 与 renderer escaping 均有测试。
 
 ### P6-S2：source-code syntax-tree relation 与 parser backend
 
