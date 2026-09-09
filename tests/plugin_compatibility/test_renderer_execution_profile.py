@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from typing import cast
 
 import pytest
 
 from platydiff import CompletedOutcome, PluginHost, TextCompareSpec, TextSource, compare
-from platydiff.core.models import AnyCompareOutcome
+from platydiff.core.models import AnyCompareOutcome, ProviderIdentity
 from platydiff.core.serialization import dumps_outcome
 from platydiff.plugin_sdk import (
     CapabilityAvailabilityV1,
@@ -17,6 +18,7 @@ from platydiff.plugin_sdk import (
     RendererSinkV1,
 )
 from platydiff.plugins import (
+    RenderedOutputV1,
     RendererExecutionError,
     RendererOutputLimitError,
     RendererUnavailableError,
@@ -85,6 +87,8 @@ def test_renderer_receives_only_validated_outcome_options_and_bounded_sink() -> 
     assert rendered.text == "completed:1"
     assert rendered.data == b"completed:1"
     assert rendered.provider.plugin_id == "org.example.scidiff"
+    assert rendered.backend_id == "org.example.scidiff.stdlib"
+    assert rendered.backend_version == "1"
 
 
 def test_renderer_sink_supports_exact_bounded_utf8_and_binary_output() -> None:
@@ -138,6 +142,85 @@ def test_renderer_output_overflow_is_typed_safe_and_preserves_outcome() -> None:
         )
     assert caught.value.outcome is outcome
     assert "completed" not in str(caught.value)
+
+
+def test_renderer_ascii_character_bound_short_circuits_before_utf8_encoding() -> None:
+    class EncodingMustNotRun(str):
+        def encode(self, encoding: str = "utf-8", errors: str = "strict") -> bytes:
+            del encoding, errors
+            raise AssertionError("oversized text should be rejected before encoding")
+
+    class OversizedRenderer(_Renderer):
+        def render(
+            self,
+            outcome: AnyCompareOutcome,
+            options: RendererPresentationOptionsV1,
+            sink: RendererSinkV1,
+        ) -> None:
+            del outcome, options
+            sink.write_text(EncodingMustNotRun("xx"))
+
+    renderer = OversizedRenderer()
+    with pytest.raises(RendererOutputLimitError):
+        _renderer_host(renderer).render(
+            _outcome(),
+            renderer_id=renderer.capability_id,
+            options=RendererPresentationOptionsV1(max_output_bytes=1),
+        )
+
+
+def test_rendered_output_without_declared_backend_records_none_pair() -> None:
+    class NoBackendRenderer(_Renderer):
+        def availability(self) -> CapabilityAvailabilityV1:
+            return CapabilityAvailabilityV1(True)
+
+    renderer = NoBackendRenderer()
+    host = _capability(renderer, CapabilityKind.RENDERER)[0]
+    rendered = host.render(_outcome(), renderer_id=renderer.capability_id)
+
+    assert rendered.backend_id is None
+    assert rendered.backend_version is None
+
+
+def test_rendered_output_public_constructor_validates_every_field() -> None:
+    renderer = _Renderer()
+    rendered = _renderer_host(renderer).render(
+        _outcome(), renderer_id=renderer.capability_id
+    )
+
+    invalid_values = (
+        {"renderer_id": "BAD/PATH"},
+        {"renderer_version": "/private/version"},
+        {"media_type": "NOT A MEDIA TYPE"},
+        {"data": cast(bytes, "not-bytes")},
+        {"is_text": cast(bool, 1)},
+        {"provider": cast(ProviderIdentity, object())},
+        {"backend_id": None},
+        {"backend_version": None},
+        {"backend_id": "BAD/PATH", "backend_version": "1"},
+        {"data": b"\xff", "is_text": True},
+    )
+    for changes in invalid_values:
+        with pytest.raises(ValueError):
+            replace(rendered, **changes)
+
+
+def test_rendered_output_rejects_backend_outside_provider_namespace() -> None:
+    renderer = _Renderer()
+    rendered = _renderer_host(renderer).render(
+        _outcome(), renderer_id=renderer.capability_id
+    )
+    with pytest.raises(ValueError, match="plugin namespace"):
+        RenderedOutputV1(
+            rendered.renderer_id,
+            rendered.renderer_version,
+            rendered.media_type,
+            rendered.data,
+            rendered.is_text,
+            rendered.provider,
+            "org.other.backend",
+            "1",
+        )
 
 
 def test_renderer_failure_is_typed_safe_and_never_mutates_outcome() -> None:

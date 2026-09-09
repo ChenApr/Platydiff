@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import cast
 
@@ -38,6 +39,39 @@ _OUTCOME_TYPES = (
     UnavailableOutcomeV2,
     FailedOutcomeV2,
 )
+_STABLE_IDENTIFIER = re.compile(r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$")
+_MEDIA_TYPE = re.compile(
+    r"^[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*"
+    r"(?:;[ ]*[a-z0-9!#$&^_.+-]+=[a-z0-9!#$&^_.+:-]+)*$"
+)
+
+
+def _identity_text(value: object, field_name: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string")
+    try:
+        encoded = value.encode("utf-8", errors="strict")
+    except UnicodeEncodeError as error:
+        raise ValueError(f"{field_name} must contain valid Unicode") from error
+    if (
+        not value
+        or len(encoded) > 1024
+        or "/" in value
+        or "\\" in value
+        or any(
+            ord(character) < 0x20 or 0x7F <= ord(character) <= 0x9F
+            for character in value
+        )
+    ):
+        raise ValueError(f"{field_name} must be bounded, control-free, and path-free")
+    return value
+
+
+def _stable_identifier(value: object, field_name: str) -> str:
+    text = _identity_text(value, field_name)
+    if len(text.encode("utf-8")) > 255 or not _STABLE_IDENTIFIER.fullmatch(text):
+        raise ValueError(f"{field_name} must be a stable lowercase ASCII identifier")
+    return text
 
 
 class RendererError(Exception):
@@ -77,6 +111,36 @@ class RenderedOutputV1:
     data: bytes
     is_text: bool
     provider: ProviderIdentity
+    backend_id: str | None = None
+    backend_version: str | None = None
+
+    def __post_init__(self) -> None:
+        renderer_id = _stable_identifier(self.renderer_id, "renderer_id")
+        _identity_text(self.renderer_version, "renderer_version")
+        if not isinstance(self.media_type, str) or not _MEDIA_TYPE.fullmatch(
+            self.media_type
+        ):
+            raise ValueError("media_type must be a normalized media type")
+        if type(self.data) is not bytes:
+            raise ValueError("data must be bytes")
+        if type(self.is_text) is not bool:
+            raise ValueError("is_text must be a boolean")
+        if not isinstance(self.provider, ProviderIdentity):
+            raise ValueError("provider must be a ProviderIdentity")
+        if not renderer_id.startswith(f"{self.provider.plugin_id}."):
+            raise ValueError("renderer_id must use the provider plugin namespace")
+        if (self.backend_id is None) != (self.backend_version is None):
+            raise ValueError("backend_id and backend_version must be provided together")
+        if self.backend_id is not None:
+            backend_id = _stable_identifier(self.backend_id, "backend_id")
+            if not backend_id.startswith(f"{self.provider.plugin_id}."):
+                raise ValueError("backend_id must use the provider plugin namespace")
+            _identity_text(self.backend_version, "backend_version")
+        if self.is_text:
+            try:
+                self.data.decode("utf-8", errors="strict")
+            except UnicodeDecodeError as error:
+                raise ValueError("text data must be valid UTF-8") from error
 
     @property
     def text(self) -> str | None:
@@ -117,6 +181,14 @@ class _BoundedSink:
         if not isinstance(untrusted, str):
             self._invalid = True
             raise TypeError("renderer text output must be a string")
+        if self._mode is not None and self._mode != "text":
+            self._invalid = True
+            raise TypeError("renderer output modes must not be mixed")
+        if len(value) > self.remaining_bytes:
+            self._overflowed = True
+            raise PluginResourceLimitErrorV1(
+                "The renderer output byte budget was exhausted."
+            )
         try:
             encoded = value.encode("utf-8", errors="strict")
         except UnicodeEncodeError:
@@ -287,4 +359,6 @@ def render_plugin(
         data=sink.data,
         is_text=sink.is_text,
         provider=_provider(catalog, capability.plugin.manifest.plugin_id),
+        backend_id=availability.backend_id,
+        backend_version=availability.backend_version,
     )
