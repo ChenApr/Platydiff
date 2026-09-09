@@ -202,9 +202,10 @@ def manifest() -> PluginManifestV1:
 Renderer 只得到 validated outcome 副本、presentation options 与 host-owned sink；不会
 得到 source、path、registry、artifact root 或 comparison callback。每次调用只能选择
 `write_text()` 或 `write_bytes()` 之一。Sink 强制精确 UTF-8 byte budget 与声明的 media
-type。生成 terminal text 的 renderer 必须转义恶意 control character，且不得重算
-relation、verdict、metric、completeness 或其他 comparison fact。SDK v1 不提供任意文件
-写入、HTML policy 或 UI behavior。
+type。生成 terminal text 的 renderer 必须转义恶意 control character；CLI 会在 plugin
+text 写入 stdout 前拒绝 BOM、bidi control 与除 newline 外的 C0/C1 control。Renderer
+不得重算 relation、verdict、metric、completeness 或其他 comparison fact。SDK v1 不
+提供任意文件写入、HTML policy 或 UI behavior。
 
 Python 调用方只在 comparison 之后选择 renderer：
 
@@ -221,9 +222,11 @@ rendered = host.render(
 )
 ```
 
-`RenderedOutputV1` 记录精确的 renderer/provider identity、media type、有界 bytes 与是否
-为 UTF-8 text。renderer 缺失、不可用、输出无效、执行失败或越界时，会抛出携带原始未变
-outcome 的 typed renderer error，且不会隐式 fallback。
+`RenderedOutputV1` 记录精确的 renderer/provider/backend identity、media type、有界
+bytes 与是否为 UTF-8 text。其 public constructor 会验证 namespace、identity string、
+media type、bytes/boolean 类型、backend pair、provider 类型与 text UTF-8 一致性。
+renderer 缺失、不可用、输出无效、执行失败或越界时，会抛出携带原始未变 outcome 的
+typed renderer error，且不会隐式 fallback。
 
 ## 从 CLI 选择插件与 capability
 
@@ -261,11 +264,14 @@ python -m pytest tests/plugin_compatibility
 Profile 覆盖 manifest/API negotiation、显式 discovery、detector/comparator lifecycle、
 renderer authority 与 bounds、terminal control safety、dependency/license/platform
 inventory、确定性顺序、redaction，以及 discovery 到 CLI 的 failure-isolation matrix。
-`tests/plugin_compatibility/profiles.py` 中的 receipt helper 会生成 canonical JSON，记录
-精确 suite/host version、plugin/distribution identity、协商后的 SDK 与 outcome schema
-version、backend/platform inventory、profile ID、result 与 SHA-256 digest。只能包含实际
-运行的 profile。唯一允许的声明是
-`conforms to Platydiff plugin profile X under suite version Y.`
+`tests/plugin_compatibility/profiles.py` 中的 receipt helper 要求为每个实际执行的 profile
+提供一个 `CompatibilityProfileResultV1`；每项都包含 pass/fail 与非空的 normalized
+evidence summary。Canonical JSON 会把这些结果与精确 suite/host version、plugin/
+distribution identity、协商后的 SDK 与 outcome schema version，以及 backend/platform
+inventory 一起记录；SHA-256 digest 覆盖 normalized per-profile result。只有全部 profile
+都 passed 时，整体 result 才是 `conforms` 并出现唯一允许的
+`conforms to Platydiff plugin profile X under suite version Y.` 声明；failed 或 mixed
+receipt 不包含 conformance claim。
 
 Receipt 是 self-attestation，不是认证、背书、安全评审或再分发许可。Plugin code 是受信任
 的 in-process Python；least-authority API 只能减少误用，并不提供 sandbox。插件作者负责

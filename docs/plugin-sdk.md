@@ -228,9 +228,10 @@ and a host-owned sink only. It receives no source, path, registry, artifact
 root, or comparison callback. Use either `write_text()` or `write_bytes()` for
 one invocation, never both. The sink enforces the exact UTF-8 byte budget and
 declared media type. Renderers must escape hostile controls before producing
-terminal text and must not recompute relation, verdict, metrics, completeness,
-or any other comparison fact. SDK v1 does not provide arbitrary file writes,
-HTML policy, or UI behavior.
+terminal text; the CLI rejects BOM, bidi controls, and C0/C1 controls other than
+newline before writing plugin text to stdout. Renderers must not recompute
+relation, verdict, metrics, completeness, or any other comparison fact. SDK v1
+does not provide arbitrary file writes, HTML policy, or UI behavior.
 
 Python callers select a renderer only after comparison:
 
@@ -247,10 +248,12 @@ rendered = host.render(
 )
 ```
 
-`RenderedOutputV1` records exact renderer/provider identity, media type, bounded
-bytes, and whether the output is UTF-8 text. A missing, unavailable, invalid,
-failing, or over-limit renderer raises a typed renderer error containing the
-unchanged outcome. There is no implicit fallback.
+`RenderedOutputV1` records exact renderer/provider/backend identity, media type,
+bounded bytes, and whether the output is UTF-8 text. Its public constructor
+validates namespaces, identity strings, media type, bytes/boolean types, backend
+pairing, provider type, and text UTF-8 consistency. A missing, unavailable,
+invalid, failing, or over-limit renderer raises a typed renderer error containing
+the unchanged outcome. There is no implicit fallback.
 
 ## Select plugins and capabilities from the CLI
 
@@ -292,11 +295,16 @@ The profile covers manifest/API negotiation, explicit discovery, detector and
 comparator lifecycles, renderer authority and bounds, terminal-control safety,
 dependency/license/platform inventory, deterministic ordering, redaction, and
 the discovery-to-CLI failure-isolation matrix. Receipt helpers in
-`tests/plugin_compatibility/profiles.py` produce canonical JSON with the exact
-suite and host versions, plugin/distribution identity, negotiated SDK and
-outcome schema versions, backend/platform inventory, profile IDs, result, and a
-SHA-256 digest. Include only profiles actually run. The sole permitted claim is
-`conforms to Platydiff plugin profile X under suite version Y.`
+`tests/plugin_compatibility/profiles.py` require one
+`CompatibilityProfileResultV1` per actually executed profile. Each result
+contains a pass/fail value and a non-empty normalized evidence summary. Canonical
+JSON records those results together with the exact suite and host versions,
+plugin/distribution identity, negotiated SDK and outcome schema versions, and
+backend/platform inventory. The SHA-256 digest covers the normalized per-profile
+results. Overall `conforms` and the permitted
+`conforms to Platydiff plugin profile X under suite version Y.` claims appear
+only when every included profile passed; a failed or mixed receipt contains no
+conformance claim.
 
 A receipt is self-attestation, not certification, endorsement, security review,
 or permission to redistribute. Plugin code is trusted in-process Python: least

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import re
+from dataclasses import dataclass
 from hashlib import sha256
 
 from platydiff import __version__
@@ -41,6 +43,69 @@ FAILURE_ISOLATION_MATRIX: tuple[tuple[str, str, str], ...] = (
 _BIDI_CONTROLS = frozenset(
     (0x061C, 0x200E, 0x200F, *range(0x202A, 0x202F), *range(0x2066, 0x206A))
 )
+_PROFILE_ID = re.compile(r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$")
+_FORBIDDEN_EVIDENCE_KEYS = frozenset(
+    {
+        "before",
+        "after",
+        "source",
+        "source_content",
+        "source_path",
+        "username",
+        "environment_variables",
+        "traceback",
+        "token",
+    }
+)
+
+
+def _normalized_evidence(value: object, *, key: str | None = None) -> JsonValue:
+    if key in _FORBIDDEN_EVIDENCE_KEYS:
+        raise ValueError("profile evidence must not contain sensitive fields")
+    if value is None or type(value) in (bool, int):
+        return value  # type: ignore[return-value]
+    if isinstance(value, str):
+        if (
+            len(value.encode("utf-8")) > 4096
+            or any(
+                ord(character) < 0x20 or 0x7F <= ord(character) <= 0x9F
+                for character in value
+            )
+            or value.startswith("/")
+            or re.search(r"(?:^|\s)[A-Za-z]:\\", value) is not None
+        ):
+            raise ValueError("profile evidence must be bounded and path-free")
+        return value
+    if isinstance(value, list):
+        return [_normalized_evidence(item) for item in value]
+    if isinstance(value, dict):
+        if not all(isinstance(item, str) for item in value):
+            raise ValueError("profile evidence keys must be strings")
+        return {
+            item: _normalized_evidence(value[item], key=item) for item in sorted(value)
+        }
+    raise ValueError("profile evidence must contain only JSON values")
+
+
+@dataclass(frozen=True, slots=True)
+class CompatibilityProfileResultV1:
+    """One actually executed profile result and its normalized evidence summary."""
+
+    profile_id: str
+    passed: bool
+    summary: JsonObject
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.profile_id, str) or not _PROFILE_ID.fullmatch(
+            self.profile_id
+        ):
+            raise ValueError("profile_id must be a stable lowercase ASCII identifier")
+        if type(self.passed) is not bool:
+            raise ValueError("passed must be a boolean")
+        normalized = _normalized_evidence(self.summary)
+        if not isinstance(normalized, dict) or not normalized:
+            raise ValueError("summary must be a non-empty JSON object")
+        object.__setattr__(self, "summary", normalized)
 
 
 def _receipt_environment_text(value: str) -> str:
@@ -179,20 +244,30 @@ def canonical_profile_json(data: JsonObject) -> str:
 def compatibility_receipt_data(
     plugin: LoadedPluginV1,
     *,
-    profile_ids: tuple[str, ...],
+    profile_results: tuple[CompatibilityProfileResultV1, ...],
     python_implementation: str,
     python_version: str,
     operating_system: str,
     architecture: str,
 ) -> JsonObject:
     """Build a deterministic self-attestation without local or source details."""
-    normalized_profiles = tuple(sorted(profile_ids))
+    if not isinstance(profile_results, tuple) or not all(
+        isinstance(item, CompatibilityProfileResultV1) for item in profile_results
+    ):
+        raise ValueError("profile_results must be a tuple of executed results")
+    normalized_results = tuple(
+        sorted(profile_results, key=lambda item: item.profile_id)
+    )
+    normalized_profiles = tuple(item.profile_id for item in normalized_results)
     if (
         not normalized_profiles
         or len(normalized_profiles) != len(set(normalized_profiles))
         or any(item not in COMPATIBILITY_PROFILE_IDS for item in normalized_profiles)
     ):
-        raise ValueError("profile_ids must be unique supported compatibility profiles")
+        raise ValueError(
+            "profile_results must name unique supported compatibility profiles"
+        )
+    conforms = all(item.passed for item in normalized_results)
     manifest = plugin.manifest
     dependencies: list[JsonValue] = []
     backends: list[JsonValue] = []
@@ -246,12 +321,24 @@ def compatibility_receipt_data(
     )
     negotiated_host_features: list[JsonValue] = list(plugin.negotiated_host_features)
     normalized_profile_values: list[JsonValue] = list(normalized_profiles)
+    receipt_profile_results: list[JsonValue] = [
+        {
+            "profile_id": item.profile_id,
+            "result": "passed" if item.passed else "failed",
+            "summary": item.summary,
+        }
+        for item in normalized_results
+    ]
     receipt: JsonObject = {
-        "claims": [
-            "conforms to Platydiff plugin profile "
-            f"{profile_id} under suite version {COMPATIBILITY_SUITE_VERSION}."
-            for profile_id in normalized_profiles
-        ],
+        "claims": (
+            [
+                "conforms to Platydiff plugin profile "
+                f"{profile_id} under suite version {COMPATIBILITY_SUITE_VERSION}."
+                for profile_id in normalized_profiles
+            ]
+            if conforms
+            else []
+        ),
         "environment": {
             "architecture": _receipt_environment_text(architecture),
             "operating_system": _receipt_environment_text(operating_system),
@@ -283,8 +370,9 @@ def compatibility_receipt_data(
             "plugin_id": manifest.plugin_id,
             "plugin_version": manifest.plugin_version,
         },
+        "profile_results": receipt_profile_results,
         "receipt_schema_version": 1,
-        "result": "conforms",
+        "result": "conforms" if conforms else "does_not_conform",
         "suite": {
             "name": "platydiff-plugin-compatibility",
             "profile_ids": normalized_profile_values,

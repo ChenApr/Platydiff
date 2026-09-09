@@ -32,6 +32,10 @@ All notable changes to Platydiff are documented in this file.
 
 ### Fixed
 
+- Preserved schema v2 and exact enabled-plugin context at every plugin-enabled
+  CLI exception boundary, rejected unsafe third-party terminal controls before
+  stdout, validated public rendered-output identities and backend versions, and
+  made compatibility claims conditional on normalized executed-profile results.
 - Hardened P3-B plugin execution around unavailable detectors, executable-shape
   validation, single-use run tracking, final path-snapshot mutation checks, and
   auditable failed detector attempts. Discovery now quarantines ordinary handle

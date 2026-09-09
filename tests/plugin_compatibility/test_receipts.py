@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from hashlib import sha256
+from typing import cast
 
 import pytest
 
@@ -20,6 +21,7 @@ from tests.plugin_compatibility.profiles import (
     ISOLATION_PROFILE_ID,
     MANIFEST_PROFILE_ID,
     RENDERER_PROFILE_ID,
+    CompatibilityProfileResultV1,
     JsonObject,
     canonical_profile_json,
     compatibility_receipt_data,
@@ -66,7 +68,14 @@ def _loaded_plugin() -> LoadedPluginV1:
 def _receipt(*profile_ids: str) -> JsonObject:
     return compatibility_receipt_data(
         _loaded_plugin(),
-        profile_ids=profile_ids,
+        profile_results=tuple(
+            CompatibilityProfileResultV1(
+                profile_id,
+                passed=True,
+                summary={"assertions": 1, "normalized_result": "passed"},
+            )
+            for profile_id in profile_ids
+        ),
         python_implementation="cpython",
         python_version="3.12.10",
         operating_system="darwin",
@@ -102,6 +111,18 @@ def test_receipt_records_exact_identity_inventory_platform_and_profiles() -> Non
         "profile_ids": [MANIFEST_PROFILE_ID, RENDERER_PROFILE_ID],
         "version": COMPATIBILITY_SUITE_VERSION,
     }
+    assert receipt["profile_results"] == [
+        {
+            "profile_id": MANIFEST_PROFILE_ID,
+            "result": "passed",
+            "summary": {"assertions": 1, "normalized_result": "passed"},
+        },
+        {
+            "profile_id": RENDERER_PROFILE_ID,
+            "result": "passed",
+            "summary": {"assertions": 1, "normalized_result": "passed"},
+        },
+    ]
     assert plugin["plugin_id"] == "org.example.scidiff"
     assert plugin["plugin_version"] == "2.1"
     assert plugin["distribution_name"] == "example-plugin"
@@ -183,17 +204,95 @@ def test_receipt_contains_no_source_or_local_environment_fields() -> None:
     )
 
 
+def test_failed_or_mixed_profile_results_cannot_claim_conformance() -> None:
+    receipt = compatibility_receipt_data(
+        _loaded_plugin(),
+        profile_results=(
+            CompatibilityProfileResultV1(
+                MANIFEST_PROFILE_ID,
+                passed=True,
+                summary={"assertions": 3},
+            ),
+            CompatibilityProfileResultV1(
+                RENDERER_PROFILE_ID,
+                passed=False,
+                summary={"failed_assertions": 1},
+            ),
+        ),
+        python_implementation="cpython",
+        python_version="3.12.10",
+        operating_system="darwin",
+        architecture="arm64",
+    )
+
+    assert receipt["result"] == "does_not_conform"
+    assert receipt["claims"] == []
+    results = receipt["profile_results"]
+    assert isinstance(results, list)
+    assert [item["result"] for item in results if isinstance(item, dict)] == [
+        "passed",
+        "failed",
+    ]
+
+
+def test_receipt_digest_changes_with_normalized_profile_evidence() -> None:
+    first = _receipt(MANIFEST_PROFILE_ID)
+    second = compatibility_receipt_data(
+        _loaded_plugin(),
+        profile_results=(
+            CompatibilityProfileResultV1(
+                MANIFEST_PROFILE_ID,
+                passed=True,
+                summary={"assertions": 2, "normalized_result": "passed"},
+            ),
+        ),
+        python_implementation="cpython",
+        python_version="3.12.10",
+        operating_system="darwin",
+        architecture="arm64",
+    )
+
+    assert first["digest"] != second["digest"]
+
+
 @pytest.mark.parametrize(
-    "profile_ids",
-    [(), (MANIFEST_PROFILE_ID, MANIFEST_PROFILE_ID), ("unknown.profile",)],
+    "summary",
+    [
+        {},
+        {"source_path": "/private/input.txt"},
+        {"ratio": 0.5},
+        {"message": "/private/input.txt"},
+    ],
+)
+def test_profile_result_requires_non_sensitive_normalized_evidence(
+    summary: object,
+) -> None:
+    with pytest.raises(ValueError):
+        CompatibilityProfileResultV1(
+            MANIFEST_PROFILE_ID,
+            True,
+            cast(JsonObject, summary),
+        )
+
+
+@pytest.mark.parametrize(
+    "profile_results",
+    [
+        (),
+        (
+            CompatibilityProfileResultV1(MANIFEST_PROFILE_ID, True, {"assertions": 1}),
+            CompatibilityProfileResultV1(MANIFEST_PROFILE_ID, True, {"assertions": 1}),
+        ),
+        (CompatibilityProfileResultV1("unknown.profile", True, {"assertions": 1}),),
+    ],
 )
 def test_receipt_requires_unique_supported_profiles(
-    profile_ids: tuple[str, ...],
+    profile_results: tuple[CompatibilityProfileResultV1, ...],
 ) -> None:
-    with pytest.raises(ValueError, match="profile_ids"):
+    with pytest.raises(ValueError, match="profile_results"):
         compatibility_receipt_data(
             _loaded_plugin(),
-            profile_ids=profile_ids,
+            profile_results=profile_results,
             python_implementation="cpython",
             python_version="3.12.10",
             operating_system="darwin",
@@ -221,6 +320,10 @@ def test_receipt_rejects_local_paths_and_controls(field: str, value: str) -> Non
     with pytest.raises(ValueError, match="receipt environment"):
         compatibility_receipt_data(
             _loaded_plugin(),
-            profile_ids=(MANIFEST_PROFILE_ID,),
+            profile_results=(
+                CompatibilityProfileResultV1(
+                    MANIFEST_PROFILE_ID, True, {"assertions": 1}
+                ),
+            ),
             **environment,
         )
