@@ -28,10 +28,12 @@ from platydiff.core.models import (
     CapabilityProblemV2,
     CompareOutcomeV2,
     CompareSpec,
+    ComparisonProvenance,
     ComparisonProvenanceV2,
     CompletedOutcomeV2,
     DetectionCandidate,
     DetectionRecord,
+    Diagnostic,
     DiffResult,
     ExecutionProblemV2,
     ExecutionRecord,
@@ -62,7 +64,12 @@ from platydiff.core.problems import (
     SourceTypeUnsupportedError,
     UnavailableError,
 )
-from platydiff.core.serialization import spec_to_data, upgrade_outcome_v1_to_v2
+from platydiff.core.serialization import (
+    _result_from_data,
+    _result_to_data,
+    spec_to_data,
+    upgrade_outcome_v1_to_v2,
+)
 from platydiff.plugin_sdk import (
     CapabilityAvailabilityV1,
     CapabilityKind,
@@ -732,8 +739,50 @@ def _aggregate_plugin(
         ):
             raise PluginExecutionFailureError(stage=PipelineStage.AGGREGATING)
     for diagnostic in returned.diagnostics:
-        if not _safe_diagnostic_text(diagnostic.message):
+        if not _safe_diagnostic_text(diagnostic.message) or not _safe_json_strings(
+            diagnostic.details
+        ):
             raise PluginExecutionFailureError(stage=PipelineStage.AGGREGATING)
+        try:
+            Diagnostic(
+                diagnostic.code,
+                diagnostic.severity,
+                diagnostic.stage,
+                diagnostic.message,
+                dict(diagnostic.details),
+            )
+        except ValueError as error:
+            raise PluginExecutionFailureError(
+                stage=PipelineStage.AGGREGATING
+            ) from error
+    try:
+        placeholder_inputs = (
+            InputProvenance("before", SourceKind.BYTES, 0, "0" * 64),
+            InputProvenance("after", SourceKind.BYTES, 0, "0" * 64),
+        )
+        candidate = DiffResult(
+            returned.relation,
+            returned.verdict,
+            returned.fidelity,
+            returned.summary,
+            returned.changes,
+            returned.metrics,
+            returned.evaluations,
+            returned.artifacts,
+            ComparisonProvenance(
+                placeholder_inputs,
+                {},
+                returned.transformations,
+                capability.declaration.capability_id,
+                capability.declaration.implementation_version,
+                returned.algorithm_id,
+                returned.implementation_version,
+                resources=returned.resources,
+            ),
+        )
+        _result_from_data(_result_to_data(candidate))
+    except (TypeError, ValueError) as error:
+        raise PluginExecutionFailureError(stage=PipelineStage.AGGREGATING) from error
     return returned
 
 
@@ -816,6 +865,19 @@ def _safe_diagnostic_text(value: str) -> bool:
         and len(value.encode("utf-8", errors="strict")) <= 1024
         and not any(ord(character) < 0x20 for character in value)
     )
+
+
+def _safe_json_strings(value: object) -> bool:
+    if isinstance(value, str):
+        return _safe_diagnostic_text(value)
+    if isinstance(value, list):
+        return all(_safe_json_strings(item) for item in value)
+    if isinstance(value, dict):
+        return all(
+            _safe_diagnostic_text(key) and _safe_json_strings(item)
+            for key, item in value.items()
+        )
+    return value is None or isinstance(value, (bool, int, float))
 
 
 def _validate_composed_request(
@@ -1039,6 +1101,16 @@ def _execution_v2(
                     attempts[index],
                     disposition=disposition,
                     reason_code=terminal_reason,
+                )
+                break
+            if (
+                disposition == "unavailable"
+                and attempts[index].disposition == "rejected"
+            ):
+                attempts[index] = replace(
+                    attempts[index],
+                    disposition="unavailable",
+                    reason_code=attempts[index].reason_code or terminal_reason,
                 )
                 break
     return ExecutionRecordV2(

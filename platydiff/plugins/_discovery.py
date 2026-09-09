@@ -16,6 +16,7 @@ from platydiff.plugin_sdk import (
     PLUGIN_MANIFEST_SCHEMA_VERSION,
     CapabilityDeclarationV1,
     CapabilityHandleV1,
+    CapabilityKind,
     ComponentDeclarationV1,
     PluginManifestV1,
     RuntimeDependencyV1,
@@ -503,11 +504,21 @@ def _load(
         if not set(manifest.required_host_features).issubset(host_features):
             issues.append(_issue("plugin_feature_unsupported", candidate.metadata))
             continue
+        negotiated_minor = min(PLUGIN_API_MINOR, manifest.maximum_api_minor)
+        if manifest.capability_handles and (
+            negotiated_minor < 1
+            or "host.execution.v1" not in manifest.required_host_features
+        ):
+            issues.append(_issue("plugin_api_incompatible", candidate.metadata))
+            continue
+        if not _handles_are_valid(manifest):
+            issues.append(_issue("plugin_manifest_invalid", candidate.metadata))
+            continue
         plugins.append(
             LoadedPluginV1(
                 candidate.metadata,
                 manifest,
-                min(PLUGIN_API_MINOR, manifest.maximum_api_minor),
+                negotiated_minor,
                 tuple(
                     sorted(
                         set(manifest.required_host_features).intersection(host_features)
@@ -586,6 +597,35 @@ def _validated_manifest(value: object) -> PluginManifestV1 | None:
         raise
     except Exception:
         return None
+
+
+def _handles_are_valid(manifest: PluginManifestV1) -> bool:
+    declarations = {
+        declaration.capability_id: declaration for declaration in manifest.capabilities
+    }
+    try:
+        for handle in manifest.capability_handles:
+            declaration = declarations[handle.capability_id]
+            if declaration.kind is CapabilityKind.DETECTOR:
+                if not callable(handle.detect):  # type: ignore[union-attr]
+                    return False
+            elif declaration.kind is CapabilityKind.COMPARATOR:
+                if handle.modality not in ("text", "binary"):  # type: ignore[union-attr]
+                    return False
+                if handle.source_stage not in (  # type: ignore[union-attr]
+                    "decoding",
+                    "normalizing",
+                    "aligning",
+                    "comparing",
+                ):
+                    return False
+                if not callable(handle.create_run):  # type: ignore[union-attr]
+                    return False
+            else:
+                return False
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return False
+    return True
 
 
 def _catalog_capabilities(
