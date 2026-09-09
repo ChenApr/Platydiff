@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import pytest
 
@@ -12,6 +13,7 @@ from platydiff import (
     BytesSource,
     CompletedOutcomeV2,
     FailedOutcomeV2,
+    PathSource,
     PluginHost,
     UnavailableOutcomeV2,
 )
@@ -88,6 +90,62 @@ def test_pinned_detector_receives_only_each_bounded_prefix() -> None:
     assert [request.reached_eof for request in detector.calls] == [False, False]
     assert outcome.execution.detection is not None
     assert outcome.execution.detection.detector_id == detector.capability_id
+
+
+def test_pinned_detector_supports_unchanged_path_sources(tmp_path: Path) -> None:
+    before_path = tmp_path / "before.txt"
+    after_path = tmp_path / "after.txt"
+    before_path.write_bytes(b"ascii")
+    after_path.write_bytes(b"ascii")
+    detector = _Detector()
+    host, _ = _capability(detector, CapabilityKind.DETECTOR)
+    outcome = host.compare(
+        PathSource(before_path),
+        PathSource(after_path),
+        _spec(),
+        detector_id=detector.capability_id,
+    )
+    assert isinstance(outcome, CompletedOutcomeV2)
+    assert outcome.execution.detection is not None
+    assert outcome.execution.detection.selected_modality == "text"
+
+
+def test_detector_path_mutation_before_no_match_is_a_detecting_failure(
+    tmp_path: Path,
+) -> None:
+    before_path = tmp_path / "before.txt"
+    after_path = tmp_path / "after.txt"
+    before_path.write_bytes(b"ascii")
+    after_path.write_bytes(b"ascii")
+
+    @dataclass
+    class MutatingNoMatchDetector:
+        capability_id: str = "org.example.scidiff.detector"
+        calls: list[DetectorInputV1] = field(default_factory=list)
+
+        def availability(self) -> CapabilityAvailabilityV1:
+            return CapabilityAvailabilityV1(True)
+
+        def detect(self, source: DetectorInputV1) -> tuple[DetectorCandidateV1, ...]:
+            self.calls.append(source)
+            if len(self.calls) == 1:
+                before_path.write_bytes(b"changed")
+            return ()
+
+    detector = MutatingNoMatchDetector()
+    host, _ = _capability(detector, CapabilityKind.DETECTOR)
+    outcome = host.compare(
+        PathSource(before_path),
+        PathSource(after_path),
+        _spec(),
+        detector_id=detector.capability_id,
+    )
+    assert isinstance(outcome, FailedOutcomeV2)
+    assert outcome.problem.code == "source_changed"
+    assert outcome.problem.stage.value == "detecting"
+    assert str(before_path) not in outcome.problem.message
+    assert outcome.execution.attempts[-1].disposition == "failed"
+    assert outcome.execution.attempts[-1].reason_code == "source_changed"
 
 
 def test_invalid_detector_output_is_a_safe_detecting_stage_failure() -> None:
@@ -170,12 +228,27 @@ def test_pinned_unavailable_detector_is_structured_and_never_invoked() -> None:
     assert attempt.provider is not None
 
 
-def test_detector_availability_resource_limit_is_auditable() -> None:
-    class ResourceLimitedDetector(_Detector):
+@pytest.mark.parametrize(
+    ("failure_mode", "problem_code"),
+    [
+        ("wrong_type", "plugin_execution_failure"),
+        ("known_failure", "plugin_execution_failure"),
+        ("resource_limit", "resource_limit_exceeded"),
+    ],
+)
+def test_detector_probe_failures_are_auditable(
+    failure_mode: str,
+    problem_code: str,
+) -> None:
+    class FailingProbeDetector(_Detector):
         def availability(self) -> CapabilityAvailabilityV1:
+            if failure_mode == "wrong_type":
+                return object()  # type: ignore[return-value]
+            if failure_mode == "known_failure":
+                raise PluginExecutionErrorV1("private availability detail")
             raise PluginResourceLimitErrorV1("private detector budget detail")
 
-    detector = ResourceLimitedDetector()
+    detector = FailingProbeDetector()
     host, _ = _capability(detector, CapabilityKind.DETECTOR)
     outcome = host.compare(
         BytesSource(b"ascii"),
@@ -185,14 +258,15 @@ def test_detector_availability_resource_limit_is_auditable() -> None:
     )
     assert isinstance(outcome, FailedOutcomeV2)
     assert detector.calls == []
-    assert outcome.problem.code == "resource_limit_exceeded"
+    assert outcome.problem.code == problem_code
     assert outcome.problem.stage.value == "detecting"
     assert "private" not in outcome.problem.message
     assert len(outcome.execution.attempts) == 1
     attempt = outcome.execution.attempts[0]
     assert attempt.disposition == "failed"
-    assert attempt.reason_code == "resource_limit_exceeded"
+    assert attempt.reason_code == problem_code
     assert attempt.provider is not None
+    assert loads_outcome(dumps_outcome(outcome)) == outcome
 
 
 def test_detector_runtime_backend_must_match_its_declaration() -> None:
