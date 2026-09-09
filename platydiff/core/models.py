@@ -23,6 +23,9 @@ _DISTRIBUTION_NAME = re.compile(
     r"^(?:[A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9])\Z"
 )
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_JSON_NUMBER = re.compile(
+    r"^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$"
+)
 _PERCENT_ESCAPE = re.compile(r"%[0-9a-fA-F]{2}")
 _INVALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9a-fA-F]{2})")
 _MAX_EXACT_INTEGER = 2**53
@@ -1368,6 +1371,11 @@ class ScalarFact:
             if self.kind not in ("integer", "decimal"):
                 raise ValueError("lexical text is allowed only for JSON number facts")
             _unicode_scalar(self.lexical, "scalar fact lexical token")
+            if _JSON_NUMBER.fullmatch(self.lexical) is None:
+                raise ValueError("lexical fact text must be a valid JSON number")
+            lexical_is_decimal = "." in self.lexical or "e" in self.lexical.lower()
+            if lexical_is_decimal != (self.kind == "decimal"):
+                raise ValueError("lexical number spelling must match the fact kind")
 
 
 @dataclass(frozen=True, slots=True)
@@ -1412,6 +1420,14 @@ class StructuredChange:
         _unicode_scalar(self.path, "structured change path")
         if self.path and not self.path.startswith("/"):
             raise ValueError("structured change path must be an RFC 6901 pointer")
+        cursor = 0
+        while cursor < len(self.path):
+            if self.path[cursor] == "~":
+                if cursor + 1 >= len(self.path) or self.path[cursor + 1] not in "01":
+                    raise ValueError("structured change path must be canonical RFC 6901")
+                cursor += 2
+            else:
+                cursor += 1
         before_present = self.before_type is not None
         after_present = self.after_type is not None
         expected = {

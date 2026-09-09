@@ -10,6 +10,7 @@ from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from platydiff._version import __version__
 from platydiff.core._capabilities import (
     CapabilityCatalog,
     CapabilityRequest,
@@ -23,16 +24,24 @@ from platydiff.core.models import (
     BinaryCompareSpec,
     BytesSource,
     CapabilityAttempt,
+    CapabilityAttemptV2,
     CapabilityProblem,
+    CapabilityProblemV2,
     CompareOutcome,
+    CompareOutcomeV3,
     CompareSpec,
     CompletedOutcome,
+    CompletedOutcomeV3,
     DetectionRecord,
     Diagnostic,
     DiffResult,
     ExecutionProblem,
+    ExecutionProblemV2,
     ExecutionRecord,
+    ExecutionRecordV2,
     FailedOutcome,
+    FailedOutcomeV3,
+    JsonCompareSpec,
     PathSource,
     PipelineStage,
     Source,
@@ -42,6 +51,7 @@ from platydiff.core.models import (
     TextCompareSpec,
     TextSource,
     UnavailableOutcome,
+    UnavailableOutcomeV3,
 )
 from platydiff.core.problems import (
     CapabilityUnavailableError,
@@ -97,7 +107,7 @@ class StageRunner:
         self._finished_at = self._started_at
         self._finished_ns = self._started_ns
         self._records: list[StageRecord] = []
-        self._attempts: list[CapabilityAttempt] = []
+        self._attempts: list[CapabilityAttempt | CapabilityAttemptV2] = []
         self._detection_enabled = detection_enabled
         self._detection: DetectionRecord | None = None
 
@@ -143,6 +153,25 @@ class StageRunner:
             raise RuntimeError("capability selection must follow resolution")
         self._attempts.append(CapabilityAttempt("text", "stdlib", "selected"))
 
+    def record_selected_v3_capability(
+        self, capability_id: str, capability_version: str
+    ) -> None:
+        if (
+            not self._records
+            or self._records[-1].stage is not PipelineStage.RESOLVING
+            or self._records[-1].disposition is not StageDisposition.COMPLETED
+        ):
+            raise RuntimeError("capability selection must follow resolution")
+        self._attempts.append(
+            CapabilityAttemptV2(
+                capability_id,
+                "stdlib",
+                "selected",
+                capability_version=capability_version,
+                backend_version=capability_version,
+            )
+        )
+
     def record_attempts(self, attempts: tuple[CapabilityAttempt, ...]) -> None:
         self._attempts.extend(attempts)
 
@@ -164,6 +193,26 @@ class StageRunner:
             diagnostics=diagnostics,
             last_completed_stage=completed[-1] if completed else None,
             detection=self._detection,
+        )
+
+    def execution_v3(self, diagnostics: tuple[Diagnostic, ...]) -> ExecutionRecordV2:
+        completed = [
+            record.stage
+            for record in self._records
+            if record.disposition is StageDisposition.COMPLETED
+        ]
+        if any(not isinstance(item, CapabilityAttemptV2) for item in self._attempts):
+            raise RuntimeError("schema-v3 execution requires versioned attempts")
+        return ExecutionRecordV2(
+            started_at=self._started_at,
+            finished_at=self._finished_at,
+            duration_ns=max(0, self._finished_ns - self._started_ns),
+            stages=tuple(self._records),
+            attempts=tuple(self._attempts),
+            diagnostics=diagnostics,
+            last_completed_stage=completed[-1] if completed else None,
+            detection=self._detection,
+            plugin_host=None,
         )
 
     def _validate_next_stage(self, stage: PipelineStage) -> None:
@@ -397,6 +446,109 @@ def run_snapshot_comparison(
     return CompletedOutcome(
         execution=stages.execution(completion.diagnostics), result=completion.result
     )
+
+
+def run_json_comparison(
+    before: Source,
+    after: Source,
+    spec: JsonCompareSpec,
+    executor: Callable[
+        [SourceSnapshot, SourceSnapshot, JsonCompareSpec, StageRunner],
+        ComparisonCompletion,
+    ],
+    *,
+    clock: Clock = _system_clock,
+) -> CompareOutcomeV3:
+    """Run one explicit structured comparison with a schema-v3 envelope."""
+    stages = StageRunner(clock)
+    with ExitStack() as stack:
+        try:
+            stages.run(PipelineStage.VALIDATING, lambda: None)
+            snapshots = stages.run(
+                PipelineStage.SOURCING,
+                lambda: _snapshot_pair(
+                    stack, before, after, spec.limits.max_input_bytes
+                ),
+            )
+            stages.run(PipelineStage.RESOLVING, lambda: None)
+            stages.record_selected_v3_capability("json", __version__)
+            completion = executor(snapshots[0], snapshots[1], spec, stages)
+        except UnavailableError as error:
+            return UnavailableOutcomeV3(
+                execution=stages.execution_v3(()),
+                problem=CapabilityProblemV2(
+                    error.code,
+                    error.status_code,
+                    error.stage,
+                    str(error),
+                    error.details,
+                    error.retryable,
+                ),
+            )
+        except DomainError as error:
+            return FailedOutcomeV3(
+                execution=stages.execution_v3(()),
+                problem=ExecutionProblemV2(
+                    error.code,
+                    error.status_code,
+                    error.stage,
+                    str(error),
+                    error.details,
+                    error.retryable,
+                ),
+            )
+    return CompletedOutcomeV3(
+        execution=stages.execution_v3(completion.diagnostics), result=completion.result
+    )
+
+
+def reject_json_plugin_comparison(
+    before: Source,
+    after: Source,
+    spec: JsonCompareSpec,
+    *,
+    clock: Clock = _system_clock,
+) -> CompareOutcomeV3:
+    """Reject schema-v3 intent at the SDK-v1 plugin boundary after sourcing."""
+    stages = StageRunner(clock)
+    with ExitStack() as stack:
+        try:
+            stages.run(PipelineStage.VALIDATING, lambda: None)
+            stages.run(
+                PipelineStage.SOURCING,
+                lambda: _snapshot_pair(
+                    stack, before, after, spec.limits.max_input_bytes
+                ),
+            )
+            stages.run(
+                PipelineStage.RESOLVING,
+                lambda: _raise_capability_unavailable(()),
+            )
+        except UnavailableError as error:
+            return UnavailableOutcomeV3(
+                execution=stages.execution_v3(()),
+                problem=CapabilityProblemV2(
+                    error.code,
+                    error.status_code,
+                    error.stage,
+                    str(error),
+                    error.details,
+                    error.retryable,
+                ),
+            )
+        except DomainError as error:
+            return FailedOutcomeV3(
+                execution=stages.execution_v3(()),
+                problem=ExecutionProblemV2(
+                    error.code,
+                    error.status_code,
+                    error.stage,
+                    str(error),
+                    error.details,
+                    error.retryable,
+                ),
+            )
+    raise RuntimeError("unsupported structured plugin comparison unexpectedly ran")
 
 
 def _snapshot_pair(

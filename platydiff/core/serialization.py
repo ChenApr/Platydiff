@@ -1478,7 +1478,7 @@ def _result_from_data(
                 limit_reason,
             ),
         )
-        return DiffResult(
+        result = DiffResult(
             relation=_enum_value(Relation, _required(data, "relation"), "relation"),
             verdict=_enum_value(Verdict, _required(data, "verdict"), "verdict"),
             fidelity=_enum_value(Fidelity, _required(data, "fidelity"), "fidelity"),
@@ -1491,8 +1491,105 @@ def _result_from_data(
                 _required(data, "provenance"), schema_version=schema_version
             ),
         )
+        if schema_version == 3:
+            _validate_v3_result(result)
+        return result
     except ValueError as error:
         raise SerializationError(str(error)) from error
+
+
+def _finite_count(metric: Metric, name: str) -> int:
+    if not isinstance(metric.value, FiniteValue) or not metric.value.value.is_integer():
+        raise SerializationError(f"{name} must be a finite integer count")
+    return int(metric.value.value)
+
+
+def _validate_v3_result(result: DiffResult) -> None:
+    kind = result.provenance.spec.get("kind")
+    if kind in ("auto", "text", "binary"):
+        return
+    if kind != "json":
+        raise SerializationError(f"unknown schema-v3 built-in spec kind: {kind}")
+    spec = spec_from_data(result.provenance.spec)
+    if (
+        not isinstance(spec, JsonCompareSpec)
+        or spec_to_data(spec) != result.provenance.spec
+    ):
+        raise SerializationError("schema-v3 JSON spec must be normalized exactly")
+    if (
+        result.fidelity is not Fidelity.FULL
+        or result.artifacts
+        or result.provenance.comparator_id != "json"
+        or result.provenance.algorithm_id != "json.semantic.tree.v1"
+    ):
+        raise SerializationError("schema-v3 JSON result has incompatible identity")
+    expected_transformations: list[tuple[str, str, JsonObject]] = []
+    if any(
+        item.source_kind is not SourceKind.TEXT for item in result.provenance.inputs
+    ):
+        expected_transformations.append(
+            ("decoding", "json.decode.utf8", {"encoding": spec.encoding.value})
+        )
+    expected_transformations.extend(
+        (
+            ("normalizing", "json.object_order.ignore", {}),
+            ("normalizing", f"json.number.{spec.number_mode.value}", {}),
+            (
+                "aligning",
+                "json.pointer.position",
+                {"pointer": "rfc6901", "sequences": "positional"},
+            ),
+        )
+    )
+    actual_transformations = [
+        (item.stage, item.transformation_id, item.parameters)
+        for item in result.provenance.transformations
+    ]
+    if actual_transformations != expected_transformations:
+        raise SerializationError("schema-v3 JSON transformations are not canonical")
+    if any(not isinstance(item, StructuredChange) for item in result.changes.items):
+        raise SerializationError("schema-v3 JSON changes must be structured changes")
+    for change in result.changes.items:
+        if not isinstance(change, StructuredChange):
+            raise RuntimeError("structured change narrowing failed")
+        for fact in (change.before_fact, change.after_fact):
+            if spec.detail_mode is StructuredDetailMode.DIGEST_ONLY:
+                if fact is not None:
+                    raise SerializationError("digest_only JSON changes must omit facts")
+                continue
+            if fact is None:
+                continue
+            if isinstance(fact, ScalarFact):
+                if fact.kind not in ("null", "boolean", "integer", "decimal", "string"):
+                    raise SerializationError(
+                        "JSON change contains a non-JSON scalar fact"
+                    )
+                if fact.kind in ("integer", "decimal"):
+                    if (spec.number_mode is JsonNumberMode.LEXICAL) != (
+                        fact.lexical is not None
+                    ):
+                        raise SerializationError(
+                            "JSON number fact has invalid lexical detail"
+                        )
+                elif fact.lexical is not None:
+                    raise SerializationError("non-number JSON fact has lexical detail")
+        if spec.detail_mode is StructuredDetailMode.VALUES:
+            if change.before_type is not None and change.before_fact is None:
+                raise SerializationError("values JSON change is missing a before fact")
+            if change.after_type is not None and change.after_fact is None:
+                raise SerializationError("values JSON change is missing an after fact")
+    metrics = {item.name: item for item in result.metrics}
+    if set(metrics) != {
+        "json.compared_values",
+        "json.equal_values",
+        "json.changed_values",
+    }:
+        raise SerializationError("schema-v3 JSON metrics are not canonical")
+    compared = _finite_count(metrics["json.compared_values"], "compared values")
+    equal = _finite_count(metrics["json.equal_values"], "equal values")
+    changed = _finite_count(metrics["json.changed_values"], "changed values")
+    if equal + changed != compared or result.changes.total_count != changed:
+        raise SerializationError("schema-v3 JSON count identities do not hold")
 
 
 def outcome_to_data(outcome: AnyCompareOutcome) -> JsonObject:

@@ -6,6 +6,7 @@ from platydiff.core.models import (
     AnyCompareOutcome,
     CompletedOutcome,
     CompletedOutcomeV2,
+    CompletedOutcomeV3,
     ExtensionChange,
     TextHunk,
 )
@@ -65,7 +66,9 @@ def _render_hunk(hunk: TextHunk) -> list[str]:
 
 def render_terminal(outcome: AnyCompareOutcome) -> str:
     """Render fields already decided by the pipeline."""
-    if not isinstance(outcome, (CompletedOutcome, CompletedOutcomeV2)):
+    if not isinstance(
+        outcome, (CompletedOutcome, CompletedOutcomeV2, CompletedOutcomeV3)
+    ):
         return (
             f"{outcome.kind} [{outcome.problem.code}/{outcome.problem.status_code}] "
             f"at {outcome.problem.stage.value}: "

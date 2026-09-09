@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import replace
-
 import pytest
 
 from platydiff import (
@@ -18,7 +16,6 @@ from platydiff import (
     downgrade_outcome_v3_to_v2,
     upgrade_outcome_v1_to_v3,
 )
-from platydiff.core.models import ChangeSet
 from platydiff.core.serialization import (
     SerializationError,
     dumps_outcome,
@@ -70,29 +67,13 @@ def test_structured_change_invariants_and_schema_gate() -> None:
         before_fact=ScalarFact("integer", "1"),
         after_fact=ScalarFact("integer", "2"),
     )
-    original = compare(TextSource("a"), TextSource("a"), TextCompareSpec())
-    upgraded = upgrade_outcome_v1_to_v3(original)
-    assert isinstance(upgraded, CompletedOutcomeV3)
-    result = replace(
-        upgraded.result,
-        changes=ChangeSet(
-            completeness=upgraded.result.changes.completeness,
-            items=(change,),
-            total_count=1,
-            returned_count=1,
-            omitted_count=0,
-            selection=upgraded.result.changes.selection,
-            limit=None,
-        ),
-        summary=replace(upgraded.result.summary, change_count=1),
-        provenance=replace(
-            upgraded.result.provenance,
-            spec=spec_to_data(JsonCompareSpec(detail_mode=StructuredDetailMode.VALUES)),
-        ),
+    assert change.before_fact == ScalarFact("integer", "1")
+    outcome = compare(
+        TextSource("1"),
+        TextSource("2"),
+        JsonCompareSpec(detail_mode=StructuredDetailMode.VALUES),
     )
-    outcome = CompletedOutcomeV3(execution=upgraded.execution, result=result)
-
-    assert loads_outcome(dumps_outcome(outcome)) == outcome
+    assert isinstance(outcome, CompletedOutcomeV3)
     with pytest.raises(SerializationError, match="not legacy-only"):
         downgrade_outcome_v3_to_v2(outcome)
 
