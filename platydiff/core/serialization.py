@@ -1913,7 +1913,11 @@ def downgrade_outcome_v3_to_v2(outcome: CompareOutcomeV3) -> CompareOutcomeV2:
             raise SerializationError("schema-v3 outcome is not legacy-only")
         return CompletedOutcomeV2(execution=outcome.execution, result=outcome.result)
     if isinstance(outcome, UnavailableOutcomeV3):
+        if outcome.execution.plugin_host is None:
+            raise SerializationError("schema-v3 outcome cannot be proven legacy-only")
         return UnavailableOutcomeV2(
             execution=outcome.execution, problem=outcome.problem
         )
+    if outcome.execution.plugin_host is None:
+        raise SerializationError("schema-v3 outcome cannot be proven legacy-only")
     return FailedOutcomeV2(execution=outcome.execution, problem=outcome.problem)

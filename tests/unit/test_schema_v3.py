@@ -3,8 +3,10 @@ from __future__ import annotations
 import pytest
 
 from platydiff import (
+    BytesSource,
     CompareOutcomeV3,
     CompletedOutcomeV3,
+    FailedOutcomeV3,
     JsonCompareSpec,
     ScalarFact,
     StructuredChange,
@@ -54,6 +56,18 @@ def test_v1_upgrade_and_legacy_only_v3_downgrade_are_lossless() -> None:
 
     assert loads_outcome(dumps_outcome(upgraded)) == upgraded
     assert downgrade_outcome_v3_to_v2(upgraded).result == upgraded.result  # type: ignore[union-attr]
+
+    failed = compare(BytesSource(b"\xff"), BytesSource(b"\xff"), TextCompareSpec())
+    failed_v3 = upgrade_outcome_v1_to_v3(failed)
+    assert downgrade_outcome_v3_to_v2(failed_v3).kind == "failed"
+
+
+def test_native_json_terminal_outcome_cannot_claim_legacy_downgrade() -> None:
+    outcome = compare(TextSource("{"), TextSource("{}"), JsonCompareSpec())
+    assert isinstance(outcome, FailedOutcomeV3)
+
+    with pytest.raises(SerializationError, match="proven legacy-only"):
+        downgrade_outcome_v3_to_v2(outcome)
 
 
 def test_structured_change_invariants_and_schema_gate() -> None:
