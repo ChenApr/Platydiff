@@ -12,6 +12,9 @@ All notable changes to Platydiff are documented in this file.
 - Implemented Phase 3 gate P3-A with immutable SDK-v1 plugin manifests,
   capability/dependency/platform inventory, and explicit allowlisted entry-point
   discovery with deterministic validation, negotiation, and conflict quarantine.
+- Implemented Phase 3 gate P3-B with SDK-v1.1 detector/comparator handles,
+  immutable host-owned execution, schema-v2 provider and attempt provenance,
+  dual-version readers, and a typed schema-v1-to-v2 upgrader.
 - Recorded the terminal/HTML-first human review UI roadmap without authorizing
   UI implementation or scheduling.
 - Python 3.12 package and `platydiff` console entry point.
@@ -30,9 +33,8 @@ All notable changes to Platydiff are documented in this file.
 - Safe separation of rendered outcomes on stdout from parser and renderer
   failures on stderr.
 
-Plugin capability execution, schema-v2 provider provenance, CLI plugin flags,
-third-party renderer invocation, compatibility receipts, and later modalities
-remain planned.
+CLI plugin flags, third-party renderer invocation, compatibility receipts, and
+later modalities remain planned.
 
 ### Changed
 

@@ -114,9 +114,9 @@ class DiffPlugin(Protocol):
 以现有实现证据为基础的 Phase 3 契约见
 [RFC 0005](rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility_zh.md)。它保持当前
 registry 与 source snapshot 私有，要求显式 allowlist discovery，并让 host 拥有 stage、
-resource、provenance 与 outcome construction。其 P3-A 门禁现已实现 immutable SDK-v1
-declaration 和显式 discovery/catalog negotiation。P3-B/P3-C 的插件执行、schema-v2
-provider provenance、renderer invocation、CLI 参数与 compatibility receipt 仍未实现，
+resource、provenance 与 outcome construction。P3-A 已实现 immutable declaration 与
+显式 discovery；P3-B 已实现显式 pin 的 detector/comparator 执行和 schema-v2 provider
+provenance。P3-C 的 renderer invocation、CLI 参数与 compatibility receipt 仍未实现，
 并继续受独立门禁控制。
 
 ### 4.1 CompareSpec
@@ -244,7 +244,7 @@ PDF 同时包含文本、绘制指令、字体、图片和页面布局。应提�
 
 ## 7. 里程碑
 
-分阶段交付计划及实现门禁由 [RFC 0002](rfcs/0002-development-phases-and-text-slice_zh.md) 定义。Phase 2 的有界探测、内部能力解析和精确二进制比较已实现 [RFC 0003](rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison_zh.md)。Phase 3 门禁 P3-A 已实现 [RFC 0005](rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility_zh.md) 的 SDK declaration 与显式 discovery 子集；P3-B/P3-C 的执行与发布工作继续受独立门禁控制。下方版本分组只描述产品方向，不表示后续能力已经实现。
+分阶段交付计划及实现门禁由 [RFC 0002](rfcs/0002-development-phases-and-text-slice_zh.md) 定义。Phase 2 的有界探测、内部能力解析和精确二进制比较已实现 [RFC 0003](rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison_zh.md)。Phase 3 门禁 P3-A/P3-B 已实现 [RFC 0005](rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility_zh.md) 的 SDK declaration/discovery、显式选择的 detector/comparator 执行与 schema-v2 provenance；P3-C 的 renderer、CLI 与 receipt 发布工作继续受独立门禁控制。下方版本分组只描述产品方向，不表示后续能力已经实现。
 
 Phase 1 与 Phase 2 包含 Python 包、schema-v1 契约、显式文本、有界文本/二进制
 探测、精确二进制比较、CLI 及 terminal/JSON renderer，且仍未发布。下列其他
