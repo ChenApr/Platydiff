@@ -27,6 +27,22 @@ All behavior remains explicit-only. A caller must choose `AudioCompareSpec` or
 until a successor to RFC 0003 defines media probing, ambiguity, pair selection,
 and provenance.
 
+## P7-S0 review-revision gate
+
+P7-S0 is the documentation-only review gate introduced after PR #14. Its goal
+is to close Phase 7 contract gaps before any implementation authorization. Its
+outputs are this RFC revision, the aligned architecture/index references, and
+compatibility-fixture requirements for later gates. It does not authorize code,
+dependency changes, backend installation, schema acceptance, video workers,
+SDK v2, auto detection, artifacts, UI, or Accepted status.
+
+P7-S0 prerequisites are the current `main` contracts plus review evidence from
+RFC 0007 and RFC 0008. RFC 0008 remains Proposed on `main`; therefore its
+schema-v5 reservation is pending an RFC 0008 amendment and acceptance. Phase 7
+may propose dependent allocations and backend designs concurrently, but public
+schema implementation and merge must wait for the predecessor decisions and
+their fixtures.
+
 ## Evidence ledger
 
 | Current evidence at `origin/main` `fde2bd4` | Phase 7 constraint |
@@ -39,7 +55,7 @@ and provenance.
 | RFC 0005 implements SDK v1.1 for text/binary detector, comparator, and renderer handles only. | Audio/video plugins require an SDK-v2 successor RFC; SDK v1.1 cannot introduce media specs or built-in media change kinds. |
 | RFC 0006 accepts schema v3 for structured data, but its implementation state must be revalidated when a later gate starts. | Audio/video schema decisions must migrate from implemented v1/v2 and accepted v3 without assuming unmerged P4-A1 behavior. |
 | RFC 0007 proposes schema v4 for the first image slice, subject to an actual merged schema-v3 predecessor audit. | Phase 7 must not race Phase 5 for v4 or reopen a frozen predecessor; media needs its own globally allocated schema successor. |
-| RFC 0008 proposes source-code/PDF contracts, now coordinated as schema v5, and keeps heavyweight backends, artifacts, auto detection, and SDK v2 separate. | Phase 7 uses the next global successor, schema v6. The same separation applies to media: backends and optional artifacts are independent gates. |
+| RFC 0008 proposes source-code/PDF contracts and keeps heavyweight backends, artifacts, auto detection, and SDK v2 separate. | A schema-v5 source/PDF reservation is pending RFC 0008 amendment and acceptance; Phase 7 audio's proposed v6 allocation depends on that predecessor decision. |
 | Runtime dependencies are currently empty; audio/video backends are architecture-level plans. | Codec, model, patent, export, and FFmpeg build/license impact must be reviewed before any dependency or subprocess path is added. |
 | P4-A1 and Phase 5 implementation work may still be absent or divergent from `main`. | Treat that work as design evidence only; every code-dependent assumption below is a later revalidation gate. |
 
@@ -63,8 +79,8 @@ Phase 7 goals are:
   high-rate, high-channel-count, high-resolution, high-frame-count, and
   multi-stream inputs;
 - schema compatibility with implemented v1/v2, the actual P4 schema-v3
-  predecessor, the Phase 5 schema-v4 reservation, and the Phase 6 schema-v5
-  reservation, subject to revalidation at implementation start.
+  predecessor, the Phase 5 schema-v4 reservation, and the pending Phase 6
+  schema-v5 reservation, subject to revalidation at implementation start.
 
 Phase 7 does not include:
 
@@ -91,7 +107,7 @@ recommendations, not accepted decisions, until explicitly approved.
 | --- | --- | --- |
 | P7X1 | Keep audio/video comparison explicit-only; existing auto remains text/binary. | Add media candidates to RFC 0003 without defining expensive probes and ambiguity. |
 | P7X2 | Split audio and video into independently authorized gates. | Treat all time-based media as one implementation batch. |
-| P7X3 | Use the globally allocated schema v6 media successor after auditing the actual P4 schema-v3 predecessor, Phase 5 schema-v4 reservation, and Phase 6 schema-v5 reservation. | Extend v1/v2 closed unions, reopen v3, reuse image v4 or source/PDF v5, or assume accepted but unimplemented predecessor details. |
+| P7X3 | Use globally allocated schema v6 for audio only after auditing the actual P4 schema-v3 predecessor, Phase 5 schema-v4 reservation, and pending Phase 6 schema-v5 decision; allocate video in the next global successor only after the P7-V1 backend/worker amendment is accepted. | Extend v1/v2 closed unions, reopen v3, reuse image v4 or source/PDF v5, put pending video into audio v6, or assume accepted but unimplemented predecessor details. |
 | P7X4 | Reject audio/video plugin comparators under SDK v1.1; require SDK v2 for media modalities. | Let plugin installation introduce media specs or change kinds. |
 | P7X5 | Keep RFC 0004 artifact/UI work separate; first comparison gates may produce no files. | Let decoding or rendering implicitly write previews, thumbnails, clips, heatmaps, or waveforms. |
 | P7X6 | Forbid fallback that changes relation after backend execution begins. | On failure, silently retry as bytes, another codec/backend, a lower-fidelity decode, or a perceptual metric. |
@@ -113,53 +129,58 @@ recommendations, not accepted decisions, until explicitly approved.
 
 ## Schema and compatibility contract
 
-Phase 7 uses the globally allocated schema v6 media successor. The allocation
-order is a stable human decision: P4 structured data uses schema v3, P5 image
-uses schema v4, P6 source/PDF uses schema v5, and P7 audio/video uses schema
-v6. Design, backend, dependency, and fixture research may proceed concurrently
-across phases, but public schema implementation and merge must respect this
-predecessor order and its compatibility fixtures. A later implementation gate
-must revalidate the state of `main` and record the final schema number in the
-repository-wide schema ledger before adding code. It may not reopen schema v3,
-consume schema v4 or v5, or allocate a competing successor in parallel with
-another modality.
+Phase 7 proposes globally allocated schema v6 for audio only. The allocation
+order is a stable human decision if the pending Phase 6 amendment is accepted:
+P4 structured data uses schema v3, P5 image uses schema v4, P6 source/PDF uses
+schema v5, and P7 audio uses schema v6. Design, backend, dependency, and
+fixture research may proceed concurrently across phases, but public schema
+implementation and merge must respect this predecessor order and its
+compatibility fixtures. A later implementation gate must revalidate the state
+of `main` and record the final schema number in the repository-wide schema
+ledger before adding code. It may not reopen schema v3, consume schema v4 or
+v5, put pending video types into audio v6, or allocate a competing successor in
+parallel with another modality.
 
-The media successor is an additive semantic successor to the actually merged
+The audio successor is an additive semantic successor to the actually merged
 predecessor chain:
 
 ```python
-CompareSpecV6 = CompareSpecV5 | AudioCompareSpec | VideoCompareSpec
-ChangeV6 = ChangeV5 | AudioChange | VideoChange
+CompareSpecV6 = CompareSpecV5 | AudioCompareSpec
+ChangeV6 = ChangeV5 | AudioChange
 ```
 
 If P4-A1 schema v3 is not implemented on `main`, if the implemented v3 differs
 from RFC 0006, if Phase 5 schema v4 is absent or changes its allocation, or if
-Phase 6 schema v5 is absent or changes its allocation, a Phase 7 implementation
-gate stops and updates this RFC before code. Media schema work therefore
-depends on the real v3/v4/v5 readers, writers, upgraders, and fixtures, not on
-accepted design text alone. In every case:
+the pending RFC 0008 amendment does not allocate Phase 6 schema v5, a Phase 7
+audio implementation gate stops and updates this RFC before code. Audio schema
+work therefore depends on the real v3/v4/v5 readers, writers, upgraders, and
+fixtures, not on accepted design text alone. In every case:
 
 - existing built-in text, binary, and auto calls keep schema v1;
 - existing `PluginHost` text/binary calls keep schema v2;
 - merged Phase 4 structured-data calls keep the actual implemented schema v3;
 - merged Phase 5 image calls keep schema v4;
-- merged Phase 6 source/PDF calls keep schema v5;
-- audio/video built-in specs produce the selected media successor, including
-  validation, sourcing, resolution, decode, and backend failures;
-- the selected media reader accepts v1/v2/v3/v4/v5/v6 payloads and
+- accepted Phase 6 source/PDF calls keep schema v5 if the pending predecessor
+  amendment is merged;
+- audio built-in specs produce schema v6, including validation, sourcing,
+  resolution, decode, and backend failures;
+- video built-in specs do not enter schema v6. Video receives the next global
+  schema successor only after the P7-V1 backend/worker amendment is accepted;
+- the audio v6 reader accepts v1/v2/v3/v4/v5/v6 payloads and
   dispatches by explicit schema version before inspecting spec or change kinds;
 - v1/v2/v3/v4/v5-to-v6 upgraders preserve original facts and add only
-  documented neutral defaults such as empty media field collections;
+  documented neutral defaults such as empty audio field collections;
 - byte-stable v1/v2 fixtures, P4 schema-v3 fixtures, P5 schema-v4 fixtures, P6
-  schema-v5 fixtures, and new media round-trip fixtures remain in the
+  schema-v5 fixtures, and new audio round-trip fixtures remain in the
   compatibility corpus;
-- each new media fixture includes the expected JSON schema version, public
+- each new audio fixture includes the expected JSON schema version, public
   spec/change names, metric names, ordering, omitted/null fields, and failure
   reason codes;
-- no automatic downgrade exists for audio/video outcomes. A lossless helper may
+- no automatic downgrade exists for audio outcomes. A lossless helper may
   downgrade only a media-free result whose facts are representable in the target
-  predecessor; audio/video specs, changes, facts, metrics, transformations, and
-  artifacts are not dropped or summarized to fit an older schema;
+  predecessor; audio specs, changes, facts, metrics, transformations, and
+  artifacts are not dropped or summarized to fit an older schema. A future video
+  successor must define its own downgrade rule;
 - unknown built-in spec and change kinds remain invalid;
 - unknown namespaced extension changes retain RFC 0001 behavior.
 
@@ -177,9 +198,9 @@ detection RFC is separately accepted.
 | Existing explicit `PluginHost` | v2 | text, binary, auto to either | SDK v1.1 | Existing v2 fixtures and receipts remain valid. |
 | Merged Phase 4 path | v3 | explicit json/yaml/table/array | none | Actual v3 models, migrations, and fixtures are the predecessor. |
 | Proposed Phase 5 image path | v4 | explicit static PNG image | none | Media must not reuse v4 or require image implementation to change. |
-| Proposed Phase 6 source/PDF path | v5 | source-code/PDF | none until separately authorized | Predecessor schema reservation; design evidence can proceed concurrently, but media merge waits for v5 fixtures. |
-| Proposed Phase 7 audio path | v6 | explicit audio | none in first gates | Produces validated audio specs, changes, metrics, transformations, and failures. |
-| Proposed Phase 7 video path | v6 | explicit video | none in first gates | Remains pending until backend and worker contracts are frozen. |
+| Proposed Phase 6 source/PDF path | v5 pending RFC 0008 amendment/acceptance | source-code/PDF | none until separately authorized | Predecessor schema reservation is not a fact on `main`; audio v6 merge waits for accepted v5 fixtures. |
+| Proposed Phase 7 audio path | v6, dependent on pending v5 predecessor | explicit audio | none in first gates | Produces validated audio specs, changes, metrics, transformations, and failures. |
+| Proposed Phase 7 video path | next global successor after v6 | explicit video | none in first gates | Remains pending until backend and worker contracts are frozen; no video type is added to audio v6. |
 | Existing auto on media-looking bytes | v1 | text or binary only | existing rules | Detection evidence and result do not change. |
 | Future SDK v2 or media auto | unspecified | unspecified | unspecified | Requires successor RFCs. |
 
@@ -194,13 +215,48 @@ order is `encoded_bytes`, `decoded_samples`, `waveform_numeric`, `spectral`,
 `audio_tracks`. An empty collection, repeated value, or out-of-gate value is an
 invalid spec, not a no-op.
 
-Each selected relation or view produces one evaluation record with its own
-relation/view name, metrics used as facts, threshold/policy decision, verdict,
-fidelity, completeness, transformations, warnings, and optional failure stage.
-Metric records remain measurements only; pass/fail decisions live in evaluation
-records and may reference metrics by name and stable ID. Evaluation records are
-sorted by the canonical relation/view order and never recompute or reinterpret
-metrics.
+Schema v6 adds a new `DiffResult.media_evaluations` field for audio relation
+aggregation. It does not extend the existing `PolicyEvaluation` model.
+Predecessor upgraders set `media_evaluations` to an empty tuple. Audio v6
+fixtures must include at least one non-empty `media_evaluations` example and
+one v1/v2/v3/v4/v5 upgrade example with the field defaulted.
+
+```python
+class MediaViewEvaluation:
+    kind: Literal["media_view_evaluation"] = "media_view_evaluation"
+    media_kind: Literal["audio", "video"]
+    selector: str
+    relation: Literal["equal", "different"]
+    verdict: Literal["pass", "warn", "fail"]
+    fidelity: Literal["full", "degraded"]
+    completeness: Literal["complete", "truncated"]
+    metric_names: tuple[str, ...] = ()
+    policy_rule_ids: tuple[str, ...] = ()
+    transformation_ids: tuple[str, ...] = ()
+    warning_codes: tuple[str, ...] = ()
+    change_count: int = 0
+    failure_stage: Literal[
+        "validating", "sourcing", "resolving", "decoding",
+        "normalizing", "aligning", "comparing", "aggregating",
+    ] | None = None
+    failure_code: str | None = None
+```
+
+For schema v6, `media_kind` is always `audio` and `selector` is one of the
+selected audio relations. Video `MediaViewEvaluation` records are not legal
+until the later video schema successor explicitly reuses or revises this shape.
+`metric_names`, `policy_rule_ids`, `transformation_ids`, and `warning_codes`
+contain stable IDs already present elsewhere in the result/provenance; they are
+deduplicated and sorted lexicographically. `change_count` is the untruncated
+count for that relation. `failure_stage` and `failure_code` are both null for a
+completed relation evaluation and both non-null only when a future schema allows
+per-selector failure records inside a completed aggregate.
+
+Metric records remain measurements only. `PolicyEvaluation` remains the RFC
+0001 shape with `rule_id`, `verdict`, and optional metric/operator/threshold/
+observed fields; it is not extended with media selector, fidelity,
+completeness, transformation, or warning fields. Media evaluation records are
+sorted by canonical relation order and never recompute or reinterpret metrics.
 
 One completed `DiffResult` has exactly one overall `relation`, `verdict`,
 `fidelity`, and `completeness`. The overall relation is equal only when every
@@ -278,6 +334,32 @@ Relation meanings are independent:
   cannot imply sample equality;
 - `perceptual` is reserved for P7-A3; it uses a named optional perceptual
   backend and cannot override exact or spectral differences.
+
+### Decoded sample equality closure
+
+For `decoded_samples`, equality requires both sample values and their
+comparison-significant interpretation facts to match. The relation is different
+if any of these facts differ, even when decoded sample value arrays are
+byte-for-byte identical:
+
+- selected stream index and stream identity facts;
+- sample rate;
+- sample format, bit depth, endianness, signedness, and integer scale policy;
+- channel count, channel layout, channel labels, and channel order;
+- decoded sample count per selected channel;
+- duration ticks, timebase, and derived duration seconds;
+- selected packet/frame timestamp facts;
+- gapless encoder delay and padding facts when present or selected.
+
+`audio.samples_changed` counts unequal selected sample positions only.
+Interpretation-fact differences are counted separately in
+`audio.relation_facts_changed` and represented as `format_update`,
+`channel_update`, `timing_update`, or `metadata_update` changes. Sample count or
+duration mismatches produce `sample_insert`/`sample_delete` observations for
+the unmatched interval and a `timing_update` fact change when timing facts also
+differ. This prevents a result from reporting `decoded_samples` equal when the
+same sample bytes have a different sample rate, channel interpretation,
+duration, timestamp model, delay, or padding.
 
 ### Decode and IR facts
 
@@ -361,6 +443,7 @@ class AudioChange:
     ]
     operation: Literal[
         "stream_add", "stream_remove", "metadata_update",
+        "format_update", "channel_update", "timing_update",
         "sample_update", "sample_insert", "sample_delete",
         "spectral_update", "alignment_shift", "perceptual_update"
     ]
@@ -392,9 +475,11 @@ integer, finite number, boolean, or `null`; arrays and nested objects require a
 later schema revision. `AudioChange` records are sorted by relation, operation,
 before coordinate, after coordinate, then digest. `sample_update` requires both
 coordinates and both digests. `sample_insert` requires only an after coordinate;
-`sample_delete` requires only a before coordinate. `metadata_update` requires
-facts and has null coordinates. Digests are lowercase algorithm-prefixed hex
-strings or `null` only when the operation has no byte/sample payload.
+`sample_delete` requires only a before coordinate. `format_update`,
+`channel_update`, `timing_update`, and `metadata_update` require facts and have
+null sample coordinates unless they also describe a bounded affected interval.
+Digests are lowercase algorithm-prefixed hex strings or `null` only when the
+operation has no byte/sample payload.
 
 ### Audio metrics and policy
 
@@ -405,7 +490,9 @@ The first audio metric registry is proposed as:
 | `audio.samples_compared` | aligned sample pairs across selected channels | `samples` | `neutral` | `count` | zero |
 | `audio.samples_changed` | unequal or tolerance-failing sample pairs | `samples` | `lower_is_better` | `count` | zero |
 | `audio.channels_compared` | selected channels compared | `channels` | `neutral` | `count` | zero |
-| `audio.duration_delta` | after duration minus before duration after selected alignment | `seconds` | `lower_abs_is_better` | `difference` | zero |
+| `audio.duration_delta` | after duration minus before duration after selected alignment | `seconds` | `neutral` | `difference` | zero |
+| `audio.duration_delta_abs` | absolute duration difference after selected alignment | `seconds` | `lower_is_better` | `absolute_difference` | zero |
+| `audio.relation_facts_changed` | comparison-significant non-sample facts that differ for the selected relation | `facts` | `lower_is_better` | `count` | zero |
 | `audio.sample_peak_error` | maximum absolute sample error after scaling policy | `amplitude_full_scale` | `lower_is_better` | `maximum` | metric omitted |
 | `audio.sample_rms_error` | root mean square sample error | `amplitude_full_scale` | `lower_is_better` | `rms` | metric omitted |
 | `audio.snr` | signal-to-noise ratio using before as reference | `db` | `higher_is_better` | `ratio_db` | positive infinity for zero error, omitted for zero reference energy |
@@ -413,11 +500,14 @@ The first audio metric registry is proposed as:
 | `audio.spectral_rms_error` | RMS spectral magnitude error | `db` | `lower_is_better` | `rms` | metric omitted |
 | `audio.perceptual_score` | named backend perceptual similarity score | backend-defined stable unit | backend-defined | backend-defined | metric omitted |
 
-Metrics are facts, not verdicts. Each metric record contains only its stable
-name, numeric value, unit, direction, aggregation method, and source evaluation
-ID. Policy evaluations contain thresholds, tolerance formulas, inclusive/
-exclusive boundary rules, and pass/fail verdicts. A renderer must not infer
-pass/fail directly from metric values.
+Metrics are facts, not verdicts. Each metric record uses the existing RFC 0001
+shape: stable name, numeric value, unit, direction, and optional aggregation.
+Metrics do not carry source evaluation IDs; `MediaViewEvaluation.metric_names`
+associates metrics with a media relation. Policy evaluations contain
+thresholds, tolerance formulas, inclusive/exclusive boundary rules, and
+pass/fail verdicts. Absolute-duration thresholds use `audio.duration_delta_abs`
+with a normal `le` policy operator. A renderer must not infer pass/fail directly
+from metric values.
 
 Waveform tolerance is comparison intent and determines relation for
 `waveform_numeric`; it is not merely a verdict threshold. Count metrics are
@@ -865,7 +955,7 @@ These gates are proposed plans, not implementation authorization.
 3. `feat(cli): add explicit audio comparison commands`
 4. `docs: document audio exact comparison contracts`
 
-Gate: schema-v6 media migration tests pass against the actual v3/v4/v5
+Gate: schema-v6 audio migration tests pass against the actual v3/v4/v5
 predecessor chain; existing v1/v2/v3/v4/v5 fixtures remain compatible;
 `encoded_bytes` and `decoded_samples` are distinct; the only first backend is
 `stdlib_wave_pcm` for uncompressed PCM WAV; no hidden resampling/remixing/gain
@@ -905,7 +995,7 @@ video backend or worker profile, so it does not authorize any video
 implementation commits.
 
 1. `docs: freeze video backend and worker conformance profile`
-2. `feat(core): add video schema contracts`
+2. `feat(core): add video schema successor contracts`
 3. `feat(video): add stream structure comparison`
 4. `feat(video): add explicit decoded-frame comparison`
 5. `feat(cli): add explicit video comparison commands`
@@ -972,7 +1062,7 @@ are not passing evidence.
 | Hostile media | corrupt/truncated files, unsupported codecs, malformed containers, decode bombs, huge sample rate/channel count, huge resolution/frame count, long duration, packet storms, metadata bombs, limit-zero cases, hangs, crashes |
 | Backends | missing backend, incompatible version, version mismatch, host-owned snapshot/materialization only, protocol/device allowlists, stderr redaction, timeout terminate/kill/reap, temp cleanup, exit-code validation, path redaction, bounded stdout/stderr/temp files, no network/device access |
 | Lifecycle | canonical `validating`, `sourcing`, `resolving`, `decoding`, `normalizing`, `aligning`, `comparing`, and `aggregating` stage failures with stable reason codes and no completed equality on stage failure; renderer failures stay outside `CompareOutcome` |
-| Contracts | media schema-successor migration fixtures, inherited v1/v2/v3/v4 fixtures, spec/change invariant rejection, relation/view set ordering, metric/evaluation separation, non-finite JSON values, artifact-reference validation when enabled, unchanged text/binary/auto/plugin/CLI behavior |
+| Contracts | audio schema-v6 migration fixtures, pending video successor migration fixtures, inherited v1/v2/v3/v4/v5 fixtures, spec/change invariant rejection, relation/view set ordering, metric/evaluation separation, non-finite JSON values, artifact-reference validation when enabled, unchanged text/binary/auto/plugin/CLI behavior |
 | Corpora | synthetic or explicitly licensed tiny fixtures, source scripts, hashes, provenance notes, no restricted or personal media |
 
 ## Later callbacks
