@@ -436,6 +436,16 @@ class JsonCompareSpec:
     detail_mode: StructuredDetailMode = StructuredDetailMode.VALUES
     limits: StructuredResourceLimits = field(default_factory=StructuredResourceLimits)
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.encoding, TextEncoding):
+            raise ValueError("JSON encoding must be a TextEncoding")
+        if not isinstance(self.number_mode, JsonNumberMode):
+            raise ValueError("number_mode must be a JsonNumberMode")
+        if not isinstance(self.detail_mode, StructuredDetailMode):
+            raise ValueError("detail_mode must be a StructuredDetailMode")
+        if not isinstance(self.limits, StructuredResourceLimits):
+            raise ValueError("JSON limits must be StructuredResourceLimits")
+
 
 type CompareSpec = AutoCompareSpec | TextCompareSpec | BinaryCompareSpec
 type CompareSpecV3 = CompareSpec | JsonCompareSpec
@@ -1359,8 +1369,12 @@ class ScalarFact:
             raise ValueError("integer fact value must be canonical base-10 text")
         if self.kind == "decimal" and (
             not isinstance(self.value, str)
-            or re.fullmatch(r"-?(?:0|[1-9][0-9]*)E-?(?:0|[1-9][0-9]*)", self.value)
+            or re.fullmatch(
+                r"-?(?:0|[1-9](?:[0-9]*[1-9])?)E(?:0|-?[1-9][0-9]*)",
+                self.value,
+            )
             is None
+            or self.value.startswith("-0E")
         ):
             raise ValueError(
                 "decimal fact value must be canonical coefficient/exponent text"
@@ -1445,6 +1459,8 @@ class StructuredChange:
                 if digest is not None or fact is not None:
                     raise ValueError(f"absent {side} side must not carry evidence")
                 continue
+            if not isinstance(value_type, StructuredType):
+                raise ValueError(f"{side} type must be a StructuredType")
             if digest is None or not _SHA256.fullmatch(digest):
                 raise ValueError(f"present {side} side requires a SHA-256 digest")
             if fact is not None:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+
 import pytest
 
 from platydiff import (
@@ -22,6 +24,8 @@ from platydiff.core.serialization import (
     SerializationError,
     dumps_outcome,
     loads_outcome,
+    outcome_from_data,
+    outcome_to_data,
     spec_from_data,
     spec_to_data,
 )
@@ -110,3 +114,46 @@ def test_structured_change_rejects_mismatched_side_facts() -> None:
             before_fact=ScalarFact("integer", "1"),
             after_fact=ScalarFact("string", "x"),
         )
+
+
+@pytest.mark.parametrize("value", ["10E0", "1E-0", "-0E0"])
+def test_decimal_facts_require_canonical_value_text(value: str) -> None:
+    with pytest.raises(ValueError, match="canonical"):
+        ScalarFact("decimal", value)
+
+
+def test_json_spec_requires_public_enum_instances() -> None:
+    with pytest.raises(ValueError, match="number_mode"):
+        JsonCompareSpec(number_mode="value")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="detail_mode"):
+        JsonCompareSpec(detail_mode="values")  # type: ignore[arg-type]
+
+
+def test_schema_v3_reader_enforces_json_detail_and_transformations() -> None:
+    outcome = compare(TextSource("1"), TextSource("2"), JsonCompareSpec())
+    assert isinstance(outcome, CompletedOutcomeV3)
+    data = copy.deepcopy(outcome_to_data(outcome))
+    result = data["result"]
+    assert isinstance(result, dict)
+    provenance = result["provenance"]
+    assert isinstance(provenance, dict)
+    spec = provenance["spec"]
+    assert isinstance(spec, dict)
+    spec["detail_mode"] = "digest_only"
+
+    with pytest.raises(SerializationError, match="digest_only"):
+        outcome_from_data(data)
+
+    data = copy.deepcopy(outcome_to_data(outcome))
+    result = data["result"]
+    assert isinstance(result, dict)
+    provenance = result["provenance"]
+    assert isinstance(provenance, dict)
+    transformations = provenance["transformations"]
+    assert isinstance(transformations, list)
+    first = transformations[0]
+    assert isinstance(first, dict)
+    first["transformation_id"] = "json.unknown"
+
+    with pytest.raises(SerializationError, match="transformations"):
+        outcome_from_data(data)

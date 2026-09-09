@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import random
+
 import pytest
 
 from platydiff import (
@@ -125,6 +128,23 @@ def test_value_and_lexical_number_modes_have_distinct_truth() -> None:
     assert change.after_fact is not None
     assert change.after_fact.lexical == "1.0"  # type: ignore[union-attr]
 
+    exponent = completed(
+        "1.0", "1e0", JsonCompareSpec(number_mode=JsonNumberMode.LEXICAL)
+    )
+    assert exponent.result.relation.value == "different"
+
+
+def test_configured_large_exponent_is_not_replaced_by_an_internal_cap() -> None:
+    outcome = completed(
+        "1e10000000",
+        "1e10000000",
+        JsonCompareSpec(limits=StructuredResourceLimits(max_abs_exponent=10_000_000)),
+    )
+
+    assert outcome.result.relation.value == "equal"
+    resources = {item.name: item.used for item in outcome.result.provenance.resources}
+    assert resources["before_abs_exponent"] == 10_000_000
+
 
 def test_evidence_digest_framing_has_a_fixed_low_entropy_fixture() -> None:
     value = completed("1", "2").result.changes.items[0]
@@ -217,3 +237,41 @@ def test_atomic_change_truncation_and_schema_round_trip() -> None:
     assert truncated.result.changes.total_count == 2
     assert truncated.result.summary.change_count == 2
     assert loads_outcome(dumps_outcome(truncated)) == truncated
+
+
+def test_change_payload_limit_is_applied_after_full_comparison() -> None:
+    truncated = completed(
+        '"old"',
+        '"new"',
+        JsonCompareSpec(limits=StructuredResourceLimits(max_change_payload_bytes=0)),
+    )
+
+    assert truncated.result.changes.completeness is ChangeCompleteness.TRUNCATED
+    assert truncated.result.changes.returned_count == 0
+    assert truncated.result.changes.total_count == 1
+    assert truncated.result.summary.change_count == 1
+
+
+def test_seeded_random_trees_ignore_object_order() -> None:
+    generator = random.Random(20260910)
+
+    def tree(depth: int) -> object:
+        if depth == 0:
+            return generator.choice(
+                [None, True, False, generator.randint(-100, 100), "text", "~//"]
+            )
+        choice = generator.randrange(3)
+        if choice == 0:
+            return [tree(depth - 1) for _ in range(generator.randrange(4))]
+        if choice == 1:
+            keys = generator.sample(["a", "b", "c", "a/b", "~"], generator.randrange(4))
+            return {key: tree(depth - 1) for key in keys}
+        return tree(0)
+
+    for _ in range(100):
+        value = tree(3)
+        insertion_order = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        sorted_order = json.dumps(
+            value, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+        )
+        assert completed(insertion_order, sorted_order).result.relation.value == "equal"

@@ -239,6 +239,7 @@ class _Parser:
             fraction_digits = self.text[fraction_start : self.cursor]
         explicit_exponent = 0
         exponent_digits = ""
+        exponent_negative = False
         if self.cursor < len(self.text) and self.text[self.cursor] in "eE":
             self.cursor += 1
             exponent_negative = self._consume("-")
@@ -247,14 +248,21 @@ class _Parser:
             exponent_start = self.cursor
             self._digits(required=True)
             exponent_digits = self.text[exponent_start : self.cursor]
-            if len(exponent_digits) > 7:
-                self._limit("A JSON number exceeded the configured exponent limit.")
-            explicit_exponent = int(exponent_digits)
-            if exponent_negative:
-                explicit_exponent = -explicit_exponent
         digit_count = len(integer_digits) + len(fraction_digits) + len(exponent_digits)
         if digit_count > self.limits.max_number_digits:
             self._limit("A JSON number exceeded the configured digit limit.")
+        if exponent_digits:
+            maximum_explicit = self.limits.max_abs_exponent + len(fraction_digits)
+            normalized_exponent = exponent_digits.lstrip("0") or "0"
+            maximum_text = str(maximum_explicit)
+            if len(normalized_exponent) > len(maximum_text) or (
+                len(normalized_exponent) == len(maximum_text)
+                and normalized_exponent > maximum_text
+            ):
+                self._limit("A JSON number exceeded the configured exponent limit.")
+            explicit_exponent = int(normalized_exponent)
+            if exponent_negative:
+                explicit_exponent = -explicit_exponent
         exponent = explicit_exponent - len(fraction_digits)
         if abs(exponent) > self.limits.max_abs_exponent:
             self._limit("A JSON number exceeded the configured exponent limit.")

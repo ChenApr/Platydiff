@@ -1507,6 +1507,8 @@ def _finite_count(metric: Metric, name: str) -> int:
 def _validate_v3_result(result: DiffResult) -> None:
     kind = result.provenance.spec.get("kind")
     if kind in ("auto", "text", "binary"):
+        if any(isinstance(item, StructuredChange) for item in result.changes.items):
+            raise SerializationError("legacy schema-v3 result has structured changes")
         return
     if kind != "json":
         raise SerializationError(f"unknown schema-v3 built-in spec kind: {kind}")
@@ -1521,6 +1523,9 @@ def _validate_v3_result(result: DiffResult) -> None:
         or result.artifacts
         or result.provenance.comparator_id != "json"
         or result.provenance.algorithm_id != "json.semantic.tree.v1"
+        or not isinstance(result.provenance, ComparisonProvenanceV2)
+        or result.provenance.provider is not None
+        or result.provenance.detector_provider is not None
     ):
         raise SerializationError("schema-v3 JSON result has incompatible identity")
     expected_transformations: list[tuple[str, str, JsonObject]] = []
@@ -1573,11 +1578,23 @@ def _validate_v3_result(result: DiffResult) -> None:
                         )
                 elif fact.lexical is not None:
                     raise SerializationError("non-number JSON fact has lexical detail")
+                if (
+                    fact.kind == "string"
+                    and isinstance(fact.value, str)
+                    and len(fact.value.encode("utf-8")) > spec.limits.max_scalar_bytes
+                ):
+                    raise SerializationError("JSON string fact exceeds its spec limit")
+            elif fact.descendant_count >= spec.limits.max_nodes:
+                raise SerializationError("JSON subtree fact exceeds its node limit")
         if spec.detail_mode is StructuredDetailMode.VALUES:
             if change.before_type is not None and change.before_fact is None:
                 raise SerializationError("values JSON change is missing a before fact")
             if change.after_type is not None and change.after_fact is None:
                 raise SerializationError("values JSON change is missing an after fact")
+        for token in change.path.split("/")[1:]:
+            decoded_token = token.replace("~1", "/").replace("~0", "~")
+            if len(decoded_token.encode("utf-8")) > spec.limits.max_scalar_bytes:
+                raise SerializationError("JSON Pointer token exceeds its spec limit")
     metrics = {item.name: item for item in result.metrics}
     if set(metrics) != {
         "json.compared_values",
@@ -1590,6 +1607,78 @@ def _validate_v3_result(result: DiffResult) -> None:
     changed = _finite_count(metrics["json.changed_values"], "changed values")
     if equal + changed != compared or result.changes.total_count != changed:
         raise SerializationError("schema-v3 JSON count identities do not hold")
+    expected_metrics = {
+        "json.compared_values": (MetricDirection.NEUTRAL, compared),
+        "json.equal_values": (MetricDirection.NEUTRAL, equal),
+        "json.changed_values": (MetricDirection.LOWER_IS_BETTER, changed),
+    }
+    if any(
+        metric.unit != "items"
+        or metric.aggregation != "count"
+        or metric.direction is not expected_metrics[name][0]
+        for name, metric in metrics.items()
+    ):
+        raise SerializationError("schema-v3 JSON metric metadata is not canonical")
+    summary = {item.name: item for item in result.summary.counts}
+    expected_summary = {
+        "compared_values": compared,
+        "equal_values": equal,
+        "changed_values": changed,
+    }
+    if set(summary) != set(expected_summary) or any(
+        summary[name].value != count or summary[name].unit != "values"
+        for name, count in expected_summary.items()
+    ):
+        raise SerializationError("schema-v3 JSON summary is not canonical")
+    if result.changes.completeness is ChangeCompleteness.PARTIAL:
+        raise SerializationError("schema-v3 JSON changes must not be partial")
+    if result.relation is (Relation.EQUAL if changed == 0 else Relation.DIFFERENT):
+        expected_verdict = Verdict.PASS if changed == 0 else Verdict.FAIL
+    else:
+        raise SerializationError("schema-v3 JSON relation disagrees with its counts")
+    if result.verdict is not expected_verdict or len(result.evaluations) != 1:
+        raise SerializationError("schema-v3 JSON verdict is not canonical")
+    evaluation = result.evaluations[0]
+    if (
+        evaluation.rule_id != "json.semantic_equality"
+        or evaluation.metric_name != "json.changed_values"
+        or evaluation.operator != "eq"
+        or not isinstance(evaluation.threshold, FiniteValue)
+        or evaluation.threshold.value != 0
+        or not isinstance(evaluation.observed, FiniteValue)
+        or evaluation.observed.value != changed
+        or evaluation.verdict is not expected_verdict
+    ):
+        raise SerializationError("schema-v3 JSON evaluation is not canonical")
+    expected_resources = {
+        "before_input_bytes": spec.limits.max_input_bytes,
+        "before_scalar_bytes": spec.limits.max_scalar_bytes,
+        "before_depth": spec.limits.max_depth,
+        "before_nodes": spec.limits.max_nodes,
+        "before_number_digits": spec.limits.max_number_digits,
+        "before_abs_exponent": spec.limits.max_abs_exponent,
+        "after_input_bytes": spec.limits.max_input_bytes,
+        "after_scalar_bytes": spec.limits.max_scalar_bytes,
+        "after_depth": spec.limits.max_depth,
+        "after_nodes": spec.limits.max_nodes,
+        "after_number_digits": spec.limits.max_number_digits,
+        "after_abs_exponent": spec.limits.max_abs_exponent,
+        "compare_work": spec.limits.max_compare_work,
+        "change_items": spec.limits.max_change_items,
+        "change_payload_bytes": spec.limits.max_change_payload_bytes,
+    }
+    resources = {item.name: item for item in result.provenance.resources}
+    if set(resources) != set(expected_resources) or any(
+        resources[name].limit != limit or resources[name].used > limit
+        for name, limit in expected_resources.items()
+    ):
+        raise SerializationError("schema-v3 JSON resources are not canonical")
+    if (
+        resources["before_input_bytes"].used != result.provenance.inputs[0].size_bytes
+        or resources["after_input_bytes"].used != result.provenance.inputs[1].size_bytes
+        or resources["change_items"].used != result.changes.returned_count
+    ):
+        raise SerializationError("schema-v3 JSON resource actuals are inconsistent")
 
 
 def outcome_to_data(outcome: AnyCompareOutcome) -> JsonObject:
@@ -1650,6 +1739,7 @@ def _validate_outcome_schema_for_encoding(outcome: AnyCompareOutcome) -> None:
             or type(outcome.result.provenance) is not ComparisonProvenanceV2
         ):
             raise SerializationError("schema-v3 outcome contains incompatible values")
+        _validate_v3_result(outcome.result)
     elif type(outcome) is UnavailableOutcomeV3:
         if (
             type(outcome.execution) is not ExecutionRecordV2
