@@ -474,9 +474,24 @@ model default 使用 `default_factory`。Nonbinary backend limit 只在对应 vi
 
 Schema-v5 wire validation 是闭合的：
 
+- top-level writer field order 是 `kind`、`views`、`text`、`objects`、
+  `rendering`、`artifact_policy`、`limits`；
 - `views` 是非空 JSON array，不允许重复值，也不允许 unknown value；
 - writer 将 `views` 规范化为 canonical order：`binary`、`extracted_text`、
   `objects_metadata`、`rendered_pages`；wire form 不保留输入顺序；
+- writer 总是把 `text`、`objects` 与 `rendering` 发成 non-null option object，即使对应
+  nonbinary view 未选中也是如此；
+- `text` 只包含按顺序排列的 key：`order`、`whitespace`、`unicode_mapping`；Phase 6
+  唯一接受的值是默认值 `extractor_logical`、`preserve` 与 `backend_tounicode`；
+- `objects` 只包含按顺序排列的 key：`metadata`、`streams`、`active_content`；`metadata`
+  接受默认值 `compare` 或非默认值 `ignore_document_info_dates`，`streams` 与
+  `active_content` 只接受默认值 `metadata_and_digest` 与 `inert_inventory`；
+- `rendering` 只包含按顺序排列的 key：`page_box`、`rotation`、`resolution_dpi`、`color`、
+  `alpha` 与 `antialiasing`；`page_box` 接受默认值 `media` 或非默认值 `crop`，`alpha`
+  接受默认值 `composite_white` 或非默认值 `preserve`，`resolution_dpi` 是正整数，其余
+  field 只接受已声明默认值；
+- option object 绝不为 `null`，也绝不省略；缺失 option key、unknown option key、null
+  option value，或 closed set 之外的值，都是 `failed/invalid_spec`；
 - writer 总是发出 `limits`，且只包含这些 key：`base`、`worker_invocation`、
   `extracted_text`、`objects_metadata` 与 `rendered_pages`；
 - 没有选择 nonbinary view 时，`worker_invocation` 为 `null`；选择任一 nonbinary view 时，
@@ -772,6 +787,24 @@ Binary-only canonical JSON shape：
 {
   "kind": "pdf",
   "views": ["binary"],
+  "text": {
+    "order": "extractor_logical",
+    "whitespace": "preserve",
+    "unicode_mapping": "backend_tounicode"
+  },
+  "objects": {
+    "metadata": "compare",
+    "streams": "metadata_and_digest",
+    "active_content": "inert_inventory"
+  },
+  "rendering": {
+    "page_box": "media",
+    "rotation": "apply_page_rotation",
+    "resolution_dpi": 144,
+    "color": "srgb_8bit",
+    "alpha": "composite_white",
+    "antialiasing": "backend_default_recorded"
+  },
   "artifact_policy": "none",
   "limits": {
     "base": {
@@ -797,6 +830,24 @@ supplied finite value；它们不是 RFC-wide default：
 {
   "kind": "pdf",
   "views": ["extracted_text"],
+  "text": {
+    "order": "extractor_logical",
+    "whitespace": "preserve",
+    "unicode_mapping": "backend_tounicode"
+  },
+  "objects": {
+    "metadata": "compare",
+    "streams": "metadata_and_digest",
+    "active_content": "inert_inventory"
+  },
+  "rendering": {
+    "page_box": "media",
+    "rotation": "apply_page_rotation",
+    "resolution_dpi": 144,
+    "color": "srgb_8bit",
+    "alpha": "composite_white",
+    "antialiasing": "backend_default_recorded"
+  },
   "artifact_policy": "none",
   "limits": {
     "base": {

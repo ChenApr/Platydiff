@@ -529,11 +529,30 @@ selected.
 
 Schema-v5 wire validation is closed:
 
+- top-level writer field order is `kind`, `views`, `text`, `objects`,
+  `rendering`, `artifact_policy`, then `limits`;
 - `views` is a non-empty JSON array with no duplicate values and no unknown
   values;
 - writers normalize `views` into canonical order
   `binary`, `extracted_text`, `objects_metadata`, `rendered_pages`; input order
   is not preserved in the wire form;
+- writers always emit `text`, `objects`, and `rendering` as non-null option
+  objects, even when the corresponding nonbinary view is not selected;
+- `text` has exactly the ordered keys `order`, `whitespace`,
+  `unicode_mapping`; the only accepted values in Phase 6 are the defaults
+  `extractor_logical`, `preserve`, and `backend_tounicode`;
+- `objects` has exactly the ordered keys `metadata`, `streams`,
+  `active_content`; `metadata` accepts default `compare` or non-default
+  `ignore_document_info_dates`, while `streams` and `active_content` accept only
+  their defaults `metadata_and_digest` and `inert_inventory`;
+- `rendering` has exactly the ordered keys `page_box`, `rotation`,
+  `resolution_dpi`, `color`, `alpha`, and `antialiasing`; `page_box` accepts
+  default `media` or non-default `crop`, `alpha` accepts default
+  `composite_white` or non-default `preserve`, `resolution_dpi` is a positive
+  integer, and the other fields accept only their declared defaults;
+- option objects are never `null` and are never omitted; missing option keys,
+  unknown option keys, null option values, or values outside the closed set are
+  `failed/invalid_spec`;
 - writers always emit `limits` with exactly these keys: `base`,
   `worker_invocation`, `extracted_text`, `objects_metadata`, and
   `rendered_pages`;
@@ -865,6 +884,24 @@ Binary-only canonical JSON shape:
 {
   "kind": "pdf",
   "views": ["binary"],
+  "text": {
+    "order": "extractor_logical",
+    "whitespace": "preserve",
+    "unicode_mapping": "backend_tounicode"
+  },
+  "objects": {
+    "metadata": "compare",
+    "streams": "metadata_and_digest",
+    "active_content": "inert_inventory"
+  },
+  "rendering": {
+    "page_box": "media",
+    "rotation": "apply_page_rotation",
+    "resolution_dpi": 144,
+    "color": "srgb_8bit",
+    "alpha": "composite_white",
+    "antialiasing": "backend_default_recorded"
+  },
   "artifact_policy": "none",
   "limits": {
     "base": {
@@ -891,6 +928,24 @@ RFC-wide defaults:
 {
   "kind": "pdf",
   "views": ["extracted_text"],
+  "text": {
+    "order": "extractor_logical",
+    "whitespace": "preserve",
+    "unicode_mapping": "backend_tounicode"
+  },
+  "objects": {
+    "metadata": "compare",
+    "streams": "metadata_and_digest",
+    "active_content": "inert_inventory"
+  },
+  "rendering": {
+    "page_box": "media",
+    "rotation": "apply_page_rotation",
+    "resolution_dpi": 144,
+    "color": "srgb_8bit",
+    "alpha": "composite_white",
+    "antialiasing": "backend_default_recorded"
+  },
   "artifact_policy": "none",
   "limits": {
     "base": {
