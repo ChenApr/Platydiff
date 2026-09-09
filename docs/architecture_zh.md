@@ -216,6 +216,10 @@ DiffResult
 
 源代码解析为语法树后匹配节点，可弱化排版变化并表达节点插入、删除、更新和移动。JSON、YAML、TOML、XML 应解析为带类型的树或映射，再依据字段路径比较；键排序、数字表示和无关元数据属于可配置的规范化阶段。
 
+显式 JSON 与受约束 YAML 1.2 比较契约提议于
+[RFC 0006](rfcs/0006-structured-data-comparison_zh.md)。它们仍未实现，且不会扩展既有
+text/binary automatic-detection 或 plugin-SDK 契约。
+
 语法相同不等于运行语义相同。AST 比较需要明确其解析器版本、错误恢复策略和宏/预处理边界。
 
 ### 6.4 图片
@@ -240,6 +244,10 @@ PDF 同时包含文本、绘制指令、字体、图片和页面布局。应提�
 
 比较顺序为 schema、维度、坐标/主键对齐、元素容差、汇总误差和分布差异。必须定义 dtype、单位、缺失值、NaN/Inf、绝对/相对误差和浮点 ULP 策略。
 
+[RFC 0006](rfcs/0006-structured-data-comparison_zh.md) 提议更窄的首个 table/array
+切片：使用确定性 alignment 与 numeric semantics 的显式分隔符表格和 immutable dense array。
+生态 adapter、coordinate alignment、unit 与 statistical equivalence 仍是后续契约回调。
+
 统计比较可以包含 KS、Wasserstein、卡方、置信区间和效应量。p-value 不可单独决定是否存在实际差异；结果应同时报告效应量、样本量、多重比较校正和科研任务定义的实际容差。
 
 ## 7. 里程碑
@@ -248,7 +256,9 @@ PDF 同时包含文本、绘制指令、字体、图片和页面布局。应提�
 
 Phase 1 至 Phase 3 包含 Python 包、schema-v1/v2 契约、显式文本、有界文本/二进制
 探测、精确二进制比较、CLI、terminal/JSON renderer 与显式 plugin boundary，且仍未
-发布。下列其他模态与 renderer 仍是计划能力。
+发布。Phase 4 structured-data 契约只在
+[RFC 0006](rfcs/0006-structured-data-comparison_zh.md) 中处于 Proposed。下列其他模态与
+renderer 仍是计划能力。
 
 ### v0.1：核心闭环
 
