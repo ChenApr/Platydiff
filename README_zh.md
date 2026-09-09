@@ -94,7 +94,7 @@ Phase 1、Phase 2 与 P3-A/P3-B 插件门禁已实现：
 - 不执行 capability 的显式 entry-point discovery、精确 allowlist、版本/feature 协商与
   确定性冲突隔离；
 - 显式 pin 的 SDK-v1.1 detector/comparator handle、host 管理的有界 source access 与
-  lifecycle stage；
+  lifecycle stage，并支持自动比较精确 pin 内建 comparator；
 - schema-v2 provider、attempt 与 plugin-host provenance，以及 typed v1-to-v2 upgrader；
   `PluginHost.compare()` 始终返回 schema v2。
 

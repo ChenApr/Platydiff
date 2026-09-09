@@ -163,6 +163,7 @@ class SourceChangedError(DomainError):
             PipelineStage.DETECTING,
             PipelineStage.DECODING,
             PipelineStage.COMPARING,
+            PipelineStage.AGGREGATING,
         ):
             raise ValueError("source changes must be reported at an observing stage")
         super().__init__(

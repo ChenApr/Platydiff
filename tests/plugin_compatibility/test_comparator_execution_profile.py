@@ -184,6 +184,7 @@ def test_completed_runs_are_not_retained_by_a_long_lived_host() -> None:
     del outcome
     gc.collect()
     assert all(reference() is None for reference in handle.run_references)
+    assert len(host._used_runs) == 1
 
 
 def test_invalid_run_shape_is_a_safe_resolving_failure() -> None:
@@ -198,6 +199,41 @@ def test_invalid_run_shape_is_a_safe_resolving_failure() -> None:
             return None  # type: ignore[return-value]
 
     outcome = _compare(InvalidRunHandle())
+    assert isinstance(outcome, FailedOutcomeV2)
+    assert outcome.problem.code == "plugin_execution_failure"
+    assert outcome.problem.stage.value == "resolving"
+
+
+def test_non_weak_referenceable_run_is_a_safe_resolving_failure() -> None:
+    class SlottedRun:
+        __slots__ = ()
+
+        def decode(self) -> None:
+            return None
+
+        def normalize(self) -> None:
+            return None
+
+        def align(self) -> None:
+            return None
+
+        def compare(self) -> None:
+            return None
+
+        def aggregate(self) -> PluginComparisonV1:
+            return _facts()
+
+    class SlottedRunHandle(_ComparatorHandle):
+        def create_run(
+            self,
+            before: SourceServiceV1,
+            after: SourceServiceV1,
+            spec: TextCompareSpec,
+        ) -> _Run:
+            del before, after, spec
+            return SlottedRun()  # type: ignore[return-value]
+
+    outcome = _compare(SlottedRunHandle())
     assert isinstance(outcome, FailedOutcomeV2)
     assert outcome.problem.code == "plugin_execution_failure"
     assert outcome.problem.stage.value == "resolving"

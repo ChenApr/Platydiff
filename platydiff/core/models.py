@@ -663,6 +663,23 @@ class CapabilityAttemptV2:
                 _unicode_scalar(value, name)
                 if "/" in value or "\\" in value:
                     raise ValueError(f"{name} must not contain a filesystem path")
+        if self.provider is not None:
+            if not isinstance(self.provider, ProviderIdentity):
+                raise ValueError("attempt provider must be a ProviderIdentity")
+            if not self.capability_id.startswith(f"{self.provider.plugin_id}."):
+                raise ValueError("provider-backed capability must belong to its plugin")
+            if self.capability_version is None:
+                raise ValueError(
+                    "provider-backed attempt requires a capability version"
+                )
+            if (self.backend_id is None) != (self.backend_version is None):
+                raise ValueError(
+                    "provider-backed backend identity must be provided together"
+                )
+            if self.backend_id is not None and not self.backend_id.startswith(
+                f"{self.provider.plugin_id}."
+            ):
+                raise ValueError("provider-backed backend must belong to its plugin")
 
 
 @dataclass(frozen=True, slots=True)
@@ -737,7 +754,7 @@ class ExecutionRecord:
             raise ValueError("detection provenance requires a detection stage")
         if (
             detection_records
-            and detection_records[0].disposition is not StageDisposition.FAILED
+            and detection_records[0].disposition is StageDisposition.COMPLETED
             and self.detection is None
         ):
             raise ValueError("completed detection requires detection provenance")
@@ -788,6 +805,23 @@ class ExecutionRecordV2(ExecutionRecord):
             self.plugin_host, PluginHostExecutionRecord
         ):
             raise ValueError("plugin_host must be a PluginHostExecutionRecord")
+        if not all(
+            isinstance(attempt, CapabilityAttemptV2) for attempt in self.attempts
+        ):
+            raise ValueError("schema-v2 execution requires schema-v2 attempts")
+        provider_attempts = tuple(
+            attempt.provider
+            for attempt in self.attempts
+            if isinstance(attempt, CapabilityAttemptV2) and attempt.provider is not None
+        )
+        if provider_attempts and (
+            self.plugin_host is None
+            or any(
+                provider not in self.plugin_host.loaded_providers
+                for provider in provider_attempts
+            )
+        ):
+            raise ValueError("attempt provider must be a loaded provider")
 
 
 _PROBLEM_CODES: dict[str, tuple[int, Literal["failed", "unavailable"]]] = {
@@ -1339,6 +1373,65 @@ class DiffResult:
         )
 
 
+def _validate_completed_v2_provenance(
+    execution: ExecutionRecordV2, provenance: ComparisonProvenanceV2
+) -> None:
+    loaded = (
+        () if execution.plugin_host is None else execution.plugin_host.loaded_providers
+    )
+    if provenance.provider is not None and provenance.provider not in loaded:
+        raise ValueError("comparison provider must be a loaded provider")
+    detection = execution.detection
+    comparator_attempts = tuple(
+        attempt
+        for attempt in execution.attempts
+        if isinstance(attempt, CapabilityAttemptV2)
+        and attempt.disposition == "selected"
+        and (detection is None or attempt.capability_id != detection.detector_id)
+    )
+    if len(comparator_attempts) != 1:
+        raise ValueError("completed outcome requires one selected comparator attempt")
+    comparator_attempt = comparator_attempts[0]
+    if comparator_attempt.capability_id != provenance.comparator_id:
+        raise ValueError("selected comparator capability must match provenance")
+    if comparator_attempt.provider != provenance.provider:
+        raise ValueError("selected comparator provider must match provenance")
+    if provenance.provider is not None and (
+        comparator_attempt.capability_version is not None
+        and comparator_attempt.capability_version != provenance.comparator_version
+    ):
+        raise ValueError("selected comparator version must match provenance")
+
+    if provenance.detector_provider is not None:
+        if provenance.detector_provider not in loaded:
+            raise ValueError("detector provider must be a loaded provider")
+        if detection is None:
+            raise ValueError("detector provider requires detection provenance")
+        detector_attempts = tuple(
+            attempt
+            for attempt in execution.attempts
+            if isinstance(attempt, CapabilityAttemptV2)
+            and attempt.disposition == "selected"
+            and attempt.capability_id == detection.detector_id
+        )
+        if len(detector_attempts) != 1:
+            raise ValueError("selected detector attempt must match detection")
+        detector_attempt = detector_attempts[0]
+        if (
+            detector_attempt.provider != provenance.detector_provider
+            or detector_attempt.capability_version != detection.detector_version
+        ):
+            raise ValueError("selected detector identity must match detection")
+    elif detection is not None and any(
+        isinstance(attempt, CapabilityAttemptV2)
+        and attempt.disposition == "selected"
+        and attempt.capability_id == detection.detector_id
+        and attempt.provider is not None
+        for attempt in execution.attempts
+    ):
+        raise ValueError("plugin detection requires detector provider provenance")
+
+
 @dataclass(frozen=True, slots=True)
 class CompletedOutcome:
     schema_version: Literal[1] = field(default=SCHEMA_VERSION, init=False)
@@ -1347,6 +1440,10 @@ class CompletedOutcome:
     result: DiffResult = field(kw_only=True)
 
     def __post_init__(self) -> None:
+        if type(self.execution) is not ExecutionRecord:
+            raise ValueError("schema-v1 outcome requires schema-v1 execution")
+        if type(self.result.provenance) is not ComparisonProvenance:
+            raise ValueError("schema-v1 outcome requires schema-v1 provenance")
         if self.execution.last_completed_stage is not PipelineStage.AGGREGATING:
             raise ValueError("completed outcome must finish aggregation")
 
@@ -1359,6 +1456,10 @@ class UnavailableOutcome:
     problem: CapabilityProblem = field(kw_only=True)
 
     def __post_init__(self) -> None:
+        if type(self.execution) is not ExecutionRecord:
+            raise ValueError("schema-v1 outcome requires schema-v1 execution")
+        if type(self.problem) is not CapabilityProblem:
+            raise ValueError("schema-v1 outcome requires a schema-v1 problem")
         if (
             not self.execution.stages
             or self.execution.stages[-1].stage is not self.problem.stage
@@ -1375,6 +1476,10 @@ class FailedOutcome:
     problem: ExecutionProblem = field(kw_only=True)
 
     def __post_init__(self) -> None:
+        if type(self.execution) is not ExecutionRecord:
+            raise ValueError("schema-v1 outcome requires schema-v1 execution")
+        if type(self.problem) is not ExecutionProblem:
+            raise ValueError("schema-v1 outcome requires a schema-v1 problem")
         if (
             not self.execution.stages
             or self.execution.stages[-1].stage is not self.problem.stage
@@ -1394,10 +1499,13 @@ class CompletedOutcomeV2:
     result: DiffResult = field(kw_only=True)
 
     def __post_init__(self) -> None:
+        if type(self.execution) is not ExecutionRecordV2:
+            raise ValueError("schema-v2 outcome requires schema-v2 execution")
         if self.execution.last_completed_stage is not PipelineStage.AGGREGATING:
             raise ValueError("completed outcome must finish aggregation")
         if not isinstance(self.result.provenance, ComparisonProvenanceV2):
             raise ValueError("schema-v2 results require schema-v2 provenance")
+        _validate_completed_v2_provenance(self.execution, self.result.provenance)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1408,6 +1516,10 @@ class UnavailableOutcomeV2:
     problem: CapabilityProblemV2 = field(kw_only=True)
 
     def __post_init__(self) -> None:
+        if type(self.execution) is not ExecutionRecordV2:
+            raise ValueError("schema-v2 outcome requires schema-v2 execution")
+        if type(self.problem) is not CapabilityProblemV2:
+            raise ValueError("schema-v2 outcome requires a schema-v2 problem")
         if (
             not self.execution.stages
             or self.execution.stages[-1].stage is not self.problem.stage
@@ -1424,6 +1536,10 @@ class FailedOutcomeV2:
     problem: ExecutionProblemV2 = field(kw_only=True)
 
     def __post_init__(self) -> None:
+        if type(self.execution) is not ExecutionRecordV2:
+            raise ValueError("schema-v2 outcome requires schema-v2 execution")
+        if type(self.problem) is not ExecutionProblemV2:
+            raise ValueError("schema-v2 outcome requires a schema-v2 problem")
         if (
             not self.execution.stages
             or self.execution.stages[-1].stage is not self.problem.stage

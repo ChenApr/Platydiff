@@ -26,6 +26,14 @@ All notable changes to Platydiff are documented in this file.
   shortest edit script that emits an insertion first still produces valid hunks.
 - Equivalent `compare --type text` and `text` CLI routes with terminal and JSON
   output.
+
+### Fixed
+
+- Hardened P3-B plugin execution around unavailable detectors, executable-shape
+  validation, single-use run tracking, final path-snapshot mutation checks, and
+  auditable failed detector attempts.
+- Rejected schema-v1/v2 nested-value mixing and contradictory schema-v2
+  provider, capability-attempt, detector, and comparator provenance.
 - Non-overlapping deterministic hunk context and explicit change-truncation
   limit reasons. `changes.limit_reason` is an additive optional schema-v1 field:
   older readers ignore it and current readers accept candidate payloads where it

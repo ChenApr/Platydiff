@@ -15,7 +15,7 @@ from platydiff import (
     PluginHost,
     UnavailableOutcomeV2,
 )
-from platydiff.core.models import JsonObject
+from platydiff.core.models import ComparisonProvenanceV2, JsonObject
 from platydiff.plugin_sdk import (
     CapabilityAvailabilityV1,
     CapabilityKind,
@@ -157,6 +157,7 @@ def test_pinned_unavailable_detector_is_structured_and_never_invoked() -> None:
     assert outcome.problem.stage.value == "detecting"
     assert outcome.execution.stages[-1].stage.value == "detecting"
     assert outcome.execution.stages[-1].disposition.value == "unavailable"
+    assert outcome.execution.last_completed_stage is not None
     assert outcome.execution.last_completed_stage.value == "sourcing"
     assert len(outcome.execution.attempts) == 1
     attempt = outcome.execution.attempts[0]
@@ -206,8 +207,10 @@ def test_auto_compare_accepts_an_exact_builtin_comparator_pin() -> None:
         comparator_id="text",
     )
     assert isinstance(outcome, CompletedOutcomeV2)
-    assert outcome.result.provenance.comparator_id == "text"
-    assert outcome.result.provenance.provider is None
+    provenance = outcome.result.provenance
+    assert isinstance(provenance, ComparisonProvenanceV2)
+    assert provenance.comparator_id == "text"
+    assert provenance.provider is None
     assert outcome.execution.detection is not None
     assert outcome.execution.detection.selected_modality == "text"
     assert {

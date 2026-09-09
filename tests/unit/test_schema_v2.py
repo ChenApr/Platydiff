@@ -47,6 +47,7 @@ from platydiff.plugin_sdk import (
     SourceServiceV1,
 )
 from platydiff.plugins import PluginCatalogV1
+from tests.unit.test_contracts import STAMP, completed_outcome, stage
 from tests.unit.test_plugin_host_execution import (
     _capability,
     _ComparatorHandle,
@@ -54,7 +55,6 @@ from tests.unit.test_plugin_host_execution import (
     _facts,
     _Run,
 )
-from tests.unit.test_contracts import STAMP, completed_outcome, stage
 
 
 def test_default_compare_remains_schema_v1_while_host_always_returns_v2() -> None:
@@ -110,7 +110,9 @@ def test_schema_v2_round_trip_is_canonical_and_v1_upgrader_preserves_result() ->
         assert upgraded.result.verdict is original.result.verdict
 
 
-def _v1_terminal_outcomes() -> tuple[CompletedOutcome, UnavailableOutcome, FailedOutcome]:
+def _v1_terminal_outcomes() -> tuple[
+    CompletedOutcome, UnavailableOutcome, FailedOutcome
+]:
     unavailable_execution = ExecutionRecord(
         STAMP,
         STAMP,
@@ -159,6 +161,7 @@ def test_schema_v1_models_reject_schema_v2_nested_values() -> None:
     completed, unavailable, failed = _v1_terminal_outcomes()
     upgraded_completed = upgrade_outcome_v1_to_v2(completed)
     upgraded_unavailable = upgrade_outcome_v1_to_v2(unavailable)
+    assert isinstance(upgraded_completed, CompletedOutcomeV2)
     with pytest.raises(ValueError, match="schema-v1"):
         replace(completed, result=upgraded_completed.result)
     with pytest.raises(ValueError, match="schema-v1"):
@@ -166,21 +169,27 @@ def test_schema_v1_models_reject_schema_v2_nested_values() -> None:
     with pytest.raises(ValueError, match="schema-v1"):
         replace(
             unavailable,
-            problem=CapabilityProblemV2(
-                "capability_unavailable",
-                501,
-                PipelineStage.RESOLVING,
-                "No comparator is available.",
+            problem=cast(
+                CapabilityProblem,
+                CapabilityProblemV2(
+                    "capability_unavailable",
+                    501,
+                    PipelineStage.RESOLVING,
+                    "No comparator is available.",
+                ),
             ),
         )
     with pytest.raises(ValueError, match="schema-v1"):
         replace(
             failed,
-            problem=ExecutionProblemV2(
-                "plugin_execution_failure",
-                502,
-                PipelineStage.SOURCING,
-                "A plugin failed.",
+            problem=cast(
+                ExecutionProblem,
+                ExecutionProblemV2(
+                    "plugin_execution_failure",
+                    502,
+                    PipelineStage.SOURCING,
+                    "A plugin failed.",
+                ),
             ),
         )
 
@@ -225,15 +234,38 @@ def test_schema_v2_rejects_selected_attempt_that_disagrees_with_result() -> None
         outcome_from_data(data)
 
 
+def test_schema_v2_rejects_builtin_result_that_disagrees_with_attempt() -> None:
+    host = PluginHost(PluginCatalogV1((), (), (), (), ()))
+    outcome = host.compare(TextSource("same"), TextSource("same"), TextCompareSpec())
+    assert isinstance(outcome, CompletedOutcomeV2)
+    data = deepcopy(outcome_to_data(outcome))
+    result = cast(JsonObject, data["result"])
+    provenance = cast(JsonObject, result["provenance"])
+    provenance["comparator_id"] = "binary"
+    with pytest.raises(SerializationError, match="comparator"):
+        outcome_from_data(data)
+
+
 def test_schema_v2_rejects_attempt_provider_not_loaded_by_host() -> None:
     data = deepcopy(_plugin_completed_data())
     execution = cast(JsonObject, data["execution"])
     attempts = cast(list[object], execution["attempts"])
     selected = cast(JsonObject, attempts[-1])
     selected["capability_id"] = "org.other.plugin.comparator"
+    selected["backend_id"] = "org.other.plugin.backend"
     provider = cast(JsonObject, selected["provider"])
     provider["plugin_id"] = "org.other.plugin"
     with pytest.raises(SerializationError, match="loaded provider"):
+        outcome_from_data(data)
+
+
+def test_schema_v2_rejects_backend_outside_provider_namespace() -> None:
+    data = deepcopy(_plugin_completed_data())
+    execution = cast(JsonObject, data["execution"])
+    attempts = cast(list[object], execution["attempts"])
+    selected = cast(JsonObject, attempts[-1])
+    selected["backend_id"] = "org.other.backend"
+    with pytest.raises(SerializationError, match="backend"):
         outcome_from_data(data)
 
 

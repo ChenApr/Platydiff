@@ -606,6 +606,8 @@ def _handles_are_valid(manifest: PluginManifestV1) -> bool:
     try:
         for handle in manifest.capability_handles:
             declaration = declarations[handle.capability_id]
+            if not callable(getattr(cast(object, handle), "availability", None)):
+                return False
             if declaration.kind is CapabilityKind.DETECTOR:
                 if not callable(handle.detect):  # type: ignore[union-attr]
                     return False

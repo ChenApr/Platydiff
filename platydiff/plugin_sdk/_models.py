@@ -233,7 +233,7 @@ class SourceServiceV1(Protocol):
 
 
 class ComparatorRunV1(Protocol):
-    """One single-use comparator lifecycle owned and ordered by the host."""
+    """One weak-referenceable single-use lifecycle owned and ordered by the host."""
 
     def decode(self) -> None: ...
 

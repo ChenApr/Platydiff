@@ -217,11 +217,7 @@ def test_execution_handle_without_availability_is_quarantined(
             ("host.execution.v1",),
             (declaration,),
             "Apache-2.0",
-            (
-                cast(
-                    CapabilityHandleV1, _MissingAvailabilityComparatorHandle()
-                ),
-            ),
+            (cast(CapabilityHandleV1, _MissingAvailabilityComparatorHandle()),),
         ),
     )
     _install(monkeypatch, (entry,))

@@ -105,19 +105,34 @@ SDK API `1.1` adds optional typed detector and comparator handles associated by
 capability ID with the unchanged declaration objects. `PluginHost.discover()`
 freezes one allowlisted catalog snapshot. `PluginHost.compare()` uses built-ins
 unless a third-party capability ID is explicitly pinned with `detector_id=` or
-`comparator_id=`; enablement alone never changes selection.
+`comparator_id=`; enablement alone never changes selection. Automatic comparison
+also accepts an exact `text` or `binary` built-in comparator pin and restricts
+detection to that modality instead of falling back to another comparator.
 
 The host supplies bounded source services, owns every lifecycle transition, and
 invokes a fresh comparator run exactly once in `decode`, `normalize`, `align`,
 `compare`, `aggregate` order. Plugins return `PluginComparisonV1` facts rather
 than outcomes. Known plugin failures are mapped at the observed stage; process
 control and programming exceptions continue to propagate from the Python API.
+Executable handle and run shapes are validated before invocation. The host
+tracks live run identity without retaining completed runs, records selection
+before detector execution, and rechecks mutable path snapshots after validated
+aggregation before constructing a completed outcome.
+
+Comparator run objects must support Python weak references. This SDK-v1.1 run
+requirement lets a long-lived host reject reuse of the same live run without
+retaining every completed run. A structurally valid run that cannot be weakly
+referenced is rejected safely during resolution before any lifecycle method is
+called.
 
 Every host comparison returns schema v2, including built-in selections. Schema
 v2 records the enabled/loaded provider snapshot, versioned attempts, and selected
 provider provenance. The existing three-argument `compare()` and CLI remain
 schema v1. Readers accept both versions, and `upgrade_outcome_v1_to_v2()` adds an
-empty host context without changing v1 result meaning.
+empty host context without changing v1 result meaning. Schema-v1 models and
+encoders reject schema-v2 nested values. Schema-v2 construction and reading
+cross-check provider-backed attempts against the loaded host snapshot and the
+selected comparator/detector provenance.
 
 There is still no public mutable registration method, process-global third-party
 catalog, renderer hook, plugin CLI option, or published compatibility receipt.

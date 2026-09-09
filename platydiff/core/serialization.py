@@ -708,47 +708,52 @@ def _execution_from_data(
         capability_id = _string(_required(item, "capability_id"), "capability_id")
         backend_id = _optional_string(_required(item, "backend_id"), "backend_id")
         reason_code = _optional_string(_required(item, "reason_code"), "reason_code")
-        if schema_version == 2:
-            raw_provider = _required(item, "provider")
-            attempts.append(
-                CapabilityAttemptV2(
-                    capability_id=capability_id,
-                    backend_id=backend_id,
-                    disposition=cast(
-                        Literal[
-                            "selected",
-                            "rejected",
-                            "fallback",
-                            "unavailable",
-                            "failed",
-                        ],
-                        disposition,
-                    ),
-                    reason_code=reason_code,
-                    capability_version=_optional_string(
-                        _required(item, "capability_version"), "capability_version"
-                    ),
-                    backend_version=_optional_string(
-                        _required(item, "backend_version"), "backend_version"
-                    ),
-                    provider=(
-                        None
-                        if raw_provider is None
-                        else _provider_from_data(raw_provider)
-                    ),
+        try:
+            if schema_version == 2:
+                raw_provider = _required(item, "provider")
+                attempts.append(
+                    CapabilityAttemptV2(
+                        capability_id=capability_id,
+                        backend_id=backend_id,
+                        disposition=cast(
+                            Literal[
+                                "selected",
+                                "rejected",
+                                "fallback",
+                                "unavailable",
+                                "failed",
+                            ],
+                            disposition,
+                        ),
+                        reason_code=reason_code,
+                        capability_version=_optional_string(
+                            _required(item, "capability_version"),
+                            "capability_version",
+                        ),
+                        backend_version=_optional_string(
+                            _required(item, "backend_version"), "backend_version"
+                        ),
+                        provider=(
+                            None
+                            if raw_provider is None
+                            else _provider_from_data(raw_provider)
+                        ),
+                    )
                 )
-            )
-        else:
-            attempts.append(
-                CapabilityAttempt(
-                    capability_id=capability_id,
-                    backend_id=backend_id,
-                    disposition=cast(
-                        Literal["selected", "rejected", "fallback"], disposition
-                    ),
-                    reason_code=reason_code,
+            else:
+                attempts.append(
+                    CapabilityAttempt(
+                        capability_id=capability_id,
+                        backend_id=backend_id,
+                        disposition=cast(
+                            Literal["selected", "rejected", "fallback"],
+                            disposition,
+                        ),
+                        reason_code=reason_code,
+                    )
                 )
-            )
+        except ValueError as error:
+            raise SerializationError(str(error)) from error
     diagnostics: list[Diagnostic] = []
     for value_item in _array(_required(data, "diagnostics"), "diagnostics"):
         item = _object(value_item, "diagnostic")
@@ -1322,6 +1327,7 @@ def _result_from_data(
 
 def outcome_to_data(outcome: AnyCompareOutcome) -> JsonObject:
     """Convert an outcome to stable JSON-safe schema-v1 or schema-v2 data."""
+    _validate_outcome_schema_for_encoding(outcome)
     common: JsonObject = {
         "schema_version": outcome.schema_version,
         "kind": outcome.kind,
@@ -1332,6 +1338,47 @@ def outcome_to_data(outcome: AnyCompareOutcome) -> JsonObject:
     else:
         common["problem"] = _problem_to_data(outcome.problem)
     return common
+
+
+def _validate_outcome_schema_for_encoding(outcome: AnyCompareOutcome) -> None:
+    if type(outcome) is CompletedOutcome:
+        if (
+            type(outcome.execution) is not ExecutionRecord
+            or type(outcome.result.provenance) is not ComparisonProvenance
+        ):
+            raise SerializationError("schema-v1 outcome contains schema-v2 values")
+    elif type(outcome) is UnavailableOutcome:
+        if (
+            type(outcome.execution) is not ExecutionRecord
+            or type(outcome.problem) is not CapabilityProblem
+        ):
+            raise SerializationError("schema-v1 outcome contains schema-v2 values")
+    elif type(outcome) is FailedOutcome:
+        if (
+            type(outcome.execution) is not ExecutionRecord
+            or type(outcome.problem) is not ExecutionProblem
+        ):
+            raise SerializationError("schema-v1 outcome contains schema-v2 values")
+    elif type(outcome) is CompletedOutcomeV2:
+        if (
+            type(outcome.execution) is not ExecutionRecordV2
+            or type(outcome.result.provenance) is not ComparisonProvenanceV2
+        ):
+            raise SerializationError("schema-v2 outcome contains schema-v1 values")
+    elif type(outcome) is UnavailableOutcomeV2:
+        if (
+            type(outcome.execution) is not ExecutionRecordV2
+            or type(outcome.problem) is not CapabilityProblemV2
+        ):
+            raise SerializationError("schema-v2 outcome contains schema-v1 values")
+    elif type(outcome) is FailedOutcomeV2:
+        if (
+            type(outcome.execution) is not ExecutionRecordV2
+            or type(outcome.problem) is not ExecutionProblemV2
+        ):
+            raise SerializationError("schema-v2 outcome contains schema-v1 values")
+    else:
+        raise SerializationError("unknown outcome type")
 
 
 def outcome_from_data(value: JsonValue) -> AnyCompareOutcome:
@@ -1423,7 +1470,7 @@ def loads_outcome(payload: str) -> AnyCompareOutcome:
 
 def upgrade_outcome_v1_to_v2(outcome: CompareOutcome) -> CompareOutcomeV2:
     """Preserve schema-v1 meaning while adding an empty schema-v2 host context."""
-    attempts = tuple(
+    attempts: tuple[CapabilityAttemptV2, ...] = tuple(
         CapabilityAttemptV2(
             attempt.capability_id,
             attempt.backend_id,
@@ -1432,19 +1479,57 @@ def upgrade_outcome_v1_to_v2(outcome: CompareOutcome) -> CompareOutcomeV2:
         )
         for attempt in outcome.execution.attempts
     )
-    execution = ExecutionRecordV2(
-        started_at=outcome.execution.started_at,
-        finished_at=outcome.execution.finished_at,
-        duration_ns=outcome.execution.duration_ns,
-        stages=outcome.execution.stages,
-        attempts=attempts,
-        diagnostics=outcome.execution.diagnostics,
-        last_completed_stage=outcome.execution.last_completed_stage,
-        detection=outcome.execution.detection,
-        plugin_host=PluginHostExecutionRecord((), ()),
-    )
+
+    def execution_with(
+        upgraded_attempts: tuple[CapabilityAttemptV2, ...],
+    ) -> ExecutionRecordV2:
+        return ExecutionRecordV2(
+            started_at=outcome.execution.started_at,
+            finished_at=outcome.execution.finished_at,
+            duration_ns=outcome.execution.duration_ns,
+            stages=outcome.execution.stages,
+            attempts=upgraded_attempts,
+            diagnostics=outcome.execution.diagnostics,
+            last_completed_stage=outcome.execution.last_completed_stage,
+            detection=outcome.execution.detection,
+            plugin_host=PluginHostExecutionRecord((), ()),
+        )
+
     if isinstance(outcome, CompletedOutcome):
         provenance = outcome.result.provenance
+        matching = tuple(
+            index
+            for index, attempt in enumerate(attempts)
+            if attempt.disposition == "selected"
+            and attempt.capability_id == provenance.comparator_id
+        )
+        if not matching:
+            attempts = (
+                *attempts,
+                CapabilityAttemptV2(
+                    provenance.comparator_id,
+                    None,
+                    "selected",
+                    capability_version=provenance.comparator_version,
+                ),
+            )
+        elif len(matching) == 1:
+            index = matching[0]
+            existing = attempts[index]
+            attempts = (
+                *attempts[:index],
+                CapabilityAttemptV2(
+                    existing.capability_id,
+                    existing.backend_id,
+                    existing.disposition,
+                    existing.reason_code,
+                    existing.capability_version or provenance.comparator_version,
+                    existing.backend_version,
+                    existing.provider,
+                ),
+                *attempts[index + 1 :],
+            )
+        execution = execution_with(attempts)
         result = DiffResult(
             relation=outcome.result.relation,
             verdict=outcome.result.verdict,
@@ -1467,6 +1552,7 @@ def upgrade_outcome_v1_to_v2(outcome: CompareOutcome) -> CompareOutcomeV2:
             ),
         )
         return CompletedOutcomeV2(execution=execution, result=result)
+    execution = execution_with(attempts)
     if isinstance(outcome, UnavailableOutcome):
         problem = outcome.problem
         return UnavailableOutcomeV2(

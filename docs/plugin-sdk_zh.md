@@ -95,18 +95,29 @@ sandbox，import 或 factory side effect 可使用当前进程的全部权限。
 SDK API `1.1` 增加可选的 typed detector/comparator handle，并用 capability ID 将其与
 保持不变的 declaration object 关联。`PluginHost.discover()` 冻结一份 allowlist catalog
 snapshot。`PluginHost.compare()` 默认使用内建能力；第三方能力必须通过 `detector_id=`
-或 `comparator_id=` 显式 pin，单纯 enable 不会改变 selection。
+或 `comparator_id=` 显式 pin，单纯 enable 不会改变 selection。自动比较也接受精确的
+内建 `text` 或 `binary` comparator pin，并将 detection 限定为该 modality，而不会
+fallback 到其他 comparator。
 
 host 提供有界 source service，拥有全部 lifecycle transition，并对每次 comparison 创建
 fresh comparator run，严格按 `decode`、`normalize`、`align`、`compare`、`aggregate`
 顺序各调用一次。插件返回 `PluginComparisonV1` facts 而不是 outcome。已知插件失败在
 观测到的 stage 映射；process-control exception 与 programming exception 继续从 Python
-API 传播。
+API 传播。executable handle 与 run shape 会在 invocation 前验证。host 不会永久保留已
+结束的 run，但仍跟踪 live run identity；detector execution 前先记录 selection；在构造
+completed outcome 前，还会在 validated aggregation 后重新检查 mutable path snapshot。
+
+Comparator run object 必须支持 Python weak reference。这个 SDK-v1.1 run 要求使长生命周期
+host 能拒绝复用同一个 live run，同时不永久保留所有 completed run。结构完整但无法 weakly
+reference 的 run 会在任何 lifecycle method 调用前，于 resolving stage 安全拒绝。
 
 每次 host comparison 都返回 schema v2，包括最终选择内建能力的情况。schema v2 记录
 enabled/loaded provider snapshot、带版本的 attempt 与 selected-provider provenance。
 现有三参数 `compare()` 和 CLI 仍返回 schema v1。reader 同时接受两个版本；
 `upgrade_outcome_v1_to_v2()` 在不改变 v1 result 含义的前提下添加空 host context。
+Schema-v1 model 与 encoder 拒绝嵌套 schema-v2 value；schema-v2 构造与读取会将
+provider-backed attempt 与 loaded host snapshot、selected comparator/detector provenance
+进行交叉校验。
 
 当前仍没有 public mutable registration method、全局第三方 catalog、renderer hook、插件
 CLI option 或发布的 compatibility receipt。私有 request、snapshot、descriptor 与

@@ -103,7 +103,8 @@ Implemented in Phases 1, 2, and the P3-A/P3-B plugin gates:
 - explicit entry-point discovery, exact allowlists, version/feature negotiation,
   and deterministic conflict quarantine;
 - explicitly pinned SDK-v1.1 detector/comparator handles with host-owned bounded
-  source access and lifecycle stages;
+  source access and lifecycle stages, including exact built-in comparator pins
+  for automatic comparisons;
 - schema-v2 provider, attempt, and plugin-host provenance plus a typed v1-to-v2
   upgrader. `PluginHost.compare()` always returns schema v2.
 

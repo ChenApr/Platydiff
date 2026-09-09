@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import weakref
 from collections.abc import Callable, Iterator
 from contextlib import ExitStack
 from dataclasses import dataclass, field, replace
@@ -108,12 +109,17 @@ class PluginExecutionFailureError(DomainError):
 class PluginCapabilityUnavailableError(UnavailableError):
     """A pinned plugin capability was unavailable before execution."""
 
-    def __init__(self, *, reason_code: str = "capability_unavailable") -> None:
+    def __init__(
+        self,
+        *,
+        reason_code: str = "capability_unavailable",
+        stage: PipelineStage = PipelineStage.RESOLVING,
+    ) -> None:
         super().__init__(
             "The selected plugin capability is unavailable.",
             code="capability_unavailable",
             status_code=501,
-            stage=PipelineStage.RESOLVING,
+            stage=stage,
             details={"reason_code": reason_code},
         )
 
@@ -183,13 +189,16 @@ class _HostedSourceService:
                 "Source bytes are unavailable during this lifecycle stage."
             )
 
+    def ensure_unchanged(self, *, stage: PipelineStage) -> None:
+        self._snapshot.ensure_unchanged(stage=stage)
+
 
 @dataclass(frozen=True, slots=True)
 class PluginHost:
     """One immutable snapshot of an explicitly allowlisted plugin environment."""
 
     catalog: PluginCatalogV1
-    _used_runs: list[object] = field(
+    _used_runs: list[weakref.ReferenceType[object]] = field(
         default_factory=list, init=False, repr=False, compare=False
     )
     _run_lock: threading.Lock = field(
@@ -221,7 +230,11 @@ class PluginHost:
     ) -> CompareOutcomeV2:
         """Compare with this fixed provider snapshot and always return schema v2."""
         if detector_id is None and (
-            comparator_id is None or comparator_id in {"text", "binary"}
+            comparator_id is None
+            or (
+                comparator_id in {"text", "binary"}
+                and not isinstance(spec, AutoCompareSpec)
+            )
         ):
             if comparator_id is not None and comparator_id != spec.kind:
                 raise ValueError(
@@ -295,15 +308,41 @@ class PluginHost:
                         elif detection_capability is None:
                             detection = _missing_detector_record(detector_id, spec)
                         else:
+                            detector_provider = _provider_identity(detection_capability)
+                            availability: CapabilityAvailabilityV1 | None = None
+                            if (
+                                detection_capability.declaration.kind
+                                is CapabilityKind.DETECTOR
+                            ):
+                                availability = self._probe(
+                                    detection_capability,
+                                    stage=PipelineStage.DETECTING,
+                                )
+                                if not availability.available:
+                                    stages.record_attempts(
+                                        (
+                                            CapabilityAttempt(
+                                                detection_capability.declaration.capability_id,
+                                                detection_capability.declaration.backend_id,
+                                                "rejected",
+                                                availability.reason_code,
+                                            ),
+                                        )
+                                    )
+                                    raise PluginCapabilityUnavailableError(
+                                        reason_code=availability.reason_code
+                                        or "capability_unavailable",
+                                        stage=PipelineStage.DETECTING,
+                                    )
+                            stages.record_attempts(
+                                (_selected_attempt(detection_capability),)
+                            )
                             detection = self._detect(
                                 detection_capability,
                                 snapshots,
                                 spec,
                                 comparator_candidates,
-                            )
-                            detector_provider = _provider_identity(detection_capability)
-                            stages.record_attempts(
-                                (_selected_attempt(detection_capability),)
+                                availability,
                             )
                         stages.record_detection(detection)
                         if detection.disposition != "selected" and not detector_missing:
@@ -514,7 +553,12 @@ class PluginHost:
             )
         return _builtin_detection_records(comparator_id)
 
-    def _probe(self, capability: DiscoveredCapabilityV1) -> CapabilityAvailabilityV1:
+    def _probe(
+        self,
+        capability: DiscoveredCapabilityV1,
+        *,
+        stage: PipelineStage = PipelineStage.RESOLVING,
+    ) -> CapabilityAvailabilityV1:
         handle = capability.handle
         if handle is None:
             return CapabilityAvailabilityV1(False, reason_code="executor_missing")
@@ -525,15 +569,15 @@ class PluginHost:
         except PluginUnavailableErrorV1 as error:
             return CapabilityAvailabilityV1(False, reason_code=error.reason_code)
         except PluginExecutionErrorV1 as error:
-            raise PluginExecutionFailureError(stage=PipelineStage.RESOLVING) from error
+            raise PluginExecutionFailureError(stage=stage) from error
         if not isinstance(availability, CapabilityAvailabilityV1):
-            raise PluginExecutionFailureError(stage=PipelineStage.RESOLVING)
+            raise PluginExecutionFailureError(stage=stage)
         declaration = capability.declaration
         if declaration.backend_id is not None and (
             availability.backend_id != declaration.backend_id
             or availability.backend_version != declaration.backend_version
         ):
-            raise PluginExecutionFailureError(stage=PipelineStage.RESOLVING)
+            raise PluginExecutionFailureError(stage=stage)
         return availability
 
     def _execute_comparator(
@@ -582,14 +626,27 @@ class PluginHost:
         after = _HostedSourceService(
             snapshots[1], allowed_stage=source_stage, byte_budget=maximum
         )
-        run = _invoke_plugin(
+        returned_run = _invoke_plugin(
             PipelineStage.RESOLVING,
             lambda: handle.create_run(before, after, spec),
         )
+        run = _validated_comparator_run(returned_run)
         with self._run_lock:
-            if any(previous is run for previous in self._used_runs):
-                raise PluginExecutionFailureError(stage=PipelineStage.RESOLVING)
-            self._used_runs.append(run)
+            live_runs: list[weakref.ReferenceType[object]] = []
+            for previous_reference in self._used_runs:
+                previous = previous_reference()
+                if previous is None:
+                    continue
+                live_runs.append(previous_reference)
+                if previous is run:
+                    raise PluginExecutionFailureError(stage=PipelineStage.RESOLVING)
+            try:
+                live_runs.append(weakref.ref(run))
+            except TypeError as error:
+                raise PluginExecutionFailureError(
+                    stage=PipelineStage.RESOLVING
+                ) from error
+            self._used_runs[:] = live_runs
         return _PreparedComparator(capability, run, before, after)
 
     def _execute_prepared(
@@ -621,7 +678,9 @@ class PluginHost:
         try:
             facts = stages.run(
                 PipelineStage.AGGREGATING,
-                lambda: _aggregate_plugin(run.aggregate, capability),
+                lambda: _aggregate_plugin_and_validate_sources(
+                    run.aggregate, capability, before, after
+                ),
             )
         finally:
             before.activate(None)
@@ -638,13 +697,20 @@ class PluginHost:
         comparator_candidates: tuple[
             tuple[Literal["text", "binary"], int, str, str], ...
         ],
+        availability: CapabilityAvailabilityV1 | None = None,
     ) -> DetectionRecord:
         if capability.declaration.kind is not CapabilityKind.DETECTOR:
             raise PluginCapabilityUnavailableError(
-                reason_code="capability_kind_mismatch"
+                reason_code="capability_kind_mismatch",
+                stage=PipelineStage.DETECTING,
             )
-        if not self._probe(capability).available:
-            raise PluginCapabilityUnavailableError(reason_code="backend_missing")
+        if availability is None:
+            availability = self._probe(capability, stage=PipelineStage.DETECTING)
+        if not availability.available:
+            raise PluginCapabilityUnavailableError(
+                reason_code=availability.reason_code or "capability_unavailable",
+                stage=PipelineStage.DETECTING,
+            )
         handle = cast(DetectorHandleV1, capability.handle)
         maximum = min(spec.limits.max_detection_bytes, spec.limits.max_input_bytes)
         roles: tuple[Literal["before", "after"], Literal["before", "after"]] = (
@@ -722,6 +788,34 @@ def _invoke_plugin[T](stage: PipelineStage, operation: Callable[[], T]) -> T:
         ) from error
     except (PluginExecutionErrorV1, PluginUnavailableErrorV1) as error:
         raise PluginExecutionFailureError(stage=stage) from error
+
+
+def _validated_comparator_run(value: object) -> ComparatorRunV1:
+    try:
+        methods = (
+            value.decode,  # type: ignore[attr-defined]
+            value.normalize,  # type: ignore[attr-defined]
+            value.align,  # type: ignore[attr-defined]
+            value.compare,  # type: ignore[attr-defined]
+            value.aggregate,  # type: ignore[attr-defined]
+        )
+    except AttributeError as error:
+        raise PluginExecutionFailureError(stage=PipelineStage.RESOLVING) from error
+    if not all(callable(method) for method in methods):
+        raise PluginExecutionFailureError(stage=PipelineStage.RESOLVING)
+    return cast(ComparatorRunV1, value)
+
+
+def _aggregate_plugin_and_validate_sources(
+    operation: Callable[[], object],
+    capability: DiscoveredCapabilityV1,
+    before: _HostedSourceService,
+    after: _HostedSourceService,
+) -> PluginComparisonV1:
+    facts = _aggregate_plugin(operation, capability)
+    before.ensure_unchanged(stage=PipelineStage.AGGREGATING)
+    after.ensure_unchanged(stage=PipelineStage.AGGREGATING)
+    return facts
 
 
 def _aggregate_plugin(
