@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import gc
+import weakref
 from dataclasses import FrozenInstanceError, dataclass, replace
+from pathlib import Path
 
 import pytest
 
 from platydiff import (
     CompletedOutcomeV2,
     FailedOutcomeV2,
+    PathSource,
     ResourceLimits,
     TextCompareSpec,
     TextSource,
@@ -148,6 +152,57 @@ def test_reused_run_is_rejected_before_a_second_execution() -> None:
     assert handle.events.count("decode") == 1
 
 
+def test_completed_runs_are_not_retained_by_a_long_lived_host() -> None:
+    class TrackingHandle(_ComparatorHandle):
+        run_references: list[weakref.ReferenceType[_Run]]
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.run_references = []
+
+        def create_run(
+            self,
+            before: SourceServiceV1,
+            after: SourceServiceV1,
+            spec: TextCompareSpec,
+        ) -> _Run:
+            del spec
+            run = _Run(before, after, _facts(), self.events)
+            self.run_references.append(weakref.ref(run))
+            return run
+
+    handle = TrackingHandle()
+    host, _ = _capability(handle, CapabilityKind.COMPARATOR, backend=True)
+    for _ in range(200):
+        outcome = host.compare(
+            TextSource("same"),
+            TextSource("same"),
+            TextCompareSpec(),
+            comparator_id=handle.capability_id,
+        )
+        assert isinstance(outcome, CompletedOutcomeV2)
+    del outcome
+    gc.collect()
+    assert all(reference() is None for reference in handle.run_references)
+
+
+def test_invalid_run_shape_is_a_safe_resolving_failure() -> None:
+    class InvalidRunHandle(_ComparatorHandle):
+        def create_run(
+            self,
+            before: SourceServiceV1,
+            after: SourceServiceV1,
+            spec: TextCompareSpec,
+        ) -> _Run:
+            del before, after, spec
+            return None  # type: ignore[return-value]
+
+    outcome = _compare(InvalidRunHandle())
+    assert isinstance(outcome, FailedOutcomeV2)
+    assert outcome.problem.code == "plugin_execution_failure"
+    assert outcome.problem.stage.value == "resolving"
+
+
 def test_foreign_extension_namespace_is_rejected() -> None:
     facts = _facts()
     invalid_change = ExtensionChange("org.other.change", "org.other", 1, {"safe": True})
@@ -186,6 +241,33 @@ def test_unsafe_diagnostic_detail_is_rejected_without_disclosure() -> None:
     outcome = _compare(_ConfiguredHandle(aggregate_facts=facts))
     assert isinstance(outcome, FailedOutcomeV2)
     assert "secret" not in outcome.problem.message
+
+
+def test_path_mutation_after_source_read_fails_at_aggregation(
+    tmp_path: Path,
+) -> None:
+    before_path = tmp_path / "before.txt"
+    after_path = tmp_path / "after.txt"
+    before_path.write_bytes(b"same")
+    after_path.write_bytes(b"same")
+
+    class MutatingRun(_Run):
+        def normalize(self) -> None:
+            super().normalize()
+            before_path.write_bytes(b"changed")
+
+    handle = _ConfiguredHandle(run_type=MutatingRun)
+    host, _ = _capability(handle, CapabilityKind.COMPARATOR, backend=True)
+    outcome = host.compare(
+        PathSource(before_path),
+        PathSource(after_path),
+        TextCompareSpec(),
+        comparator_id=handle.capability_id,
+    )
+    assert isinstance(outcome, FailedOutcomeV2)
+    assert outcome.problem.code == "source_changed"
+    assert outcome.problem.stage.value == "aggregating"
+    assert before_path.read_bytes() == b"changed"
 
 
 def test_pinned_unavailable_comparator_never_falls_back() -> None:

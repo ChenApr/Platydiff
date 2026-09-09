@@ -63,6 +63,16 @@ class _IncompleteComparatorHandle:
         return CapabilityAvailabilityV1(True)
 
 
+class _MissingAvailabilityComparatorHandle:
+    capability_id = "org.example.executable.text_exact"
+    modality = "text"
+    source_stage = "decoding"
+
+    def create_run(self, before: object, after: object, spec: object) -> object:
+        del before, after, spec
+        return object()
+
+
 def test_import_and_builtin_compare_do_not_enumerate_entry_points() -> None:
     script = """
 from importlib import metadata
@@ -181,6 +191,37 @@ def test_execution_handle_shape_is_validated_before_cataloging(
             (declaration,),
             "Apache-2.0",
             (cast(CapabilityHandleV1, _IncompleteComparatorHandle()),),
+        ),
+    )
+    _install(monkeypatch, (entry,))
+    catalog = discover_plugins(PluginDiscoveryPolicy(("org.example.executable",)))
+    assert catalog.plugins == ()
+    assert catalog.issues[0].reason_code == "plugin_manifest_invalid"
+
+
+def test_execution_handle_without_availability_is_quarantined(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    declaration = CapabilityDeclarationV1(
+        "org.example.executable.text_exact", CapabilityKind.COMPARATOR, "1"
+    )
+    entry = FakeEntryPoint(
+        "org.example.executable",
+        lambda: PluginManifestV1(
+            1,
+            "org.example.executable",
+            "1",
+            1,
+            1,
+            1,
+            ("host.execution.v1",),
+            (declaration,),
+            "Apache-2.0",
+            (
+                cast(
+                    CapabilityHandleV1, _MissingAvailabilityComparatorHandle()
+                ),
+            ),
         ),
     )
     _install(monkeypatch, (entry,))

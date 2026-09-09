@@ -21,6 +21,7 @@ from platydiff.plugin_sdk import (
     CapabilityKind,
     DetectorCandidateV1,
     DetectorInputV1,
+    PluginExecutionErrorV1,
 )
 from platydiff.plugins import PluginCatalogV1
 from tests.unit.test_plugin_host_execution import _capability
@@ -104,6 +105,66 @@ def test_invalid_detector_output_is_a_safe_detecting_stage_failure() -> None:
     assert isinstance(outcome, FailedOutcomeV2)
     assert outcome.problem.code == "plugin_execution_failure"
     assert outcome.problem.stage.value == "detecting"
+    assert len(outcome.execution.attempts) == 1
+    attempt = outcome.execution.attempts[0]
+    assert attempt.disposition == "failed"
+    assert attempt.reason_code == "plugin_execution_failure"
+    assert attempt.provider is not None
+
+
+def test_known_detector_failure_records_the_started_provider_attempt() -> None:
+    class FailingDetector(_Detector):
+        def detect(self, source: DetectorInputV1) -> tuple[DetectorCandidateV1, ...]:
+            del source
+            raise PluginExecutionErrorV1("private detector detail")
+
+    detector = FailingDetector()
+    host, _ = _capability(detector, CapabilityKind.DETECTOR)
+    outcome = host.compare(
+        BytesSource(b"ascii"),
+        BytesSource(b"ascii"),
+        _spec(),
+        detector_id=detector.capability_id,
+    )
+    assert isinstance(outcome, FailedOutcomeV2)
+    assert outcome.problem.code == "plugin_execution_failure"
+    assert outcome.problem.stage.value == "detecting"
+    assert len(outcome.execution.attempts) == 1
+    attempt = outcome.execution.attempts[0]
+    assert attempt.capability_id == detector.capability_id
+    assert attempt.disposition == "failed"
+    assert attempt.reason_code == "plugin_execution_failure"
+    assert attempt.capability_version == "1"
+    assert attempt.provider is not None
+
+
+def test_pinned_unavailable_detector_is_structured_and_never_invoked() -> None:
+    class UnavailableDetector(_Detector):
+        def availability(self) -> CapabilityAvailabilityV1:
+            return CapabilityAvailabilityV1(False, reason_code="backend_missing")
+
+    detector = UnavailableDetector()
+    host, _ = _capability(detector, CapabilityKind.DETECTOR)
+    outcome = host.compare(
+        BytesSource(b"ascii"),
+        BytesSource(b"ascii"),
+        _spec(),
+        detector_id=detector.capability_id,
+    )
+    assert isinstance(outcome, UnavailableOutcomeV2)
+    assert detector.calls == []
+    assert outcome.problem.code == "capability_unavailable"
+    assert outcome.problem.stage.value == "detecting"
+    assert outcome.execution.stages[-1].stage.value == "detecting"
+    assert outcome.execution.stages[-1].disposition.value == "unavailable"
+    assert outcome.execution.last_completed_stage.value == "sourcing"
+    assert len(outcome.execution.attempts) == 1
+    attempt = outcome.execution.attempts[0]
+    assert attempt.capability_id == detector.capability_id
+    assert attempt.disposition == "unavailable"
+    assert attempt.reason_code == "backend_missing"
+    assert attempt.capability_version == "1"
+    assert attempt.provider is not None
 
 
 def test_missing_pinned_detector_does_not_fall_back_to_builtin() -> None:
@@ -134,6 +195,25 @@ def test_detector_normalized_results_are_repeatable() -> None:
     ]
     records = [outcome.execution.detection for outcome in outcomes]
     assert records[0] == records[1] == records[2]
+
+
+def test_auto_compare_accepts_an_exact_builtin_comparator_pin() -> None:
+    host = PluginHost(PluginCatalogV1((), (), (), (), ()))
+    outcome = host.compare(
+        BytesSource(b"ascii"),
+        BytesSource(b"ascii"),
+        _spec(),
+        comparator_id="text",
+    )
+    assert isinstance(outcome, CompletedOutcomeV2)
+    assert outcome.result.provenance.comparator_id == "text"
+    assert outcome.result.provenance.provider is None
+    assert outcome.execution.detection is not None
+    assert outcome.execution.detection.selected_modality == "text"
+    assert {
+        candidate.modality_id
+        for candidate in outcome.execution.detection.pair_candidates
+    } == {"text"}
 
 
 @pytest.mark.parametrize("failure", [KeyboardInterrupt, SystemExit, MemoryError])
