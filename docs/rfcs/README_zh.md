@@ -24,5 +24,6 @@
 | [0006](0006-structured-data-comparison_zh.md) | Accepted | 在 schema v3 与独立授权交付门禁后定义显式 JSON/YAML、表格及稠密数组语义 |
 | [0007](0007-image-comparison_zh.md) | Proposed | 定义 schema v4 的显式静态 PNG decoded-sample 切片，并延后 perceptual、artifact、plugin 与 detection 工作 |
 | [0008](0008-source-code-and-pdf-comparison_zh.md) | Proposed | 在独立授权的 Phase 6 门禁后定义显式 source-code 与 PDF 比较契约 |
+| [0009](0009-audio-and-video-comparison_zh.md) | Proposed | 在独立授权的 Phase 7 门禁后定义显式 audio 与 video 比较契约 |
 
 计划中的行为在实现并完成验证前，必须继续明确标记为计划能力。
