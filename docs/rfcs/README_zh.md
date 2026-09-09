@@ -22,5 +22,6 @@
 | [0004](0004-human-review-ui-and-renderer-boundary_zh.md) | Proposed | 保持人类评审界面位于 validated outcome 下游，并分阶段规划 terminal、HTML、TUI 和 desktop 工作 |
 | [0005](0005-third-party-plugin-discovery-sdk-and-compatibility_zh.md) | Implemented | 定义显式第三方 discovery、版本化 SDK、确定性 capability execution 与兼容性证据 |
 | [0006](0006-structured-data-comparison_zh.md) | Accepted | 在 schema v3 与独立授权交付门禁后定义显式 JSON/YAML、表格及稠密数组语义 |
+| [0007](0007-image-comparison_zh.md) | Proposed | 定义 schema v4 的显式静态 PNG decoded-sample 切片，并延后 perceptual、artifact、plugin 与 detection 工作 |
 
 计划中的行为在实现并完成验证前，必须继续明确标记为计划能力。
