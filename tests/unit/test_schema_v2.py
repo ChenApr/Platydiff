@@ -94,6 +94,95 @@ def test_plugin_host_records_provider_versions_on_attempt_and_provenance() -> No
     assert selected.provider == provider
 
 
+def test_builtin_selected_attempt_version_must_match_provenance() -> None:
+    host = PluginHost(PluginCatalogV1((), (), (), (), ()))
+    outcome = host.compare(TextSource("same"), TextSource("same"), TextCompareSpec())
+    assert isinstance(outcome, CompletedOutcomeV2)
+    attempts = tuple(
+        replace(attempt, capability_version="tampered")
+        if isinstance(attempt, CapabilityAttemptV2)
+        and attempt.disposition == "selected"
+        else attempt
+        for attempt in outcome.execution.attempts
+    )
+
+    with pytest.raises(ValueError, match="selected comparator version"):
+        replace(outcome, execution=replace(outcome.execution, attempts=attempts))
+
+
+def test_provider_identity_rejects_invalid_distribution_name() -> None:
+    handle = _ComparatorHandle()
+    host, _ = _capability(handle, CapabilityKind.COMPARATOR, backend=True)
+    outcome = host.compare(
+        TextSource("same"),
+        TextSource("same"),
+        TextCompareSpec(),
+        comparator_id=handle.capability_id,
+    )
+    assert isinstance(outcome, CompletedOutcomeV2)
+    provider = outcome.result.provenance.provider
+    assert provider is not None
+
+    with pytest.raises(ValueError, match="distribution_name"):
+        replace(provider, distribution_name="not a dist!")
+
+
+@pytest.mark.parametrize("field_name", ["capability_version", "backend_version"])
+@pytest.mark.parametrize("invalid_version", ["", "bad\nversion", "bad/path", "x" * 1025])
+def test_attempt_versions_enforce_sdk_identity_text(
+    field_name: str,
+    invalid_version: str,
+) -> None:
+    values = {
+        "capability_version": "1",
+        "backend_version": "1",
+    }
+    values[field_name] = invalid_version
+
+    with pytest.raises(ValueError):
+        CapabilityAttemptV2(
+            "org.example.scidiff.text_exact",
+            "org.example.scidiff.stdlib",
+            "selected",
+            capability_version=values["capability_version"],
+            backend_version=values["backend_version"],
+        )
+
+
+@pytest.mark.parametrize(
+    ("target", "invalid_value"),
+    [
+        ("distribution_name", "not a dist!"),
+        ("capability_version", "bad\nversion"),
+    ],
+)
+def test_schema_v2_json_rejects_untrusted_provider_identity_text(
+    target: str,
+    invalid_value: str,
+) -> None:
+    handle = _ComparatorHandle()
+    host, _ = _capability(handle, CapabilityKind.COMPARATOR, backend=True)
+    outcome = host.compare(
+        TextSource("same"),
+        TextSource("same"),
+        TextCompareSpec(),
+        comparator_id=handle.capability_id,
+    )
+    assert isinstance(outcome, CompletedOutcomeV2)
+    data = deepcopy(outcome_to_data(outcome))
+    execution = cast(JsonObject, data["execution"])
+    if target == "distribution_name":
+        plugin_host = cast(JsonObject, execution["plugin_host"])
+        loaded = cast(list[object], plugin_host["loaded_providers"])
+        cast(JsonObject, loaded[0])[target] = invalid_value
+    else:
+        attempts = cast(list[object], execution["attempts"])
+        cast(JsonObject, attempts[-1])[target] = invalid_value
+
+    with pytest.raises(SerializationError):
+        outcome_from_data(data)
+
+
 def test_schema_v2_round_trip_is_canonical_and_v1_upgrader_preserves_result() -> None:
     original = compare(BytesSource(b"a"), BytesSource(b"b"), TextCompareSpec())
     upgraded = upgrade_outcome_v1_to_v2(original)
