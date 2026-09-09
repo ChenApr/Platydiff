@@ -32,7 +32,7 @@
 | RFC 0003 的 snapshot path 管理有界 replay、hash、mutation check 与安全 label。 | Source/PDF gate 依赖它前必须重新验证 snapshot 实现；并发 Phase 4/5 工作不是证据。 |
 | RFC 0004 要求 renderer 与 UI 消费 validated outcome，不重读 source 或重算事实。 | Source/PDF renderer 只能展示 validated fact 与 inert artifact ref；page image 与 heatmap 需要 artifact gate。 |
 | RFC 0005 实现的 SDK v1.1 只覆盖 text/binary detector、comparator 与 renderer handle。 | Source/PDF plugin comparator 需要显式 SDK-v2 callback，不能通过 SDK v1.1 添加。 |
-| RFC 0006 接受 schema v3 用于 structured-data 内建 spec/change，但其门禁仍未实现。 | Phase 6 只有在重新验证实际实现状态后才能扩展 schema v3；若 v3 已发布，可能需要 schema successor。 |
+| RFC 0006 接受 schema v3 用于 structured-data 内建 spec/change，但其门禁仍未实现。RFC 0007 提议 image schema v4，RFC 0009 提议后续 media schema 工作。 | Phase 6 应使用共享 schema allocation，而不是有条件扩展 v3；任何 Phase 6 schema implementation 开始前都必须满足 predecessor schema merge 与 fixture gate。 |
 | 当前运行时依赖为零，PDF/source backend 还只是架构层计划。 | Tree-sitter、PDF parser、renderer、font 与 subprocess tool 需要独立依赖、license、platform 与 security review。 |
 
 该账本只说明设计约束，不证明未来 backend、parser、artifact writer 或 schema migration
@@ -72,7 +72,7 @@ Phase 6 不包括：
 | ID | 提议决策 | 未选择的替代方案 |
 | --- | --- | --- |
 | P6X1 | Source-code 与 PDF 比较保持 explicit-only；既有 auto 仍只支持 text/binary。 | 不定义 ambiguity 与 attribution 就把 source/PDF candidate 加入 RFC 0003 detection。 |
-| P6X2 | 只有当 v3 仍未发布且 implementation start 已重新验证 v3 时，Phase 6 内建 spec/change 才使用 schema v3；否则需要 schema successor。 | 扩展 v1/v2 closed union，或在实际实现前假设 RFC 0006 的细节。 |
+| P6X2 | Phase 6 source-code 与 PDF 内建 spec/change variant 使用 schema v5，并受 P6X10 的全局 allocation 与 predecessor merge/fixture gate 约束。 | 有条件扩展 schema v3，或复用 image/media schema 编号。 |
 | P6X3 | SDK v1.1 下拒绝 source/PDF plugin comparator；第三方 source/PDF modality 需要 SDK v2。 | 允许 plugin 安装引入 source/PDF spec 或内建 change kind。 |
 | P6X4 | 独立授权 source-code 与 PDF 实现门禁。 | 因为二者都需要 parser 而把 Phase 6 当作一个批次。 |
 | P6X5 | 保持 RFC 0004 artifact/UI 工作独立；Phase 6 fact 只有在 artifact writer gate 后才能引用 artifact。 | 让 PDF rendering 隐式创建 page image 或 HTML report。 |
@@ -80,6 +80,7 @@ Phase 6 不包括：
 | P6X7 | 后端/parser 开始后，禁止改变比较 relation 的 fallback。 | 失败时静默 fallback 到 text、binary、另一个 parser、另一个 renderer 或 approximate semantics。 |
 | P6X8 | 多 view PDF spec 作为 required all-or-nothing invocation 执行：任一 selected view unavailable 或 failed 都终止顶层 outcome，且不产生 `DiffResult`。 | 返回只包含已完成 view 的 partial PDF `DiffResult`。 |
 | P6X9 | artifact gate 之前，`artifact_policy` 只有一个取值：`none`。 | 在安全 artifact writer 存在前预留 `record_refs`。 |
+| P6X10 | 提议共享 schema allocation：P4 structured data = v3，Phase 5 image = v4，Phase 6 source/PDF = v5，Phase 7 audio/video = v6；每个 successor 只有在其依赖的所有 predecessor schema 已合并到 `main` 且 reader/writer 与 migration fixture 就绪后才能开始。 | 让每个 RFC 局部选择 schema 编号，或把编号推迟到实现期而造成 closed union 冲突。 |
 | SC1 | 增加显式 `SourceCodeCompareSpec`，并要求 `language` 与 `relation` 字段。 | 从 suffix/content 推断语言，或复用 `TextCompareSpec`。 |
 | SC2 | 首批 source language 为 `python` 与 `javascript`；`typescript`、`c`、`cpp`、`rust`、`go`、`java`、notebook、template 与 generated-code policy 延后。 | 从后端 package 中可用的所有 grammar 同时开始。 |
 | SC3 | 分离 `lexical_text`、`syntax_tree` 与未来 `semantic` relation；Phase 6 首批 gate 不声明运行时语义等价。 | 把所有源代码结果报告为泛化 code equality。 |
@@ -103,36 +104,53 @@ Phase 6 不包括：
 
 ## Schema 与兼容性契约
 
-如果 Phase 6 开始时 schema v3 仍未发布，且 RFC 0006 的 v3 基础已经实现，Phase 6
-内建能力按如下方式扩展 v3：
+本 RFC 为 Phase 6 source-code 与 PDF 内建能力提议 schema v5。人工决策是 P6X10：
+P4 structured data 使用 schema v3，Phase 5 image 使用 schema v4，Phase 6 source/PDF
+使用 schema v5，Phase 7 audio/video 使用 schema v6。这是 Proposed allocation，不是
+已接受的 schema migration。若后续全局 schema RFC 或人工 review 选择不同 allocation，
+必须在任何受影响 gate 开始前同时更新 RFC 0007、RFC 0008 与 RFC 0009。
+
+Phase 6 schema implementation 只有在其依赖的 predecessor schema 已合并到 `main` 且
+带 compatibility fixture 后才能开始：
+
+- RFC 0006 的 schema v3 reader/writer 与 migration fixture 已存在并重新验证；
+- 如果 Phase 5 已先于 Phase 6 接受，则 schema v4 image reader/writer 与 migration
+  fixture 已存在；否则需要人工批准的 schema-allocation review 以 no-op predecessor
+  fixture 显式保留 v4；
+- schema v5 fixture 证明 reader 按已实现 predecessor 集合接受 v1/v2/v3/v4/v5，
+  v1/v2 writer 保持不变，source/PDF outcome 绝不会自动 downgrade。
+
+提议的 v5 closed union 为：
 
 ```python
-CompareSpecV3 = (
+CompareSpecV5 = (
     AutoCompareSpec | TextCompareSpec | BinaryCompareSpec
     | JsonCompareSpec | YamlCompareSpec | TableCompareSpec | ArrayCompareSpec
+    | ImageCompareSpec
     | SourceCodeCompareSpec | PdfCompareSpec
 )
-ChangeV3 = (
+ChangeV5 = (
     TextHunk | BinarySpan | StructuredChange | TableChange | ArrayChange
-    | SourceCodeChange | PdfChange | ExtensionChange
+    | ImageChange | SourceCodeChange | PdfChange | ExtensionChange
 )
 ```
 
-如果 schema v3 已经带 closed union 发布，Phase 6 必须使用 schema successor，而不是就地
-扩展 v3。无论哪种情况：
+在该提议 allocation 下：
 
 - 既有内建 text、binary 与 auto 调用保持 schema v1；
 - 既有 `PluginHost` text/binary 调用保持 schema v2；
-- 内建 source-code 与 PDF spec 使用实现门禁选定的新 schema，即使在 resolution 前失败也是如此；
-- 被选 schema 的 reader 接受 v1/v2/该 schema；
-- 显式 v1/v2/v3 migration helper 保留原始事实，只加入文档化的中性默认值；
+- structured data outcome 只有在 RFC 0006 gate 已实现并重新验证后才使用 schema v3；
+- image outcome 只有在已接受的 Phase 5 gate 实现并重新验证 v4 后才使用 schema v4；
+- 内建 source-code 与 PDF spec 产生 schema v5，即使在 resolution 前失败也是如此；
+- schema v5 reader 根据已实现 predecessor 集合接受 v1/v2/v3/v4/v5；
+- 显式 migration helper 保留原始事实，只加入文档化的中性默认值；
 - source-code 或 PDF outcome 不存在自动 downgrade；
 - unknown built-in spec/change kind 仍然非法；unknown namespaced extension change 保持 RFC 0001 行为。
 
-选定 schema 必须为每个新 spec field、change kind、metric、evaluation rule、
-transformation ID、backend identity 与 problem detail 定义稳定 JSON 名称。由于 RFC 0006
-在本 RFC 起草时已接受但未实现，每个 Phase 6 implementation gate 开始时都必须重新验证
-schema v3 假设。
+Schema v5 必须为每个新 spec field、change kind、metric、evaluation rule、transformation
+ID、backend identity 与 problem detail 定义稳定 JSON 名称。由于 predecessor RFC 可能已
+接受但 code gate 仍未实现，每个 Phase 6 implementation gate 开始时都必须重新验证 schema
+假设。
 
 ## 设计-契约矩阵
 
@@ -151,12 +169,11 @@ schema v3 假设。
 
 ## Canonical fact、digest 与 ordering
 
-Source-code 与 PDF fact 使用 RFC 0006 的 evidence-digest framing，并增加新 domain。下方
-prefix 仅在 Phase 6 扩展未发布 schema v3 时适用；若使用 schema successor，则必须使用对应
-successor prefix：
+Source-code 与 PDF fact 在提议 schema-v5 allocation 下使用 RFC 0006 的 evidence-digest
+framing，并增加新 domain：
 
 ```text
-UTF8("platydiff/v3/" + domain) || 0x00 || U64BE(payload_length) || payload
+UTF8("platydiff/v5/" + domain) || 0x00 || U64BE(payload_length) || payload
 ```
 
 Payload 是由 tagged field 构成的 canonical byte encoding。变长字符串使用 strict UTF-8，
@@ -606,23 +623,25 @@ subpixel 与 aggregation 语义，才能产生 pass/warn。首批 PDF policy 不
 ```python
 class PdfResourceLimits:
     max_input_bytes: int = 64 * 1024 * 1024
-    max_worker_rss_bytes: int = 512 * 1024 * 1024
     max_fact_text_bytes: int = 4096
     max_fact_value_bytes: int = 4096
-    max_objects: int = 1_000_000
-    max_pages: int = 10_000
-    max_stream_bytes: int = 256 * 1024 * 1024
-    max_decoded_stream_bytes: int = 256 * 1024 * 1024
-    max_text_runs: int = 1_000_000
-    max_render_pixels_per_page: int = 100_000_000
-    max_rendered_pages: int = 1_000
-    max_backend_seconds: int = 30
-    max_temp_bytes: int = 512 * 1024 * 1024
-    max_worker_output_bytes: int = 64 * 1024 * 1024
-    max_worker_processes: int = 1
     max_compare_work: int = 5_000_000
     max_change_items: int = 10_000
     max_change_payload_bytes: int = 4 * 1024 * 1024
+
+    # Nonbinary PDF gate 必须用 backend evidence 设置有限默认值。
+    max_worker_rss_bytes: int
+    max_objects: int
+    max_pages: int
+    max_stream_bytes: int
+    max_decoded_stream_bytes: int
+    max_text_runs: int
+    max_render_pixels_per_page: int
+    max_rendered_pages: int
+    max_backend_seconds: int
+    max_temp_bytes: int
+    max_worker_output_bytes: int
+    max_worker_processes: int
 ```
 
 PDF 同时具有 whole-invocation budget 与 per-view budget。`max_input_bytes`、
@@ -634,15 +653,32 @@ budget。Page、object、stream、text-run 与 pixel limit 按 view 适用，同
 budget。Host 在派发每个 worker step 前、以及接受 worker 的每个有界 result chunk 前检查累计
 limit。
 
-具体默认值仍是暂定，接受前必须基于后端行为重新验证。证据基础是保守的：64 MiB input
-允许比 text 更大的 document 但仍有界；512 MiB RSS/temp ceiling 是 worker hard limit，
-不是典型使用承诺；30 秒是 hostile backend 的 supervision timeout，不是语义算法 fallback；
-144 DPI 和每页 100,000,000 pixels 是初始 review value，必须 benchmark。Limit 覆盖
-original bytes、parsed object count、stream decompression、page count、text-run count、
-raster pixel count、temporary disk use、subprocess output、deterministic comparison work、
-returned item 与 payload bytes。Decompression bomb 与 recursive object reference 在分配
-下一个 object 或 stream segment 前失败。Completed result 不依赖 wall-clock time；timeout
-产生 failed 或 unavailable outcome，不产生 partial equality claim。
+本 RFC 现在接受的 RFC-wide 默认值仅限于上方带具体数值且对 binary 安全的字段：input
+bytes、retained fact text/value bytes、comparison work、returned change count 与 returned
+change payload bytes。这些 bound 不依赖 PDF parser 或 renderer，足以支持 P6-P1a。它们不
+批准 object-count、page-count、stream、text-run、raster-pixel、worker RSS、timeout、
+temporary-storage、worker-output 或 worker-process 的默认值。
+
+P6-P1b、P6-P2 与 P6-P3 各自必须在自己的 evidence gate 中提供 backend-specific numeric
+default，之后才能开始实现。Gate evidence 必须命名 backend/version/platform，解释每个默认值
+为何可强制执行，包含针对该 limit 的 adversarial fixture，并证明 check-before-allocate 行为。
+在该 evidence 存在前，schema 只记录这些字段是 required finite limit，而不是已接受的数值默认。
+Decompression bomb 与 recursive object reference 必须在分配下一个 object 或 stream segment
+前失败。Completed result 不依赖 wall-clock time；timeout 产生 failed 或 unavailable outcome，
+不产生 partial equality claim。
+
+接受/启动边界如下：
+
+- P6-S1 与 P6-S2 是 source-code gate，不受 PDF backend numeric default 阻塞；
+- P6-P1a 只使用上方 RFC-wide binary-safe PDF limit，因此可以在没有 nonbinary PDF backend
+  numeric default 的情况下接受并启动；
+- P6-P1b 在开始前必须为 text extraction 提供并论证默认 page、text-run、worker RSS、
+  timeout、temp、output、process 与 stream/decode limit；
+- P6-P2 在开始前必须为 object/metadata inspection 提供并论证默认 object、page、
+  stream/decode、worker RSS、timeout、temp、output 与 process limit；
+- P6-P3 在开始前必须为 rendering 提供并论证默认 page、rendered-page、raster-pixel、
+  worker RSS、timeout、temp、output 与 process limit；
+- P6-A1 仍受 artifact authority 阻塞，不因 PDF backend default evidence 而获得授权。
 
 PDF work accounting 按 view 固定：
 
@@ -745,9 +781,9 @@ embedded file、获取 remote asset 或派生新 view。
 3. `feat(cli): add explicit source-code comparison commands`
 4. `docs: document source-code comparison contracts`
 
-Gate：选定 schema migration test 通过；既有 v1/v2 与任何已实现 v3 fixture 保持兼容；
-`language` 是必填；不存在自动语言探测或 text fallback；lexical relation 对 Python 与
-JavaScript 有确定性 token/text fixture；limit、Unicode、newline、malformed input 与
+Gate：schema-v5 migration test 通过；既有 v1/v2 与已实现 predecessor schema fixture
+保持兼容；`language` 是必填；不存在自动语言探测或 text fallback；lexical relation 对 Python
+与 JavaScript 有确定性 token/text fixture；limit、Unicode、newline、malformed input 与
 renderer escaping 均有测试。
 
 ### P6-S2：source-code syntax-tree relation 与 parser backend
@@ -770,8 +806,9 @@ parser recovery、comment、formatting、stable node path、alignment、insert/d
 
 Gate：重新验证 schema migration；`artifact_policy` 只接受 `none`；纯 binary view 把
 encrypted PDF 当作字节接受；binary view 复用 exact binary semantics，同时命名 PDF view；
-malformed PDF 不被解析；resource limit、payload truncation 与无 fallback 均由 generated
-fixture 覆盖。
+malformed PDF 不被解析；RFC-wide binary-safe resource default、payload truncation 与无
+fallback 均由 generated fixture 覆盖。该 gate 可以在没有 nonbinary PDF backend numeric
+default 的情况下接受并启动。
 
 ### P6-P1b：PDF extracted-text view
 
@@ -784,7 +821,8 @@ Gate：schema migration 继续兼容 P6-P1a；任何 encrypted input 返回
 `failed/pdf_encrypted`；text extraction 只在受监督 bounded worker 中运行；multi-view
 all-or-nothing 行为有测试；text order、font/encoding、Unicode mapping、page alignment、
 worker isolation、cumulative resource、backend provenance 与无 fallback 均由 generated
-fixture 覆盖。
+fixture 覆盖。该 gate 开始前必须提供并论证默认 page、text-run、worker RSS、timeout、temp、
+output、process 与 stream/decode limit。
 
 ### P6-P2：PDF object/metadata view
 
@@ -794,7 +832,8 @@ fixture 覆盖。
 
 Gate：xref/object stream/incremental update 处理、active-content inventory、embedded-file
 inventory、metadata ignore policy、object alignment、stream limit、decompression bomb、
-malformed reference 与 deterministic canonical ordering 通过。
+malformed reference 与 deterministic canonical ordering 通过。该 gate 开始前必须提供并论证
+默认 object、page、stream/decode、worker RSS、timeout、temp、output 与 process limit。
 
 ### P6-P3：无 artifact 的 PDF rendered-page view
 
@@ -805,8 +844,9 @@ malformed reference 与 deterministic canonical ordering 通过。
 
 Gate：renderer backend license/security/platform review 完成；page box、rotation、color、
 alpha、transparency、antialiasing、font substitution、pixel limit、subprocess timeout、temp
-limit、changed-region grouping 与 platform variance 均有测试。不写入 page-image 或 heatmap
-artifact。
+limit、changed-region grouping 与 platform variance 均有测试。该 gate 开始前必须提供并论证
+默认 page、rendered-page、raster-pixel、worker RSS、timeout、temp、output 与 process
+limit。不写入 page-image 或 heatmap artifact。
 
 ### P6-A1：rendered page 的可选 artifact gate
 
@@ -848,7 +888,7 @@ validation、digital signature 与 archival conformance 都是独立契约。
 
 | Scenario | Required terminal behavior |
 | --- | --- |
-| 显式 source `lexical_text`，stable input | RFC 0002 text lifecycle 与 exact decoded-line semantics；在选定 schema 下产生 completed source-code outcome。 |
+| 显式 source `lexical_text`，stable input | RFC 0002 text lifecycle 与 exact decoded-line semantics；predecessor fixture gate 通过后，在提议 schema v5 下产生 completed source-code outcome。 |
 | 显式 source `syntax_tree`，缺少 parser backend | `resolving/unavailable/backend_unavailable`；没有 `DiffResult`。 |
 | 显式 source `syntax_tree`，`reject` recovery 下 source malformed | `decoding/failed/decode_error`；没有 text fallback，也没有 `DiffResult`。 |
 | 显式 source `syntax_tree`，parser/resource bound exceeded | `decoding/failed/resource_limit_exceeded`；没有 partial result。 |

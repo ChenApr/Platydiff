@@ -36,7 +36,7 @@ successor to RFC 0003 accepts new detection semantics.
 | RFC 0003 snapshot paths own bounded replay, hashing, mutation checks, and safe labels. | Source/PDF gates must revalidate the snapshot implementation before relying on it; concurrent Phase 4/5 work is not evidence. |
 | RFC 0004 makes renderers and UI consume validated outcomes without rereading sources or recomputing facts. | Source/PDF renderers may present validated facts and inert artifact refs only; page images and heatmaps need an artifact gate. |
 | RFC 0005 implements SDK v1.1 for text/binary detector, comparator, and renderer handles only. | Source/PDF plugin comparators require an explicit SDK-v2 callback and cannot be added through SDK v1.1. |
-| RFC 0006 accepts schema v3 for structured-data built-in specs and changes, but its gates remain unimplemented. | Phase 6 may extend schema v3 only after revalidating its actual implementation state; if v3 has shipped, a schema successor may be required. |
+| RFC 0006 accepts schema v3 for structured-data built-in specs and changes, but its gates remain unimplemented. RFC 0007 proposes image schema v4, and RFC 0009 proposes later media schema work. | Phase 6 should use a shared schema allocation instead of conditionally extending v3; predecessor schema merge and fixture gates must be satisfied before any Phase 6 schema implementation starts. |
 | Runtime dependencies are currently zero and PDF/source backends are only architecture-level plans. | Tree-sitter, PDF parsers, renderers, fonts, and subprocess tools need separate dependency, license, platform, and security review. |
 
 This ledger is evidence for design constraints, not proof that any future
@@ -81,7 +81,7 @@ are not accepted until a reviewer explicitly approves them.
 | ID | Proposed decision | Alternative not selected |
 | --- | --- | --- |
 | P6X1 | Keep source-code and PDF comparison explicit-only; existing auto remains text/binary. | Add source/PDF candidates to RFC 0003 detection without defining ambiguity and attribution. |
-| P6X2 | Use schema v3 for Phase 6 built-in spec/change variants only if v3 is still unreleased and revalidated at implementation start; otherwise require a schema successor. | Extend v1/v2 closed unions or assume RFC 0006 implementation details before they exist. |
+| P6X2 | Use schema v5 for Phase 6 source-code and PDF built-in spec/change variants, subject to the global allocation in P6X10 and predecessor merge/fixture gates. | Conditionally extend schema v3 or reuse the image/media schema numbers. |
 | P6X3 | Reject source/PDF plugin comparators under SDK v1.1; require SDK v2 before third-party source/PDF modalities. | Let plugin installation introduce source/PDF specs or built-in change kinds. |
 | P6X4 | Authorize source-code and PDF implementation gates independently. | Treat Phase 6 as one batch because both need parsers. |
 | P6X5 | Keep RFC 0004 artifact/UI work separate; Phase 6 facts may reference artifacts only after an artifact writer gate. | Let PDF rendering implicitly create page images or HTML reports. |
@@ -89,6 +89,7 @@ are not accepted until a reviewer explicitly approves them.
 | P6X7 | Forbid fallback that changes comparison relation after a parser/backend starts. | On failure, silently fall back to text, binary, another parser, another renderer, or approximate semantics. |
 | P6X8 | Execute multi-view PDF specs as required all-or-nothing invocations: any selected view unavailable or failed terminates the top-level outcome without a `DiffResult`. | Return a partial PDF `DiffResult` containing the views that happened to finish. |
 | P6X9 | Before the artifact gate, `artifact_policy` has exactly one value, `none`. | Reserve `record_refs` before a safe artifact writer exists. |
+| P6X10 | Propose the shared schema allocation P4 structured data = v3, Phase 5 image = v4, Phase 6 source/PDF = v5, and Phase 7 audio/video = v6; each successor may start only after all predecessor schemas it depends on are merged on `main` with reader/writer and migration fixtures. | Let each RFC pick a schema number locally, or defer numbering until implementation and risk conflicting closed unions. |
 | SC1 | Add an explicit `SourceCodeCompareSpec` with required `language` and `relation` fields. | Infer language from suffix/content or reuse `TextCompareSpec`. |
 | SC2 | First source languages are `python` and `javascript`; `typescript`, `c`, `cpp`, `rust`, `go`, `java`, notebooks, templates, and generated-code policies are deferred. | Start with every grammar available from a backend package. |
 | SC3 | Separate `lexical_text`, `syntax_tree`, and future `semantic` relations; Phase 6 first gates do not claim runtime semantic equivalence. | Report all source-code results as one generic code equality relation. |
@@ -112,40 +113,64 @@ are not accepted until a reviewer explicitly approves them.
 
 ## Schema and compatibility contract
 
-If Phase 6 starts while schema v3 remains unreleased and the RFC 0006 v3 base
-has been implemented, Phase 6 built-ins extend v3 as follows:
+This RFC proposes schema v5 for Phase 6 source-code and PDF built-ins. The
+human decision is P6X10: P4 structured data owns schema v3, Phase 5 image owns
+schema v4, Phase 6 source/PDF owns schema v5, and Phase 7 audio/video owns
+schema v6. This is a Proposed allocation, not an accepted schema migration.
+If a later global schema RFC or human review chooses a different allocation, it
+must update RFC 0007, RFC 0008, and RFC 0009 together before any affected gate
+starts.
+
+Phase 6 schema implementation may start only after the predecessor schemas it
+depends on are merged on `main` with compatibility fixtures:
+
+- schema v3 reader/writer and migration fixtures from RFC 0006 are present and
+  revalidated;
+- schema v4 image reader/writer and migration fixtures are present if Phase 5
+  has been accepted ahead of Phase 6, or a human-approved schema-allocation
+  review explicitly reserves v4 with a no-op predecessor fixture;
+- schema v5 fixtures prove that readers accept v1/v2/v3/v4/v5 as applicable,
+  that v1/v2 writers remain unchanged, and that source/PDF outcomes never
+  downgrade automatically.
+
+The proposed v5 closed unions are:
 
 ```python
-CompareSpecV3 = (
+CompareSpecV5 = (
     AutoCompareSpec | TextCompareSpec | BinaryCompareSpec
     | JsonCompareSpec | YamlCompareSpec | TableCompareSpec | ArrayCompareSpec
+    | ImageCompareSpec
     | SourceCodeCompareSpec | PdfCompareSpec
 )
-ChangeV3 = (
+ChangeV5 = (
     TextHunk | BinarySpan | StructuredChange | TableChange | ArrayChange
-    | SourceCodeChange | PdfChange | ExtensionChange
+    | ImageChange | SourceCodeChange | PdfChange | ExtensionChange
 )
 ```
 
-If schema v3 has already been released with closed unions, Phase 6 must use a
-schema successor instead of extending v3 in place. In either case:
+Under this proposed allocation:
 
 - existing built-in text, binary, and auto calls keep schema v1;
 - existing `PluginHost` text/binary calls keep schema v2;
-- built-in source-code and PDF specs produce the new schema selected by the
-  implementation gate, including failure before resolution;
-- readers for the selected schema accept v1/v2/that schema;
-- explicit v1/v2/v3 migration helpers preserve original facts and add only
-  documented neutral defaults;
+- structured data outcomes use schema v3 only after the RFC 0006 gate is
+  implemented and revalidated;
+- image outcomes use schema v4 only after an accepted Phase 5 gate implements
+  and revalidates v4;
+- built-in source-code and PDF specs produce schema v5, including failure before
+  resolution;
+- readers for schema v5 accept v1/v2/v3/v4/v5 according to the implemented
+  predecessor set;
+- explicit migration helpers preserve original facts and add only documented
+  neutral defaults;
 - no automatic downgrade exists for source-code or PDF outcomes;
 - unknown built-in spec/change kinds remain invalid; unknown namespaced
   extension changes retain RFC 0001 behavior.
 
-The selected schema must define stable JSON names for every new spec field,
+Schema v5 must define stable JSON names for every new spec field,
 change kind, metric, evaluation rule, transformation ID, backend identity, and
-problem detail. Schema v3 assumptions are revalidated at the beginning of each
-Phase 6 implementation gate because RFC 0006 is accepted but unimplemented at
-the time of this RFC.
+problem detail. Schema assumptions are revalidated at the beginning of each
+Phase 6 implementation gate because predecessor RFCs may be accepted while their
+code gates remain unimplemented.
 
 ## Design-contract matrix
 
@@ -165,11 +190,10 @@ the time of this RFC.
 ## Canonical facts, digests, and ordering
 
 Source-code and PDF facts use the RFC 0006 evidence-digest framing with new
-domains. The prefix below applies only if Phase 6 extends unreleased schema v3;
-a schema successor must use the corresponding successor prefix:
+domains under the proposed schema-v5 allocation:
 
 ```text
-UTF8("platydiff/v3/" + domain) || 0x00 || U64BE(payload_length) || payload
+UTF8("platydiff/v5/" + domain) || 0x00 || U64BE(payload_length) || payload
 ```
 
 Payloads are canonical byte encodings built from tagged fields. Variable-length
@@ -670,23 +694,25 @@ PDF policy yields `warn`.
 ```python
 class PdfResourceLimits:
     max_input_bytes: int = 64 * 1024 * 1024
-    max_worker_rss_bytes: int = 512 * 1024 * 1024
     max_fact_text_bytes: int = 4096
     max_fact_value_bytes: int = 4096
-    max_objects: int = 1_000_000
-    max_pages: int = 10_000
-    max_stream_bytes: int = 256 * 1024 * 1024
-    max_decoded_stream_bytes: int = 256 * 1024 * 1024
-    max_text_runs: int = 1_000_000
-    max_render_pixels_per_page: int = 100_000_000
-    max_rendered_pages: int = 1_000
-    max_backend_seconds: int = 30
-    max_temp_bytes: int = 512 * 1024 * 1024
-    max_worker_output_bytes: int = 64 * 1024 * 1024
-    max_worker_processes: int = 1
     max_compare_work: int = 5_000_000
     max_change_items: int = 10_000
     max_change_payload_bytes: int = 4 * 1024 * 1024
+
+    # Nonbinary PDF gates must set finite defaults with backend evidence.
+    max_worker_rss_bytes: int
+    max_objects: int
+    max_pages: int
+    max_stream_bytes: int
+    max_decoded_stream_bytes: int
+    max_text_runs: int
+    max_render_pixels_per_page: int
+    max_rendered_pages: int
+    max_backend_seconds: int
+    max_temp_bytes: int
+    max_worker_output_bytes: int
+    max_worker_processes: int
 ```
 
 PDF has both whole-invocation and per-view budgets. `max_input_bytes`,
@@ -700,19 +726,40 @@ the cumulative work budget. The host checks cumulative limits before
 dispatching each worker step and before accepting each bounded result chunk from
 a worker.
 
-The exact defaults are tentative and must be revalidated against backend
-behavior before acceptance. The evidence basis is conservative: 64 MiB input
-allows larger documents than text while remaining bounded; 512 MiB RSS/temp
-ceilings are hard worker limits, not promises of typical use; 30 seconds is a
-supervision timeout for hostile backends, not a semantic algorithm fallback; 144
-DPI and 100,000,000 pixels per page are initial review values that must be
-benchmarked. Limits protect original bytes, parsed object count, stream
-decompression, page count, text-run count, raster pixel count, temporary disk
-use, subprocess output, deterministic comparison work, returned items, and
-payload bytes. Decompression bombs and recursive object references fail before
-allocating the next object or stream segment. No completed result depends on
-wall-clock time; timeouts produce a failed or unavailable outcome, not a partial
-equality claim.
+The RFC-wide defaults accepted now are limited to the binary-safe fields shown
+with concrete values: input bytes, retained fact text/value bytes, comparison
+work, returned change count, and returned change payload bytes. These bounds are
+independent of a PDF parser or renderer and are sufficient for P6-P1a. They do
+not approve object-count, page-count, stream, text-run, raster-pixel, worker
+RSS, timeout, temporary-storage, worker-output, or worker-process defaults.
+
+P6-P1b, P6-P2, and P6-P3 each must supply backend-specific numeric defaults in
+their own evidence gate before implementation starts. The gate evidence must
+name the backend/version/platform, explain why each default is enforceable,
+include adversarial fixtures for the limit, and prove check-before-allocate
+behavior. Until that evidence exists, the schema records those fields as
+required finite limits, not accepted numeric defaults. Decompression bombs and
+recursive object references fail before allocating the next object or stream
+segment. No completed result depends on wall-clock time; timeouts produce a
+failed or unavailable outcome, not a partial equality claim.
+
+The acceptance/start boundary is explicit:
+
+- P6-S1 and P6-S2 are source-code gates and are not blocked by PDF backend
+  numeric defaults;
+- P6-P1a may be accepted and started with only the RFC-wide binary-safe PDF
+  limits above because it does not parse nonbinary PDF content;
+- P6-P1b may not start until text extraction supplies default page, text-run,
+  worker RSS, timeout, temp, output, process, and stream/decode limits with
+  evidence;
+- P6-P2 may not start until object/metadata inspection supplies default object,
+  page, stream/decode, worker RSS, timeout, temp, output, and process limits
+  with evidence;
+- P6-P3 may not start until rendering supplies default page, rendered-page,
+  raster-pixel, worker RSS, timeout, temp, output, and process limits with
+  evidence;
+- P6-A1 remains blocked on artifact authority and is not authorized by PDF
+  backend default evidence.
 
 PDF work accounting is fixed by view:
 
@@ -838,11 +885,11 @@ These gates are proposed plans, not implementation authorization.
 3. `feat(cli): add explicit source-code comparison commands`
 4. `docs: document source-code comparison contracts`
 
-Gate: selected schema migration tests pass; existing v1/v2 and any implemented
-v3 fixtures remain compatible; `language` is required; no automatic language
-detection or text fallback exists; lexical relation has deterministic token/text
-fixtures for Python and JavaScript; limits, Unicode, newline, malformed input,
-and renderer escaping are tested.
+Gate: schema-v5 migration tests pass; existing v1/v2 and implemented
+predecessor schema fixtures remain compatible; `language` is required; no
+automatic language detection or text fallback exists; lexical relation has
+deterministic token/text fixtures for Python and JavaScript; limits, Unicode,
+newline, malformed input, and renderer escaping are tested.
 
 ### P6-S2: source-code syntax-tree relation and parser backend
 
@@ -866,8 +913,9 @@ failure behavior, and deterministic repeated runs pass.
 Gate: schema migration is revalidated; `artifact_policy` accepts only `none`;
 pure binary view accepts encrypted PDFs as bytes; binary view reuses exact
 binary semantics while naming the PDF view; malformed PDFs are not parsed;
-resource limits, payload truncation, and no fallback are covered by generated
-fixtures.
+RFC-wide binary-safe resource defaults, payload truncation, and no fallback are
+covered by generated fixtures. This gate may be accepted and started without
+nonbinary PDF backend numeric defaults.
 
 ### P6-P1b: PDF extracted-text view
 
@@ -881,7 +929,9 @@ returns `failed/pdf_encrypted`; text extraction runs only in a supervised
 bounded worker; multi-view all-or-nothing behavior is tested; text order,
 fonts/encodings, Unicode mapping, page alignment, worker isolation, cumulative
 resources, backend provenance, and no fallback are covered by generated
-fixtures.
+fixtures. This gate must provide and justify default page, text-run, worker RSS,
+timeout, temp, output, process, and stream/decode limits before implementation
+starts.
 
 ### P6-P2: PDF object/metadata view
 
@@ -892,7 +942,9 @@ fixtures.
 Gate: xref/object stream/incremental update handling, active-content inventory,
 embedded-file inventory, metadata ignore policy, object alignment, stream
 limits, decompression bombs, malformed references, and deterministic canonical
-ordering pass.
+ordering pass. This gate must provide and justify default object, page,
+stream/decode, worker RSS, timeout, temp, output, and process limits before
+implementation starts.
 
 ### P6-P3: PDF rendered-page view without artifacts
 
@@ -904,7 +956,10 @@ ordering pass.
 Gate: renderer backend license/security/platform review is complete; page box,
 rotation, color, alpha, transparency, antialiasing, font substitution, pixel
 limits, subprocess timeout, temp limits, changed-region grouping, and platform
-variance are tested. No page-image or heatmap artifact is written.
+variance are tested. This gate must provide and justify default page,
+rendered-page, raster-pixel, worker RSS, timeout, temp, output, and process
+limits before implementation starts. No page-image or heatmap artifact is
+written.
 
 ### P6-A1: optional artifact gate for rendered pages
 
@@ -952,7 +1007,7 @@ fetch, render, OCR, extract, or execute source documents itself.
 
 | Scenario | Required terminal behavior |
 | --- | --- |
-| Explicit source `lexical_text`, stable inputs | RFC 0002 text lifecycle and exact decoded-line semantics; completed source-code outcome under selected schema. |
+| Explicit source `lexical_text`, stable inputs | RFC 0002 text lifecycle and exact decoded-line semantics; completed source-code outcome under proposed schema v5 after predecessor fixture gates pass. |
 | Explicit source `syntax_tree`, missing parser backend | `resolving/unavailable/backend_unavailable`; no `DiffResult`. |
 | Explicit source `syntax_tree`, malformed source with `reject` recovery | `decoding/failed/decode_error`; no text fallback and no `DiffResult`. |
 | Explicit source `syntax_tree`, parser/resource bound exceeded | `decoding/failed/resource_limit_exceeded`; no partial result. |
