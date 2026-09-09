@@ -10,9 +10,12 @@ from pathlib import Path
 import pytest
 
 from platydiff import (
+    AutoCompareSpec,
+    BytesSource,
     CompletedOutcomeV2,
     FailedOutcomeV2,
     PathSource,
+    PluginHost,
     ResourceLimits,
     TextCompareSpec,
     TextSource,
@@ -28,17 +31,24 @@ from platydiff.core.models import (
     ExtensionChange,
     ResourceUsage,
 )
-from platydiff.core.serialization import dumps_outcome, loads_outcome
+from platydiff.core.serialization import (
+    dumps_outcome,
+    loads_outcome,
+    serialized_change_size,
+)
 from platydiff.plugin_sdk import (
     CapabilityAvailabilityV1,
     CapabilityKind,
     PluginComparisonV1,
+    PluginExecutionErrorV1,
     PluginResourceLimitErrorV1,
     SourceServiceV1,
 )
+from platydiff.plugins import PluginCatalogV1
 from tests.unit.test_plugin_host_execution import (
     _capability,
     _ComparatorHandle,
+    _DetectorHandle,
     _facts,
     _Run,
 )
@@ -285,6 +295,74 @@ def test_host_reserved_resource_name_is_an_aggregating_failure(
     assert outcome.execution.attempts[-1].reason_code == "plugin_execution_failure"
 
 
+def _extension_change_facts() -> tuple[PluginComparisonV1, int]:
+    change = ExtensionChange(
+        "org.example.scidiff.unicode_change",
+        "org.example.scidiff",
+        1,
+        {"label": "界", "nested": {"emoji": "🧪"}},
+    )
+    facts = replace(
+        _facts(),
+        summary=DiffSummary(1, ()),
+        changes=ChangeSet(
+            ChangeCompleteness.COMPLETE,
+            (change,),
+            1,
+            1,
+            0,
+            ChangeSelection.ALL,
+            None,
+        ),
+    )
+    return facts, serialized_change_size(change)
+
+
+@pytest.mark.parametrize(
+    "limits",
+    [
+        ResourceLimits(max_change_items=0),
+        ResourceLimits(max_change_payload_bytes=0),
+    ],
+)
+def test_plugin_change_facts_cannot_exceed_host_output_limits(
+    limits: ResourceLimits,
+) -> None:
+    facts, _ = _extension_change_facts()
+    outcome = _compare(
+        _ConfiguredHandle(aggregate_facts=facts),
+        TextCompareSpec(limits=limits),
+    )
+    assert isinstance(outcome, FailedOutcomeV2)
+    assert outcome.problem.code == "plugin_execution_failure"
+    assert outcome.problem.stage.value == "aggregating"
+    assert outcome.execution.stages[-1].disposition.value == "failed"
+    assert outcome.execution.attempts[-1].disposition == "failed"
+    assert outcome.execution.attempts[-1].reason_code == "plugin_execution_failure"
+
+
+def test_plugin_change_payload_limit_uses_canonical_utf8_schema_bytes() -> None:
+    facts, payload_bytes = _extension_change_facts()
+
+    exact = _compare(
+        _ConfiguredHandle(aggregate_facts=facts),
+        TextCompareSpec(
+            limits=ResourceLimits(max_change_payload_bytes=payload_bytes)
+        ),
+    )
+    below = _compare(
+        _ConfiguredHandle(aggregate_facts=facts),
+        TextCompareSpec(
+            limits=ResourceLimits(max_change_payload_bytes=payload_bytes - 1)
+        ),
+    )
+
+    assert isinstance(exact, CompletedOutcomeV2)
+    assert isinstance(below, FailedOutcomeV2)
+    assert below.problem.code == "plugin_execution_failure"
+    assert below.problem.stage.value == "aggregating"
+
+
 def test_unsafe_diagnostic_detail_is_rejected_without_disclosure() -> None:
     facts = replace(
         _facts(),
@@ -348,23 +426,39 @@ def test_pinned_unavailable_comparator_never_falls_back() -> None:
     assert outcome.execution.attempts[-1].reason_code == "backend_missing"
 
 
-def test_comparator_availability_resource_limit_is_auditable() -> None:
-    class ResourceLimitedHandle(_ConfiguredHandle):
+@pytest.mark.parametrize(
+    ("failure_mode", "problem_code"),
+    [
+        ("wrong_type", "plugin_execution_failure"),
+        ("known_failure", "plugin_execution_failure"),
+        ("resource_limit", "resource_limit_exceeded"),
+    ],
+)
+def test_comparator_probe_failures_are_auditable(
+    failure_mode: str,
+    problem_code: str,
+) -> None:
+    class FailingProbeHandle(_ConfiguredHandle):
         def availability(self) -> CapabilityAvailabilityV1:
+            if failure_mode == "wrong_type":
+                return object()  # type: ignore[return-value]
+            if failure_mode == "known_failure":
+                raise PluginExecutionErrorV1("private availability detail")
             raise PluginResourceLimitErrorV1("private budget detail")
 
-    handle = ResourceLimitedHandle()
+    handle = FailingProbeHandle()
     outcome = _compare(handle)
     assert isinstance(outcome, FailedOutcomeV2)
     assert handle.cached_run is None
-    assert outcome.problem.code == "resource_limit_exceeded"
+    assert outcome.problem.code == problem_code
     assert outcome.problem.stage.value == "resolving"
     assert "private" not in outcome.problem.message
     assert len(outcome.execution.attempts) == 1
     attempt = outcome.execution.attempts[0]
     assert attempt.disposition == "failed"
-    assert attempt.reason_code == "resource_limit_exceeded"
+    assert attempt.reason_code == problem_code
     assert attempt.provider is not None
+    assert loads_outcome(dumps_outcome(outcome)) == outcome
 
 
 def test_comparator_runtime_backend_must_match_its_declaration() -> None:
@@ -390,6 +484,98 @@ def test_comparator_runtime_backend_must_match_its_declaration() -> None:
     assert outcome.problem.stage.value == "resolving"
     assert outcome.execution.attempts[-1].disposition == "failed"
     assert loads_outcome(dumps_outcome(outcome)) == outcome
+
+
+@pytest.mark.parametrize(
+    ("kind", "modality", "reason_code"),
+    [
+        (CapabilityKind.DETECTOR, "text", "capability_kind_mismatch"),
+        (CapabilityKind.COMPARATOR, "binary", "modality_mismatch"),
+    ],
+)
+def test_pinned_capability_mismatch_preserves_auditable_attempt_reason(
+    kind: CapabilityKind,
+    modality: str,
+    reason_code: str,
+) -> None:
+    handle = _ConfiguredHandle(modality=modality)
+    host, _ = _capability(handle, kind, backend=True)
+    outcome = host.compare(
+        TextSource("same"),
+        TextSource("same"),
+        TextCompareSpec(),
+        comparator_id=handle.capability_id,
+    )
+
+    assert isinstance(outcome, UnavailableOutcomeV2)
+    assert outcome.problem.code == "capability_unavailable"
+    assert outcome.problem.details == {"reason_code": reason_code}
+    assert len(outcome.execution.attempts) == 1
+    attempt = outcome.execution.attempts[0]
+    assert attempt.disposition == "unavailable"
+    assert attempt.reason_code == reason_code
+
+
+@pytest.mark.parametrize(
+    ("shape", "reason_code"),
+    [
+        ("missing", "plugin_not_found"),
+        ("detector", "capability_kind_mismatch"),
+        ("handle_missing", "executor_missing"),
+        ("modality_invalid", "modality_mismatch"),
+    ],
+)
+def test_auto_exact_comparator_pin_rejects_invalid_shapes_without_fallback(
+    shape: str,
+    reason_code: str,
+) -> None:
+    if shape == "missing":
+        capability_id = "org.example.missing.text_exact"
+        host = PluginHost(PluginCatalogV1((), (), (), (), ()))
+        expected_provider = False
+    else:
+        if shape == "detector":
+            handle: object = _DetectorHandle()
+            kind = CapabilityKind.DETECTOR
+        else:
+            handle = _ConfiguredHandle(
+                modality="image" if shape == "modality_invalid" else "text"
+            )
+            kind = CapabilityKind.COMPARATOR
+        host, capability = _capability(handle, kind, backend=shape != "detector")
+        capability_id = capability.declaration.capability_id
+        expected_provider = True
+        if shape == "handle_missing":
+            capability = replace(capability, handle=None)
+            plugin = capability.plugin
+            host = PluginHost(
+                PluginCatalogV1(
+                    (plugin.manifest.plugin_id,),
+                    (plugin.entry_point,),
+                    (plugin,),
+                    (capability,),
+                    (),
+                )
+            )
+
+    outcome = host.compare(
+        BytesSource(b"same"),
+        BytesSource(b"same"),
+        AutoCompareSpec(),
+        comparator_id=capability_id,
+    )
+
+    assert isinstance(outcome, UnavailableOutcomeV2)
+    assert outcome.problem.details == {"reason_code": reason_code}
+    assert outcome.problem.stage.value == "detecting"
+    assert len(outcome.execution.attempts) == 1
+    attempt = outcome.execution.attempts[0]
+    assert attempt.capability_id == capability_id
+    assert attempt.disposition == "unavailable"
+    assert attempt.reason_code == reason_code
+    assert (attempt.provider is not None) is expected_provider
+    if shape == "detector":
+        assert handle.seen == []
 
 
 def test_unpinned_enabled_comparator_never_preempts_builtin() -> None:
