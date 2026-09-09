@@ -84,7 +84,9 @@ capability declaration 与稳定 issue。distribution version 与 plugin version
 永不 import。某个插件的 import、factory、manifest、API 或 feature 失败不会丢弃其他
 插件。重复 capability ID 与保留的 `core` capability namespace 会从 capability catalog
 移除，并记录 `capability_id_conflict`。metadata 与 issue 顺序不依赖环境枚举顺序；issue
-不复制 exception text、traceback 或文件系统路径。
+不复制 exception text、traceback 或文件系统路径。验证 executable handle shape 时，普通
+descriptor/property failure 只会将对应插件隔离为 `plugin_manifest_invalid`；
+process-control exception 与 `MemoryError` 仍继续传播。
 
 `import platydiff` 与现有三参数 `compare()` 都不会枚举或加载已安装插件。因此安装插件
 不会改变内置比较路径。entry point 仍是受信任的进程内 Python code：显式加载不是
@@ -107,6 +109,23 @@ API 传播。executable handle 与 run shape 会在 invocation 前验证。host 
 结束的 run，但仍跟踪 live run identity；detector execution 前先记录 selection；在构造
 completed outcome 前，还会在 validated aggregation 后重新检查 mutable path snapshot。
 
+availability result 的 backend ID/version pair 必须与 capability declaration 中的 pair
+完全一致（包括 `None`/`None`）；SDK v1.1 不接受未声明的 runtime backend。已知的
+availability failure 与 invalid return value 会在 detecting 或 resolving 边界形成结构化
+failed outcome，并保留唯一、可审计的 failed attempt。插件 facts 不得声明 host 保留的
+source-byte resource name；冲突会在 outcome 构造前于 aggregating stage 失败。
+
+自动比较的 exact comparator pin 会在内容检测前验证。capability 缺失、executor 缺失、
+capability kind 错误或 modality 不受支持时，会返回 `capability_unavailable`，并在唯一的
+pinned attempt 上保留具体且安全的 reason；既不 fallback，也不伪装为 detection
+no-match。host 会在 aggregating stage 独立重构返回的 facts，并执行 resolved text/binary
+契约。当前 spec 拒绝 partial 或 degraded result，要求严格的 `equal`/`pass` 与
+`different`/`fail` 映射，拒绝 text/binary 内建 change kind 交叉，并执行
+`max_change_items` 与 canonical UTF-8 schema payload bytes 上限。插件必须依照声明的
+`ChangeSet` 契约自行截断；host 会拒绝超限 facts，不会静默修改。插件的 truncated
+result 必须声明 `change_items` 或 `change_payload_bytes`，且 `limit` 必须精确复制对应的
+有效 spec 上限。
+
 Comparator run object 必须支持 Python weak reference。这个 SDK-v1.1 run 要求使长生命周期
 host 能拒绝复用同一个 live run，同时不永久保留所有 completed run。结构完整但无法 weakly
 reference 的 run 会在任何 lifecycle method 调用前，于 resolving stage 安全拒绝。
@@ -117,7 +136,9 @@ enabled/loaded provider snapshot、带版本的 attempt 与 selected-provider pr
 `upgrade_outcome_v1_to_v2()` 在不改变 v1 result 含义的前提下添加空 host context。
 Schema-v1 model 与 encoder 拒绝嵌套 schema-v2 value；schema-v2 构造与读取会将
 provider-backed attempt 与 loaded host snapshot、selected comparator/detector provenance
-进行交叉校验。
+进行交叉校验，要求 selected comparator version 与 result provenance 一致，并对
+distribution/version identity 执行 SDK 同级校验。内建 terminal 与 JSON renderer 同时
+接受两个 outcome schema 版本，且不会重算 result 语义。
 
 当前仍没有 public mutable registration method、全局第三方 catalog、renderer hook、插件
 CLI option 或发布的 compatibility receipt。私有 request、snapshot、descriptor 与

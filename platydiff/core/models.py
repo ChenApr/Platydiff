@@ -18,6 +18,9 @@ type JsonObject = dict[str, JsonValue]
 SCHEMA_VERSION: Literal[1] = 1
 SCHEMA_VERSION_V2: Literal[2] = 2
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$")
+_DISTRIBUTION_NAME = re.compile(
+    r"^(?:[A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9])\Z"
+)
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _PERCENT_ESCAPE = re.compile(r"%[0-9a-fA-F]{2}")
 _INVALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9a-fA-F]{2})")
@@ -38,6 +41,20 @@ def _unicode_scalar(value: str, field_name: str) -> None:
         raise ValueError(
             f"{field_name} must contain valid Unicode scalar values"
         ) from error
+
+
+def _identity_text(value: object, field_name: str) -> None:
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string")
+    _unicode_scalar(value, field_name)
+    if not value or len(value.encode("utf-8")) > 1024:
+        raise ValueError(f"{field_name} must be non-empty and bounded")
+    if "/" in value or "\\" in value:
+        raise ValueError(f"{field_name} must not contain a filesystem path")
+    if any(
+        ord(character) < 0x20 or 0x7F <= ord(character) <= 0x9F for character in value
+    ):
+        raise ValueError(f"{field_name} must not contain control characters")
 
 
 def _identifier(value: str, *, namespaced: bool | None = None) -> None:
@@ -602,14 +619,11 @@ class ProviderIdentity:
             "distribution_name",
             "distribution_version",
         ):
-            value = getattr(self, name)
-            _unicode_scalar(value, name)
-            if not value or len(value.encode("utf-8")) > 1024:
-                raise ValueError(f"{name} must be non-empty and bounded")
-            if "/" in value or "\\" in value:
-                raise ValueError(f"{name} must not contain a filesystem path")
-            if any(ord(character) < 0x20 for character in value):
-                raise ValueError(f"{name} must not contain control characters")
+            _identity_text(getattr(self, name), name)
+        if not _DISTRIBUTION_NAME.fullmatch(self.distribution_name):
+            raise ValueError(
+                "distribution_name must be a valid Python distribution name"
+            )
         _bounded_integer(
             self.manifest_schema_version,
             "manifest_schema_version",
@@ -660,9 +674,7 @@ class CapabilityAttemptV2:
         for name in ("capability_version", "backend_version"):
             value = getattr(self, name)
             if value is not None:
-                _unicode_scalar(value, name)
-                if "/" in value or "\\" in value:
-                    raise ValueError(f"{name} must not contain a filesystem path")
+                _identity_text(value, name)
         if self.provider is not None:
             if not isinstance(self.provider, ProviderIdentity):
                 raise ValueError("attempt provider must be a ProviderIdentity")
@@ -711,6 +723,10 @@ class Diagnostic:
 
     def __post_init__(self) -> None:
         _identifier(self.code)
+        if not isinstance(self.severity, DiagnosticSeverity):
+            raise ValueError("diagnostic severity must be a DiagnosticSeverity")
+        if self.stage is not None and not isinstance(self.stage, PipelineStage):
+            raise ValueError("diagnostic stage must be a PipelineStage")
         _unicode_scalar(self.message, "diagnostic message")
         _json_safe(self.details)
 
@@ -1055,6 +1071,13 @@ class Metric:
     def __post_init__(self) -> None:
         _identifier(self.name)
         _identifier(self.unit)
+        if not isinstance(
+            self.value,
+            (FiniteValue, NaNValue, PositiveInfinityValue, NegativeInfinityValue),
+        ):
+            raise ValueError("metric value must be a numeric value")
+        if not isinstance(self.direction, MetricDirection):
+            raise ValueError("metric direction must be a MetricDirection")
         if self.aggregation is not None:
             _identifier(self.aggregation)
 
@@ -1070,8 +1093,12 @@ class PolicyEvaluation:
 
     def __post_init__(self) -> None:
         _identifier(self.rule_id)
+        if not isinstance(self.verdict, Verdict):
+            raise ValueError("policy verdict must be a Verdict")
         if self.metric_name is not None:
             _identifier(self.metric_name)
+        if self.operator not in (None, "eq", "ne", "lt", "le", "gt", "ge"):
+            raise ValueError("unknown policy operator")
         optional = (self.metric_name, self.operator, self.threshold, self.observed)
         if any(value is None for value in optional) and any(
             value is not None for value in optional
@@ -1249,6 +1276,10 @@ class ChangeSet:
     limit_reason: Literal["change_items", "change_payload_bytes"] | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.completeness, ChangeCompleteness):
+            raise ValueError("change completeness must be a ChangeCompleteness")
+        if not isinstance(self.selection, ChangeSelection):
+            raise ValueError("change selection must be a ChangeSelection")
         if self.returned_count != len(self.items) or self.returned_count < 0:
             raise ValueError("returned_count must equal the item count")
         if self.limit is not None and self.limit < 0:
@@ -1340,6 +1371,16 @@ class DiffResult:
     provenance: ComparisonProvenance
 
     def __post_init__(self) -> None:
+        if not isinstance(self.relation, Relation):
+            raise ValueError("relation must be a Relation")
+        if not isinstance(self.verdict, Verdict):
+            raise ValueError("verdict must be a Verdict")
+        if not isinstance(self.fidelity, Fidelity):
+            raise ValueError("fidelity must be a Fidelity")
+        if not isinstance(self.summary, DiffSummary):
+            raise ValueError("summary must be a DiffSummary")
+        if not isinstance(self.changes, ChangeSet):
+            raise ValueError("changes must be a ChangeSet")
         if self.summary.change_count != self.changes.total_count:
             raise ValueError("summary and ChangeSet totals must agree")
         if (
@@ -1381,6 +1422,8 @@ def _validate_completed_v2_provenance(
     )
     if provenance.provider is not None and provenance.provider not in loaded:
         raise ValueError("comparison provider must be a loaded provider")
+    if "." in provenance.comparator_id and provenance.provider is None:
+        raise ValueError("external comparator requires provider provenance")
     detection = execution.detection
     comparator_attempts = tuple(
         attempt
@@ -1396,12 +1439,18 @@ def _validate_completed_v2_provenance(
         raise ValueError("selected comparator capability must match provenance")
     if comparator_attempt.provider != provenance.provider:
         raise ValueError("selected comparator provider must match provenance")
-    if provenance.provider is not None and (
+    if (
         comparator_attempt.capability_version is not None
         and comparator_attempt.capability_version != provenance.comparator_version
     ):
         raise ValueError("selected comparator version must match provenance")
 
+    if (
+        detection is not None
+        and not detection.detector_id.startswith("core.")
+        and provenance.detector_provider is None
+    ):
+        raise ValueError("external detector requires detector provider provenance")
     if provenance.detector_provider is not None:
         if provenance.detector_provider not in loaded:
             raise ValueError("detector provider must be a loaded provider")

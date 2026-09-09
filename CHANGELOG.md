@@ -31,9 +31,17 @@ All notable changes to Platydiff are documented in this file.
 
 - Hardened P3-B plugin execution around unavailable detectors, executable-shape
   validation, single-use run tracking, final path-snapshot mutation checks, and
-  auditable failed detector attempts.
+  auditable failed detector attempts. Discovery now quarantines ordinary handle
+  descriptor failures, probe failures remain structured and auditable, backend
+  identities must match declarations, and host-reserved resource conflicts fail
+  inside aggregation. Exact automatic pins now reject invalid capability shapes
+  before detection, and aggregation enforces change budgets and truncation
+  metadata, modality-specific change kinds, full-fidelity results, and the
+  current strict equality policy.
 - Rejected schema-v1/v2 nested-value mixing and contradictory schema-v2
-  provider, capability-attempt, detector, and comparator provenance.
+  provider, capability-attempt, detector, and comparator provenance. Schema-v2
+  readers now enforce SDK-grade distribution/version identities and selected
+  comparator versions; built-in renderers accept both schema versions.
 - Non-overlapping deterministic hunk context and explicit change-truncation
   limit reasons. `changes.limit_reason` is an additive optional schema-v1 field:
   older readers ignore it and current readers accept candidate payloads where it
