@@ -31,6 +31,7 @@ from platydiff.plugin_sdk import (
     CapabilityAvailabilityV1,
     CapabilityKind,
     PluginComparisonV1,
+    PluginResourceLimitErrorV1,
     SourceServiceV1,
 )
 from tests.unit.test_plugin_host_execution import (
@@ -322,6 +323,25 @@ def test_pinned_unavailable_comparator_never_falls_back() -> None:
     assert handle.cached_run is None
     assert outcome.execution.attempts[-1].disposition == "unavailable"
     assert outcome.execution.attempts[-1].reason_code == "backend_missing"
+
+
+def test_comparator_availability_resource_limit_is_auditable() -> None:
+    class ResourceLimitedHandle(_ConfiguredHandle):
+        def availability(self) -> CapabilityAvailabilityV1:
+            raise PluginResourceLimitErrorV1("private budget detail")
+
+    handle = ResourceLimitedHandle()
+    outcome = _compare(handle)
+    assert isinstance(outcome, FailedOutcomeV2)
+    assert handle.cached_run is None
+    assert outcome.problem.code == "resource_limit_exceeded"
+    assert outcome.problem.stage.value == "resolving"
+    assert "private" not in outcome.problem.message
+    assert len(outcome.execution.attempts) == 1
+    attempt = outcome.execution.attempts[0]
+    assert attempt.disposition == "failed"
+    assert attempt.reason_code == "resource_limit_exceeded"
+    assert attempt.provider is not None
 
 
 def test_unpinned_enabled_comparator_never_preempts_builtin() -> None:
