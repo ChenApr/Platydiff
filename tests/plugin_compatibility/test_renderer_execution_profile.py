@@ -21,6 +21,7 @@ from platydiff.plugins import (
     RendererOutputLimitError,
     RendererUnavailableError,
 )
+from tests.plugin_compatibility.profiles import terminal_text_is_safe
 from tests.unit.test_plugin_host_execution import _capability
 
 
@@ -197,6 +198,44 @@ def test_renderer_cannot_mix_text_and_binary_sink_modes() -> None:
     host = _renderer_host(renderer)
     with pytest.raises(RendererExecutionError):
         host.render(_outcome(), renderer_id=renderer.capability_id)
+
+
+def test_renderer_profile_distinguishes_escaped_from_hostile_terminal_text() -> None:
+    hostile = "\x1b]0;spoofed\x07\t\ufeff\u202e"
+
+    class UnsafeRenderer(_Renderer):
+        def render(
+            self,
+            outcome: AnyCompareOutcome,
+            options: RendererPresentationOptionsV1,
+            sink: RendererSinkV1,
+        ) -> None:
+            del outcome, options
+            sink.write_text(hostile)
+
+    class SafeRenderer(_Renderer):
+        def render(
+            self,
+            outcome: AnyCompareOutcome,
+            options: RendererPresentationOptionsV1,
+            sink: RendererSinkV1,
+        ) -> None:
+            del outcome, options
+            sink.write_text(r"\x1b]0;spoofed\x07\t\ufeff\u202e")
+
+    unsafe = UnsafeRenderer()
+    unsafe_output = _renderer_host(unsafe).render(
+        _outcome(), renderer_id=unsafe.capability_id
+    )
+    safe = SafeRenderer()
+    safe_output = _renderer_host(safe).render(
+        _outcome(), renderer_id=safe.capability_id
+    )
+
+    assert unsafe_output.text is not None
+    assert safe_output.text is not None
+    assert not terminal_text_is_safe(unsafe_output.text)
+    assert terminal_text_is_safe(safe_output.text)
 
 
 @pytest.mark.parametrize(
