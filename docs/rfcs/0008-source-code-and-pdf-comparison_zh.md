@@ -81,6 +81,7 @@ Phase 6 不包括：
 | P6X8 | 多 view PDF spec 作为 required all-or-nothing invocation 执行：任一 selected view unavailable 或 failed 都终止顶层 outcome，且不产生 `DiffResult`。 | 返回只包含已完成 view 的 partial PDF `DiffResult`。 |
 | P6X9 | artifact gate 之前，`artifact_policy` 只有一个取值：`none`。 | 在安全 artifact writer 存在前预留 `record_refs`。 |
 | P6X10 | 提议共享 schema allocation：P4 structured data = v3，Phase 5 image = v4，Phase 6 source/PDF = v5，Phase 7 audio/video = v6；每个 successor 只有在其依赖的所有 predecessor schema 已合并到 `main` 且 reader/writer 与 migration fixture 就绪后才能开始。 | 让每个 RFC 局部选择 schema 编号，或把编号推迟到实现期而造成 closed union 冲突。 |
+| P6X11 | 增加一个独立授权的 P6-C0 schema-v5 source/PDF contract gate，在任何 source/PDF comparator、backend 或 CLI gate 开始前一次性冻结两个 spec 与 change。 | 让 P6-S1 或 P6-P1a 先合并，再为另一个 modality 重开 schema-v5 closed union。 |
 | SC1 | 增加显式 `SourceCodeCompareSpec`，并要求 `language` 与 `relation` 字段。 | 从 suffix/content 推断语言，或复用 `TextCompareSpec`。 |
 | SC2 | 首批 source language 为 `python` 与 `javascript`；`typescript`、`c`、`cpp`、`rust`、`go`、`java`、notebook、template 与 generated-code policy 延后。 | 从后端 package 中可用的所有 grammar 同时开始。 |
 | SC3 | 分离 `lexical_text`、`syntax_tree` 与未来 `semantic` relation；Phase 6 首批 gate 不声明运行时语义等价。 | 把所有源代码结果报告为泛化 code equality。 |
@@ -110,15 +111,23 @@ P4 structured data 使用 schema v3，Phase 5 image 使用 schema v4，Phase 6 s
 已接受的 schema migration。若后续全局 schema RFC 或人工 review 选择不同 allocation，
 必须在任何受影响 gate 开始前同时更新 RFC 0007、RFC 0008 与 RFC 0009。
 
-Phase 6 schema implementation 只有在其依赖的 predecessor schema 已合并到 `main` 且
-带 compatibility fixture 后才能开始：
+Phase 6 schema implementation 只属于 P6-C0。P6-C0 只有在其依赖的 predecessor schema 已
+合并到 `main` 且带 compatibility fixture 后才能开始：
 
 - RFC 0006 的 schema v3 reader/writer 与 migration fixture 已存在并重新验证；
 - 如果 Phase 5 已先于 Phase 6 接受，则 schema v4 image reader/writer 与 migration
   fixture 已存在；否则需要人工批准的 schema-allocation review 以 no-op predecessor
   fixture 显式保留 v4；
+- schema v5 fixture 在一个 closed union 中同时覆盖 source-code 与 PDF spec/change，包括
+  起初 unavailable 的 relation 或 view；
 - schema v5 fixture 证明 reader 按已实现 predecessor 集合接受 v1/v2/v3/v4/v5，
   v1/v2 writer 保持不变，source/PDF outcome 绝不会自动 downgrade。
+
+P6-C0 合并后，P6-S1、P6-P1a 与后续 Phase 6 gate 可以重新运行 schema compatibility
+fixture，但不得新增、删除、重命名或重新解释任何 schema-v5 spec field、change kind、metric
+name、problem code、canonical wire key、digest domain 或 validation rule。任何缺失的未来
+relation 或 view 都必须已在 P6-C0 中表示为 unavailable capability，而不是通过重开 v5 closed
+union 添加。
 
 提议的 v5 closed union 为：
 
@@ -147,10 +156,9 @@ ChangeV5 = (
 - source-code 或 PDF outcome 不存在自动 downgrade；
 - unknown built-in spec/change kind 仍然非法；unknown namespaced extension change 保持 RFC 0001 行为。
 
-Schema v5 必须为每个新 spec field、change kind、metric、evaluation rule、transformation
-ID、backend identity 与 problem detail 定义稳定 JSON 名称。由于 predecessor RFC 可能已
-接受但 code gate 仍未实现，每个 Phase 6 implementation gate 开始时都必须重新验证 schema
-假设。
+P6-C0 必须为每个新 spec field、change kind、metric、evaluation rule、transformation ID、
+backend identity 与 problem detail 定义稳定 JSON 名称。后续 Phase 6 implementation gate
+只验证冻结的 v5 shape 仍然存在且兼容；它们不选择或改变 schema shape。
 
 ## 设计-契约矩阵
 
@@ -890,6 +898,8 @@ supplied finite value；它们不是 RFC-wide default：
 
 接受/启动边界如下：
 
+- P6-C0 必须在任何 source/PDF comparator、backend 或 CLI gate 前合并；P6-C0 之后，
+  P6-S1 与 P6-P1a 可以并行，且不得重开 schema v5；
 - P6-S1 与 P6-S2 是 source-code gate，不受 PDF backend numeric default 阻塞；
 - P6-P1a 可以使用 `PdfCompareSpec()` 与 `PdfResourceLimits()` 接受并启动，因为默认 view 是
   `binary`，且不解析 nonbinary PDF content；
@@ -1005,17 +1015,32 @@ embedded file、获取 remote asset 或派生新 view。
 
 这些 gate 是提议计划，不是实现授权。
 
-### P6-S1：source-code schema 与 lexical relation
+### P6-C0：schema-v5 source/PDF contract gate
 
-1. `feat(core): add source-code schema contracts`
-2. `feat(source): add explicit lexical source-code comparison`
-3. `feat(cli): add explicit source-code comparison commands`
-4. `docs: document source-code comparison contracts`
+1. `feat(core): add schema-v5 source/PDF spec and change contracts`
+2. `feat(core): add schema-v5 readers, writers, and v1-v4 migrations`
+3. `test(core): add canonical source/PDF wire fixtures`
+4. `test(core): add source/PDF spec validation and unavailable capability cases`
+5. `docs: document schema-v5 source/PDF contract`
 
-Gate：schema-v5 migration test 通过；既有 v1/v2 与已实现 predecessor schema fixture
-保持兼容；`language` 是必填；不存在自动语言探测或 text fallback；lexical relation 对 Python
-与 JavaScript 有确定性 token/text fixture；limit、Unicode、newline、malformed input 与
-renderer escaping 均有测试。
+Gate：从更新后的 `main` 独立授权；predecessor v1-v4 reader、writer 与 migration fixture
+通过；schema v5 在一个 closed union 中冻结 `SourceCodeCompareSpec`、`PdfCompareSpec`、
+`SourceCodeChange` 与 `PdfChange`；所有 source relation 与 PDF view 都有表示，即使初始为
+unavailable；canonical fact、digest domain、option serialization、resource-limit shape、
+problem code 与 spec validation 均冻结；不实现 source/PDF comparator、backend 或 CLI 行为。
+P6-C0 必须在 P6-S1、P6-P1a 或任何后续 Phase 6 comparator/backend gate 开始前合并。
+
+### P6-S1：source-code lexical relation
+
+1. `feat(source): add dependency-free lexical source-code comparison on schema v5`
+2. `feat(cli): add explicit source-code lexical comparison commands`
+3. `test(source): add deterministic lexical source fixtures`
+4. `docs: document source-code lexical comparison contracts`
+
+Gate：P6-C0 已合并；schema-v5 fixture 重新运行且保持不变；`language` 是必填；不存在自动语言
+探测或 text fallback；lexical relation 对 Python 与 JavaScript 有确定性 token/text fixture；
+limit、Unicode、newline、malformed input 与 renderer escaping 均有测试。该 gate 不新增或改变
+schema-v5 field、union、validation rule 或 problem code。P6-C0 之后，P6-S1 与 P6-P1a 可以并行。
 
 ### P6-S2：source-code syntax-tree relation 与 parser backend
 
@@ -1024,24 +1049,26 @@ renderer escaping 均有测试。
 3. `test(source): add parser compatibility and adversarial corpus`
 4. `docs: document parser provenance and structural semantics`
 
-Gate：backend dependency/license/platform review 完成；grammar version 在 provenance 中 pin；
-parser recovery、comment、formatting、stable node path、alignment、insert/delete/update/move
-语义、work limit、native failure behavior 与 deterministic repeated run 通过。该 gate
-开始前必须提供 adversarial evidence，证明选定 parser backend 能强制 token、node、work、
-input 与 payload default。
+Gate：P6-C0 与 P6-S1 已合并；schema-v5 fixture 重新运行且保持不变；backend
+dependency/license/platform review 完成；grammar version 在 provenance 中 pin；parser
+recovery、comment、formatting、stable node path、alignment、insert/delete/update/move 语义、
+work limit、native failure behavior 与 deterministic repeated run 通过。该 gate 开始前必须
+提供 adversarial evidence，证明选定 parser backend 能强制 token、node、work、input 与
+payload default。该 gate 不得重开 v5 closed union。
 
-### P6-P1a：PDF schema 与 binary view
+### P6-P1a：PDF binary view
 
-1. `feat(core): add PDF schema contracts`
-2. `feat(pdf): add explicit PDF binary view`
-3. `feat(cli): add explicit PDF binary comparison commands`
+1. `feat(pdf): add explicit PDF binary view on schema v5`
+2. `feat(cli): add explicit PDF binary comparison commands`
+3. `test(pdf): add generated PDF binary fixtures`
 4. `docs: document PDF binary view semantics`
 
-Gate：重新验证 schema migration；`artifact_policy` 只接受 `none`；纯 binary view 把
-encrypted PDF 当作字节接受；binary view 复用 exact binary semantics，同时命名 PDF view；
-malformed PDF 不被解析；RFC-wide binary-safe resource default、payload truncation 与无
-fallback 均由 generated fixture 覆盖。该 gate 可以在没有 nonbinary PDF backend numeric
-default 的情况下接受并启动。
+Gate：P6-C0 已合并；schema-v5 fixture 重新运行且保持不变；`artifact_policy` 只接受
+`none`；纯 binary view 把 encrypted PDF 当作字节接受；binary view 复用 exact binary
+semantics，同时命名 PDF view；malformed PDF 不被解析；RFC-wide binary-safe resource
+default、payload truncation 与无 fallback 均由 generated fixture 覆盖。该 gate 可以在没有
+nonbinary PDF backend numeric default 的情况下接受并启动。该 gate 不新增或改变 schema-v5
+field、union、validation rule 或 problem code。P6-C0 之后，P6-S1 与 P6-P1a 可以并行。
 
 ### P6-P1b：PDF extracted-text view
 
@@ -1050,13 +1077,13 @@ default 的情况下接受并启动。
 3. `feat(cli): add explicit PDF extracted-text comparison commands`
 4. `docs: document PDF text extraction semantics`
 
-Gate：schema migration 继续兼容 P6-P1a；任何 encrypted input 返回
-`failed/pdf_encrypted`；text extraction 只在受监督 bounded worker 中运行；multi-view
+Gate：P6-C0 与 P6-P1a 已合并；schema-v5 fixture 重新运行且保持不变；任何 encrypted input
+返回 `failed/pdf_encrypted`；text extraction 只在受监督 bounded worker 中运行；multi-view
 all-or-nothing 行为有测试；text order、font/encoding、Unicode mapping、page alignment、
 worker isolation、cumulative resource、backend provenance 与无 fallback 均由 generated
 fixture 覆盖。该 gate 开始前必须提供并论证 `worker_invocation` 与 `extracted_text` default，
 覆盖 page、text-run、stream/decode、backend-time、stdout/stderr、temp、decoded/output、RSS
-peak 与 process counter。
+peak 与 process counter。该 gate 不得重开 v5 closed union。
 
 ### P6-P2：PDF object/metadata view
 
@@ -1064,11 +1091,12 @@ peak 与 process counter。
 2. `test(pdf): add hostile object graph and metadata corpus`
 3. `docs: document PDF object comparison semantics`
 
-Gate：xref/object stream/incremental update 处理、active-content inventory、embedded-file
-inventory、metadata ignore policy、object alignment、stream limit、decompression bomb、
-malformed reference 与 deterministic canonical ordering 通过。该 gate 开始前必须提供并论证
-`worker_invocation` 与 `objects_metadata` default，覆盖 object、page、stream/decode、
-backend-time、stdout/stderr、temp、decoded/output、RSS peak 与 process counter。
+Gate：P6-C0 与 P6-P1a 已合并；schema-v5 fixture 重新运行且保持不变；xref/object
+stream/incremental update 处理、active-content inventory、embedded-file inventory、metadata
+ignore policy、object alignment、stream limit、decompression bomb、malformed reference 与
+deterministic canonical ordering 通过。该 gate 开始前必须提供并论证 `worker_invocation` 与
+`objects_metadata` default，覆盖 object、page、stream/decode、backend-time、stdout/stderr、
+temp、decoded/output、RSS peak 与 process counter。该 gate 不得重开 v5 closed union。
 
 ### P6-P3：无 artifact 的 PDF rendered-page view
 
@@ -1077,12 +1105,13 @@ backend-time、stdout/stderr、temp、decoded/output、RSS peak 与 process coun
 3. `test(pdf): add rendering determinism and sandbox profile`
 4. `docs: document rendered-page backend constraints`
 
-Gate：renderer backend license/security/platform review 完成；page box、rotation、color、
-alpha、transparency、antialiasing、font substitution、pixel limit、subprocess timeout、temp
-limit、changed-region grouping 与 platform variance 均有测试。该 gate 开始前必须提供并论证
-`worker_invocation` 与 `rendered_pages` default，覆盖 page、rendered-page、raster-pixel、
-backend-time、stdout/stderr、temp、decoded/output、RSS peak 与 process counter。不写入
-page-image 或 heatmap artifact。
+Gate：P6-C0 与 P6-P1a 已合并；schema-v5 fixture 重新运行且保持不变；renderer backend
+license/security/platform review 完成；page box、rotation、color、alpha、transparency、
+antialiasing、font substitution、pixel limit、subprocess timeout、temp limit、changed-region
+grouping 与 platform variance 均有测试。该 gate 开始前必须提供并论证 `worker_invocation` 与
+`rendered_pages` default，覆盖 page、rendered-page、raster-pixel、backend-time、stdout/stderr、
+temp、decoded/output、RSS peak 与 process counter。不写入 page-image 或 heatmap artifact。
+该 gate 不得重开 v5 closed union。
 
 ### P6-A1：rendered page 的可选 artifact gate
 
@@ -1096,9 +1125,12 @@ guidance 与无 source reread 通过。该 gate 不由 P6-P3 隐含授权。
 
 每个 implementation gate 都运行 Ruff format/lint、strict mypy、完整 pytest、build、
 wheel/sdist inspection、documentation link check、package content inspection、涉及 package
-的 dependency/license review，以及 secret/path leak scan。Source/PDF gate 还需要 corpus
-provenance record 与精确 backend version capture。可选后端缺失时，相关测试必须以明确原因
-skip；skipped test 不是 passing evidence。
+的 dependency/license review，以及 secret/path leak scan。P6-C0 还运行 schema-v5
+reader/writer、v1-v4 migration、canonical fixture 与 spec/problem validation check。后续
+source/PDF gate 将这些 fixture 作为 compatibility check 重新运行，并必须证明冻结的 v5
+shape 未改变。Source/PDF comparator 或 backend gate 还需要 corpus provenance record 与精确
+backend version capture。可选后端缺失时，相关测试必须以明确原因 skip；skipped test 不是
+passing evidence。
 
 ## 后续 callback
 
@@ -1109,8 +1141,8 @@ binary/PDF ambiguity、encrypted-file probing 与 view selection。
 
 SDK v2 必须先定义 source/PDF request view、source service、lifecycle stage、backend role、
 artifact authority、compatibility receipt、version negotiation、必要时的 out-of-process
-isolation 与 schema migration，第三方 source/PDF comparator 才能执行。SDK v1.1 仍只支持
-text/binary。
+isolation，并兼容冻结的 schema-v5 source/PDF contract，第三方 source/PDF comparator 才能
+执行。SDK v1.1 仍只支持 text/binary。
 
 语义源代码比较需要单独契约来定义 runtime、type system、macro/preprocessor、import graph、
 dependency resolution、platform、compiler/interpreter version、side effect 与 false-equivalence
@@ -1124,7 +1156,7 @@ validation、digital signature 与 archival conformance 都是独立契约。
 
 | Scenario | Required terminal behavior |
 | --- | --- |
-| 显式 source `lexical_text`，stable input | RFC 0002 text lifecycle 与 exact decoded-line semantics；predecessor fixture gate 通过后，在提议 schema v5 下产生 completed source-code outcome。 |
+| 显式 source `lexical_text`，stable input | RFC 0002 text lifecycle 与 exact decoded-line semantics；在 P6-C0 冻结的 schema v5 下产生 completed source-code outcome。 |
 | 显式 source `syntax_tree`，缺少 parser backend | `resolving/unavailable/backend_unavailable`；没有 `DiffResult`。 |
 | 显式 source `syntax_tree`，`reject` recovery 下 source malformed | `decoding/failed/decode_error`；没有 text fallback，也没有 `DiffResult`。 |
 | 显式 source `syntax_tree`，parser/resource bound exceeded | `decoding/failed/resource_limit_exceeded`；没有 partial result。 |

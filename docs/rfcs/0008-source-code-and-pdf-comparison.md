@@ -90,6 +90,7 @@ are not accepted until a reviewer explicitly approves them.
 | P6X8 | Execute multi-view PDF specs as required all-or-nothing invocations: any selected view unavailable or failed terminates the top-level outcome without a `DiffResult`. | Return a partial PDF `DiffResult` containing the views that happened to finish. |
 | P6X9 | Before the artifact gate, `artifact_policy` has exactly one value, `none`. | Reserve `record_refs` before a safe artifact writer exists. |
 | P6X10 | Propose the shared schema allocation P4 structured data = v3, Phase 5 image = v4, Phase 6 source/PDF = v5, and Phase 7 audio/video = v6; each successor may start only after all predecessor schemas it depends on are merged on `main` with reader/writer and migration fixtures. | Let each RFC pick a schema number locally, or defer numbering until implementation and risk conflicting closed unions. |
+| P6X11 | Add one independently authorized P6-C0 schema-v5 source/PDF contract gate that freezes both specs and changes before any source/PDF comparator, backend, or CLI gate starts. | Let P6-S1 or P6-P1a merge first and later reopen the schema-v5 closed union for the other modality. |
 | SC1 | Add an explicit `SourceCodeCompareSpec` with required `language` and `relation` fields. | Infer language from suffix/content or reuse `TextCompareSpec`. |
 | SC2 | First source languages are `python` and `javascript`; `typescript`, `c`, `cpp`, `rust`, `go`, `java`, notebooks, templates, and generated-code policies are deferred. | Start with every grammar available from a backend package. |
 | SC3 | Separate `lexical_text`, `syntax_tree`, and future `semantic` relations; Phase 6 first gates do not claim runtime semantic equivalence. | Report all source-code results as one generic code equality relation. |
@@ -121,17 +122,27 @@ If a later global schema RFC or human review chooses a different allocation, it
 must update RFC 0007, RFC 0008, and RFC 0009 together before any affected gate
 starts.
 
-Phase 6 schema implementation may start only after the predecessor schemas it
-depends on are merged on `main` with compatibility fixtures:
+Phase 6 schema implementation belongs only to P6-C0. P6-C0 may start only after
+the predecessor schemas it depends on are merged on `main` with compatibility
+fixtures:
 
 - schema v3 reader/writer and migration fixtures from RFC 0006 are present and
   revalidated;
 - schema v4 image reader/writer and migration fixtures are present if Phase 5
   has been accepted ahead of Phase 6, or a human-approved schema-allocation
   review explicitly reserves v4 with a no-op predecessor fixture;
+- schema v5 fixtures cover both source-code and PDF specs/changes in one closed
+  union, including relations or views that are initially unavailable;
 - schema v5 fixtures prove that readers accept v1/v2/v3/v4/v5 as applicable,
   that v1/v2 writers remain unchanged, and that source/PDF outcomes never
   downgrade automatically.
+
+After P6-C0 merges, P6-S1, P6-P1a, and later Phase 6 gates may re-run schema
+compatibility fixtures, but they must not add, remove, rename, or reinterpret
+any schema-v5 spec field, change kind, metric name, problem code, canonical
+wire key, digest domain, or validation rule. Any missing future relation or
+view must already be represented in P6-C0 as an unavailable capability, not
+added by reopening the v5 closed union.
 
 The proposed v5 closed unions are:
 
@@ -166,11 +177,10 @@ Under this proposed allocation:
 - unknown built-in spec/change kinds remain invalid; unknown namespaced
   extension changes retain RFC 0001 behavior.
 
-Schema v5 must define stable JSON names for every new spec field,
-change kind, metric, evaluation rule, transformation ID, backend identity, and
-problem detail. Schema assumptions are revalidated at the beginning of each
-Phase 6 implementation gate because predecessor RFCs may be accepted while their
-code gates remain unimplemented.
+P6-C0 must define stable JSON names for every new spec field, change kind,
+metric, evaluation rule, transformation ID, backend identity, and problem
+detail. Later Phase 6 implementation gates validate that the frozen v5 shape is
+still present and compatible; they do not choose or change schema shape.
 
 ## Design-contract matrix
 
@@ -988,6 +998,8 @@ RFC-wide defaults:
 
 The acceptance/start boundary is explicit:
 
+- P6-C0 must merge before any source/PDF comparator, backend, or CLI gate; after
+  P6-C0, P6-S1 and P6-P1a may proceed in parallel without reopening schema v5;
 - P6-S1 and P6-S2 are source-code gates and are not blocked by PDF backend
   numeric defaults;
 - P6-P1a may be accepted and started with `PdfCompareSpec()` and
@@ -1131,18 +1143,36 @@ open an embedded file, fetch a remote asset, or derive a new view.
 
 These gates are proposed plans, not implementation authorization.
 
-### P6-S1: source-code schema and lexical relation
+### P6-C0: schema-v5 source/PDF contract gate
 
-1. `feat(core): add source-code schema contracts`
-2. `feat(source): add explicit lexical source-code comparison`
-3. `feat(cli): add explicit source-code comparison commands`
-4. `docs: document source-code comparison contracts`
+1. `feat(core): add schema-v5 source/PDF spec and change contracts`
+2. `feat(core): add schema-v5 readers, writers, and v1-v4 migrations`
+3. `test(core): add canonical source/PDF wire fixtures`
+4. `test(core): add source/PDF spec validation and unavailable capability cases`
+5. `docs: document schema-v5 source/PDF contract`
 
-Gate: schema-v5 migration tests pass; existing v1/v2 and implemented
-predecessor schema fixtures remain compatible; `language` is required; no
-automatic language detection or text fallback exists; lexical relation has
-deterministic token/text fixtures for Python and JavaScript; limits, Unicode,
-newline, malformed input, and renderer escaping are tested.
+Gate: independently authorized from updated `main`; predecessor v1-v4 readers,
+writers, and migration fixtures pass; schema v5 freezes `SourceCodeCompareSpec`,
+`PdfCompareSpec`, `SourceCodeChange`, and `PdfChange` in one closed union; all
+source relations and PDF views are represented even when initially unavailable;
+canonical facts, digest domains, option serialization, resource-limit shapes,
+problem codes, and spec validation are frozen; no source/PDF comparator,
+backend, or CLI behavior is implemented. P6-C0 must merge before P6-S1,
+P6-P1a, or any later Phase 6 comparator/backend gate starts.
+
+### P6-S1: source-code lexical relation
+
+1. `feat(source): add dependency-free lexical source-code comparison on schema v5`
+2. `feat(cli): add explicit source-code lexical comparison commands`
+3. `test(source): add deterministic lexical source fixtures`
+4. `docs: document source-code lexical comparison contracts`
+
+Gate: P6-C0 has merged; schema-v5 fixtures are rerun and unchanged; `language`
+is required; no automatic language detection or text fallback exists; lexical
+relation has deterministic token/text fixtures for Python and JavaScript;
+limits, Unicode, newline, malformed input, and renderer escaping are tested.
+This gate does not add or change schema-v5 fields, unions, validation rules, or
+problem codes. After P6-C0, P6-S1 and P6-P1a may proceed in parallel.
 
 ### P6-S2: source-code syntax-tree relation and parser backend
 
@@ -1151,26 +1181,31 @@ newline, malformed input, and renderer escaping are tested.
 3. `test(source): add parser compatibility and adversarial corpus`
 4. `docs: document parser provenance and structural semantics`
 
-Gate: backend dependency/license/platform review is complete; grammar versions
-are pinned in provenance; parser recovery, comments, formatting, stable node
-paths, alignment, insert/delete/update/move semantics, work limits, native
-failure behavior, and deterministic repeated runs pass. This gate must provide
+Gate: P6-C0 and P6-S1 have merged; schema-v5 fixtures are rerun and unchanged;
+backend dependency/license/platform review is complete; grammar versions are
+pinned in provenance; parser recovery, comments, formatting, stable node paths,
+alignment, insert/delete/update/move semantics, work limits, native failure
+behavior, and deterministic repeated runs pass. This gate must provide
 adversarial evidence that the selected parser backend enforces token, node,
-work, input, and payload defaults before implementation starts.
+work, input, and payload defaults before implementation starts. It must not
+reopen the v5 closed union.
 
-### P6-P1a: PDF schema and binary view
+### P6-P1a: PDF binary view
 
-1. `feat(core): add PDF schema contracts`
-2. `feat(pdf): add explicit PDF binary view`
-3. `feat(cli): add explicit PDF binary comparison commands`
+1. `feat(pdf): add explicit PDF binary view on schema v5`
+2. `feat(cli): add explicit PDF binary comparison commands`
+3. `test(pdf): add generated PDF binary fixtures`
 4. `docs: document PDF binary view semantics`
 
-Gate: schema migration is revalidated; `artifact_policy` accepts only `none`;
+Gate: P6-C0 has merged; schema-v5 fixtures are rerun and unchanged;
+`artifact_policy` accepts only `none`;
 pure binary view accepts encrypted PDFs as bytes; binary view reuses exact
 binary semantics while naming the PDF view; malformed PDFs are not parsed;
 RFC-wide binary-safe resource defaults, payload truncation, and no fallback are
 covered by generated fixtures. This gate may be accepted and started without
-nonbinary PDF backend numeric defaults.
+nonbinary PDF backend numeric defaults. This gate does not add or change
+schema-v5 fields, unions, validation rules, or problem codes. After P6-C0,
+P6-S1 and P6-P1a may proceed in parallel.
 
 ### P6-P1b: PDF extracted-text view
 
@@ -1179,15 +1214,15 @@ nonbinary PDF backend numeric defaults.
 3. `feat(cli): add explicit PDF extracted-text comparison commands`
 4. `docs: document PDF text extraction semantics`
 
-Gate: schema migration remains compatible with P6-P1a; any encrypted input
-returns `failed/pdf_encrypted`; text extraction runs only in a supervised
-bounded worker; multi-view all-or-nothing behavior is tested; text order,
-fonts/encodings, Unicode mapping, page alignment, worker isolation, cumulative
-resources, backend provenance, and no fallback are covered by generated
-fixtures. This gate must provide and justify `worker_invocation` and
+Gate: P6-C0 and P6-P1a have merged; schema-v5 fixtures are rerun and unchanged;
+any encrypted input returns `failed/pdf_encrypted`; text extraction runs only in
+a supervised bounded worker; multi-view all-or-nothing behavior is tested; text
+order, fonts/encodings, Unicode mapping, page alignment, worker isolation,
+cumulative resources, backend provenance, and no fallback are covered by
+generated fixtures. This gate must provide and justify `worker_invocation` and
 `extracted_text` defaults for page, text-run, stream/decode, backend-time,
 stdout/stderr, temp, decoded/output, RSS peak, and process counters before
-implementation starts.
+implementation starts. It must not reopen the v5 closed union.
 
 ### P6-P2: PDF object/metadata view
 
@@ -1195,13 +1230,14 @@ implementation starts.
 2. `test(pdf): add hostile object graph and metadata corpus`
 3. `docs: document PDF object comparison semantics`
 
-Gate: xref/object stream/incremental update handling, active-content inventory,
+Gate: P6-C0 and P6-P1a have merged; schema-v5 fixtures are rerun and unchanged;
+xref/object stream/incremental update handling, active-content inventory,
 embedded-file inventory, metadata ignore policy, object alignment, stream
 limits, decompression bombs, malformed references, and deterministic canonical
 ordering pass. This gate must provide and justify `worker_invocation` and
 `objects_metadata` defaults for object, page, stream/decode, backend-time,
 stdout/stderr, temp, decoded/output, RSS peak, and process counters before
-implementation starts.
+implementation starts. It must not reopen the v5 closed union.
 
 ### P6-P3: PDF rendered-page view without artifacts
 
@@ -1210,13 +1246,15 @@ implementation starts.
 3. `test(pdf): add rendering determinism and sandbox profile`
 4. `docs: document rendered-page backend constraints`
 
-Gate: renderer backend license/security/platform review is complete; page box,
+Gate: P6-C0 and P6-P1a have merged; schema-v5 fixtures are rerun and unchanged;
+renderer backend license/security/platform review is complete; page box,
 rotation, color, alpha, transparency, antialiasing, font substitution, pixel
 limits, subprocess timeout, temp limits, changed-region grouping, and platform
 variance are tested. This gate must provide and justify `worker_invocation` and
 `rendered_pages` defaults for page, rendered-page, raster-pixel, backend-time,
 stdout/stderr, temp, decoded/output, RSS peak, and process counters before
-implementation starts. No page-image or heatmap artifact is written.
+implementation starts. No page-image or heatmap artifact is written. It must
+not reopen the v5 closed union.
 
 ### P6-A1: optional artifact gate for rendered pages
 
@@ -1232,9 +1270,13 @@ not implied by P6-P3.
 Every implementation gate runs Ruff format/lint, strict mypy, complete pytest,
 build, wheel/sdist inspection, documentation link checks, package content
 inspection, dependency/license review for changed packages, and secret/path leak
-scans. Source/PDF gates also require corpus provenance records and exact backend
-version capture. Optional-backend tests must skip with explicit reasons when a
-backend is absent; skipped tests are not passing evidence.
+scans. P6-C0 additionally runs schema-v5 reader/writer, v1-v4 migration,
+canonical fixture, and spec/problem validation checks. Later source/PDF gates
+rerun those fixtures as compatibility checks and must prove the frozen v5 shape
+is unchanged. Source/PDF comparator or backend gates also require corpus
+provenance records and exact backend version capture. Optional-backend tests
+must skip with explicit reasons when a backend is absent; skipped tests are not
+passing evidence.
 
 ## Later callbacks
 
@@ -1246,8 +1288,9 @@ probing, and view selection in the same or another successor RFC.
 
 SDK v2 must define source/PDF request views, source services, lifecycle stages,
 backend roles, artifact authority, compatibility receipts, version negotiation,
-out-of-process isolation if needed, and schema migration before third-party
-source/PDF comparators can execute. SDK v1.1 remains text/binary-only.
+out-of-process isolation if needed, and compatibility with the frozen schema-v5
+source/PDF contracts before third-party source/PDF comparators can execute. SDK
+v1.1 remains text/binary-only.
 
 Semantic source-code comparison needs a separate contract for runtime, type
 system, macro/preprocessor, import graph, dependency resolution, platform,
@@ -1264,7 +1307,7 @@ fetch, render, OCR, extract, or execute source documents itself.
 
 | Scenario | Required terminal behavior |
 | --- | --- |
-| Explicit source `lexical_text`, stable inputs | RFC 0002 text lifecycle and exact decoded-line semantics; completed source-code outcome under proposed schema v5 after predecessor fixture gates pass. |
+| Explicit source `lexical_text`, stable inputs | RFC 0002 text lifecycle and exact decoded-line semantics; completed source-code outcome under the P6-C0 frozen schema v5. |
 | Explicit source `syntax_tree`, missing parser backend | `resolving/unavailable/backend_unavailable`; no `DiffResult`. |
 | Explicit source `syntax_tree`, malformed source with `reject` recovery | `decoding/failed/decode_error`; no text fallback and no `DiffResult`. |
 | Explicit source `syntax_tree`, parser/resource bound exceeded | `decoding/failed/resource_limit_exceeded`; no partial result. |
