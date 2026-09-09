@@ -15,9 +15,15 @@ from platydiff.plugin_sdk import (
     PLUGIN_ENTRY_POINT_GROUP,
     PLUGIN_MANIFEST_SCHEMA_VERSION,
     CapabilityDeclarationV1,
+    ComponentDeclarationV1,
     PluginManifestV1,
+    RuntimeDependencyV1,
 )
-from platydiff.plugin_sdk._models import _bounded_text, _plugin_identifier
+from platydiff.plugin_sdk._models import (
+    _bounded_text,
+    _plugin_identifier,
+    _stable_identifier,
+)
 
 type PluginDiscoveryReason = Literal[
     "plugin_disabled",
@@ -163,7 +169,7 @@ class PluginDiscoveryIssueV1:
         if self.reason_code not in _REASON_CODES:
             raise ValueError("unknown plugin discovery reason")
         if self.capability_id is not None:
-            _bounded_text(self.capability_id, "capability_id")
+            _stable_identifier(self.capability_id, "capability_id")
 
 
 @dataclass(frozen=True, slots=True)
@@ -312,20 +318,26 @@ def _enumerate() -> tuple[
     issues: list[PluginDiscoveryIssueV1] = []
     claimed_names: set[str] = set()
     for entry_point in _installed_entry_points():
-        raw_name = _safe_metadata_text(entry_point.name)
-        if raw_name:
-            claimed_names.add(raw_name)
-        distribution = entry_point.dist
-        raw_distribution_name = (
-            _safe_metadata_text(distribution.name) if distribution is not None else ""
-        )
-        raw_distribution_version = (
-            _safe_metadata_text(distribution.version)
-            if distribution is not None
-            else ""
-        )
-        raw_value = _safe_metadata_text(entry_point.value)
+        raw_name = ""
+        raw_distribution_name = ""
+        raw_distribution_version = ""
+        raw_value = ""
         try:
+            raw_name = _safe_metadata_text(entry_point.name)
+            if raw_name:
+                claimed_names.add(raw_name)
+            distribution = entry_point.dist
+            raw_distribution_name = (
+                _safe_metadata_text(distribution.name)
+                if distribution is not None
+                else ""
+            )
+            raw_distribution_version = (
+                _safe_metadata_text(distribution.version)
+                if distribution is not None
+                else ""
+            )
+            raw_value = _safe_metadata_text(entry_point.value)
             metadata = PluginEntryPointV1(
                 plugin_id=entry_point.name,
                 group=cast(Literal["platydiff.plugins.v1"], entry_point.group),
@@ -333,7 +345,9 @@ def _enumerate() -> tuple[
                 distribution_name=raw_distribution_name,
                 distribution_version=raw_distribution_version,
             )
-        except (TypeError, ValueError):
+        except (KeyboardInterrupt, SystemExit, MemoryError):
+            raise
+        except Exception:
             issues.append(
                 _issue(
                     "plugin_metadata_invalid",
@@ -388,6 +402,8 @@ def _load(
     for candidate in candidates:
         try:
             target = candidate.entry_point.load()
+        except (KeyboardInterrupt, SystemExit, MemoryError):
+            raise
         except Exception:
             issues.append(_issue("plugin_import_failed", candidate.metadata))
             continue
@@ -395,11 +411,14 @@ def _load(
             issues.append(_issue("plugin_factory_failed", candidate.metadata))
             continue
         try:
-            manifest = target()
+            returned_manifest = target()
+        except (KeyboardInterrupt, SystemExit, MemoryError):
+            raise
         except Exception:
             issues.append(_issue("plugin_factory_failed", candidate.metadata))
             continue
-        if not isinstance(manifest, PluginManifestV1):
+        manifest = _validated_manifest(returned_manifest)
+        if manifest is None:
             issues.append(_issue("plugin_manifest_invalid", candidate.metadata))
             continue
         if manifest.plugin_id != candidate.metadata.plugin_id:
@@ -430,6 +449,75 @@ def _load(
             )
         )
     return tuple(plugins), tuple(sorted(issues, key=_issue_key))
+
+
+def _validated_manifest(value: object) -> PluginManifestV1 | None:
+    """Reconstruct a returned manifest so mutated typed values cannot bypass checks."""
+    if not isinstance(value, PluginManifestV1):
+        return None
+    try:
+        if not isinstance(value.capabilities, tuple) or not isinstance(
+            value.required_host_features, tuple
+        ):
+            raise ValueError("manifest collections must be tuples")
+        capabilities: list[CapabilityDeclarationV1] = []
+        for declaration in value.capabilities:
+            if not isinstance(declaration, CapabilityDeclarationV1):
+                raise ValueError("invalid capability declaration")
+            if not isinstance(
+                declaration.runtime_dependencies, tuple
+            ) or not isinstance(declaration.supported_python_versions, tuple):
+                raise ValueError("invalid capability collections")
+            if not isinstance(declaration.supported_platforms, tuple) or not isinstance(
+                declaration.components, tuple
+            ):
+                raise ValueError("invalid capability collections")
+            dependencies = tuple(
+                RuntimeDependencyV1(
+                    dependency.distribution_name,
+                    dependency.version_specifier,
+                    dependency.optional,
+                )
+                for dependency in declaration.runtime_dependencies
+            )
+            components = tuple(
+                ComponentDeclarationV1(
+                    component.component_id,
+                    component.component_version,
+                    component.kind,
+                    component.optional,
+                )
+                for component in declaration.components
+            )
+            capabilities.append(
+                CapabilityDeclarationV1(
+                    capability_id=declaration.capability_id,
+                    kind=declaration.kind,
+                    implementation_version=declaration.implementation_version,
+                    backend_id=declaration.backend_id,
+                    backend_version=declaration.backend_version,
+                    priority=declaration.priority,
+                    runtime_dependencies=dependencies,
+                    supported_python_versions=declaration.supported_python_versions,
+                    supported_platforms=declaration.supported_platforms,
+                    components=components,
+                )
+            )
+        return PluginManifestV1(
+            manifest_schema_version=value.manifest_schema_version,
+            plugin_id=value.plugin_id,
+            plugin_version=value.plugin_version,
+            api_major=value.api_major,
+            minimum_api_minor=value.minimum_api_minor,
+            maximum_api_minor=value.maximum_api_minor,
+            required_host_features=value.required_host_features,
+            capabilities=tuple(capabilities),
+            license_expression=value.license_expression,
+        )
+    except (KeyboardInterrupt, SystemExit, MemoryError):
+        raise
+    except Exception:
+        return None
 
 
 def _catalog_capabilities(

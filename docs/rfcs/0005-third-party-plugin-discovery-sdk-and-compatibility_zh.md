@@ -6,7 +6,7 @@
 - 日期：2026-09-09
 - 接受日期：2026-09-09
 - Owners：Platydiff 维护者
-- 实现 owner：等待单独的显式实施授权后指派
+- 实现 owner：P3-A 为 Platydiff 维护者；P3-B/P3-C 尚未指派
 
 ## 摘要与授权边界
 
@@ -17,6 +17,10 @@ auto/binary 路径为证据，而不是沿用早期的单一插件类草图。
 接受本 RFC 表示 P1-P8 成为规范性设计决策，但不构成实施授权。RFC 进入 `Accepted`
 不会使任何 entry-point group、SDK symbol、CLI option、兼容性标志或第三方执行行为
 自动成为已实现能力。实施仍需另行派发会话，并从更新后的 `main` 新建分支。
+
+实现说明：单独获授权的 P3-A 门禁现已提供 SDK-v1 declaration 和不执行 capability 的
+显式 discovery/catalog negotiation。P3-B 与 P3-C 仍未实现并继续受独立门禁控制，因此
+本 RFC 保持 `Accepted`，而不是 `Implemented`。
 
 Phase 3 不授权新模态，也不授权 [RFC 0004](0004-human-review-ui-and-renderer-boundary_zh.md)
 提议的 UI 工作。首版 SDK 刻意只用现有 `text` 与 `binary` 契约验证。
