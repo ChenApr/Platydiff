@@ -80,7 +80,7 @@ Phase 6 不包括：
 | P6X7 | 后端/parser 开始后，禁止改变比较 relation 的 fallback。 | 失败时静默 fallback 到 text、binary、另一个 parser、另一个 renderer 或 approximate semantics。 |
 | P6X8 | 多 view PDF spec 作为 required all-or-nothing invocation 执行：任一 selected view unavailable 或 failed 都终止顶层 outcome，且不产生 `DiffResult`。 | 返回只包含已完成 view 的 partial PDF `DiffResult`。 |
 | P6X9 | artifact gate 之前，`artifact_policy` 只有一个取值：`none`。 | 在安全 artifact writer 存在前预留 `record_refs`。 |
-| P6X10 | 提议共享 schema allocation：P4 structured data = v3，Phase 5 image = v4，Phase 6 source/PDF = v5，Phase 7 audio/video = v6；每个 successor 只有在其依赖的所有 predecessor schema 已合并到 `main` 且 reader/writer 与 migration fixture 就绪后才能开始。 | 让每个 RFC 局部选择 schema 编号，或把编号推迟到实现期而造成 closed union 冲突。 |
+| P6X10 | 提议 coordinated schema allocation：P4 structured data = v3，Phase 5 image = v4，Phase 6 source/PDF = v5，Phase 7 audio = v6，video schema successor 延后到与 RFC 0009 协调且单独接受的 backend-worker amendment；每个 successor 只有在其依赖的所有 predecessor schema 已合并到 `main` 且 reader/writer 与 migration fixture 就绪后才能开始。 | 让每个 RFC 局部选择 schema 编号，或在后续 video-worker amendment 要求下仍让 audio 与 video 共用 v6。 |
 | P6X11 | 增加一个独立授权的 P6-C0 schema-v5 source/PDF contract gate，在任何 source/PDF comparator、backend 或 CLI gate 开始前一次性冻结两个 spec 与 change。 | 让 P6-S1 或 P6-P1a 先合并，再为另一个 modality 重开 schema-v5 closed union。 |
 | SC1 | 增加显式 `SourceCodeCompareSpec`，并要求 `language` 与 `relation` 字段。 | 从 suffix/content 推断语言，或复用 `TextCompareSpec`。 |
 | SC2 | 首批 source language 为 `python` 与 `javascript`；`typescript`、`c`、`cpp`、`rust`、`go`、`java`、notebook、template 与 generated-code policy 延后。 | 从后端 package 中可用的所有 grammar 同时开始。 |
@@ -107,9 +107,11 @@ Phase 6 不包括：
 
 本 RFC 为 Phase 6 source-code 与 PDF 内建能力提议 schema v5。人工决策是 P6X10：
 P4 structured data 使用 schema v3，Phase 5 image 使用 schema v4，Phase 6 source/PDF
-使用 schema v5，Phase 7 audio/video 使用 schema v6。这是 Proposed allocation，不是
-已接受的 schema migration。若后续全局 schema RFC 或人工 review 选择不同 allocation，
-必须在任何受影响 gate 开始前同时更新 RFC 0007、RFC 0008 与 RFC 0009。
+使用 schema v5，Phase 7 audio 使用 schema v6，video schema allocation 延后到后续全局
+successor，等待与 RFC 0009 协调且单独接受的 backend-worker amendment。这是 coordinated
+Proposed allocation，不是已接受的 schema migration，也不声明任何 RFC 0009 amendment 已在
+`main` 上接受。若后续全局 schema RFC 或人工 review 选择不同 allocation，必须在任何受影响
+gate 开始前同时更新 RFC 0007、RFC 0008 与 RFC 0009。
 
 Phase 6 schema implementation 只属于 P6-C0。P6-C0 只有在其依赖的 predecessor schema 已
 合并到 `main` 且带 compatibility fixture 后才能开始：

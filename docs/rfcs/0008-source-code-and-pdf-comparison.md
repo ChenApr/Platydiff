@@ -89,7 +89,7 @@ are not accepted until a reviewer explicitly approves them.
 | P6X7 | Forbid fallback that changes comparison relation after a parser/backend starts. | On failure, silently fall back to text, binary, another parser, another renderer, or approximate semantics. |
 | P6X8 | Execute multi-view PDF specs as required all-or-nothing invocations: any selected view unavailable or failed terminates the top-level outcome without a `DiffResult`. | Return a partial PDF `DiffResult` containing the views that happened to finish. |
 | P6X9 | Before the artifact gate, `artifact_policy` has exactly one value, `none`. | Reserve `record_refs` before a safe artifact writer exists. |
-| P6X10 | Propose the shared schema allocation P4 structured data = v3, Phase 5 image = v4, Phase 6 source/PDF = v5, and Phase 7 audio/video = v6; each successor may start only after all predecessor schemas it depends on are merged on `main` with reader/writer and migration fixtures. | Let each RFC pick a schema number locally, or defer numbering until implementation and risk conflicting closed unions. |
+| P6X10 | Propose the coordinated schema allocation P4 structured data = v3, Phase 5 image = v4, Phase 6 source/PDF = v5, Phase 7 audio = v6, and video schema successor deferred to a separately accepted backend-worker amendment coordinated with RFC 0009; each successor may start only after all predecessor schemas it depends on are merged on `main` with reader/writer and migration fixtures. | Let each RFC pick a schema number locally, or let audio and video share v6 despite later video-worker amendment requirements. |
 | P6X11 | Add one independently authorized P6-C0 schema-v5 source/PDF contract gate that freezes both specs and changes before any source/PDF comparator, backend, or CLI gate starts. | Let P6-S1 or P6-P1a merge first and later reopen the schema-v5 closed union for the other modality. |
 | SC1 | Add an explicit `SourceCodeCompareSpec` with required `language` and `relation` fields. | Infer language from suffix/content or reuse `TextCompareSpec`. |
 | SC2 | First source languages are `python` and `javascript`; `typescript`, `c`, `cpp`, `rust`, `go`, `java`, notebooks, templates, and generated-code policies are deferred. | Start with every grammar available from a backend package. |
@@ -116,11 +116,13 @@ are not accepted until a reviewer explicitly approves them.
 
 This RFC proposes schema v5 for Phase 6 source-code and PDF built-ins. The
 human decision is P6X10: P4 structured data owns schema v3, Phase 5 image owns
-schema v4, Phase 6 source/PDF owns schema v5, and Phase 7 audio/video owns
-schema v6. This is a Proposed allocation, not an accepted schema migration.
-If a later global schema RFC or human review chooses a different allocation, it
-must update RFC 0007, RFC 0008, and RFC 0009 together before any affected gate
-starts.
+schema v4, Phase 6 source/PDF owns schema v5, Phase 7 audio owns schema v6, and
+video schema allocation is deferred to a later global successor pending a
+separately accepted backend-worker amendment coordinated with RFC 0009. This is
+a coordinated Proposed allocation, not an accepted schema migration and not a
+claim that any RFC 0009 amendment is already accepted on `main`. If a later
+global schema RFC or human review chooses a different allocation, it must update
+RFC 0007, RFC 0008, and RFC 0009 together before any affected gate starts.
 
 Phase 6 schema implementation belongs only to P6-C0. P6-C0 may start only after
 the predecessor schemas it depends on are merged on `main` with compatibility
