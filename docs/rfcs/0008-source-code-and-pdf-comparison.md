@@ -507,18 +507,25 @@ environment concern; Platydiff does not fetch grammars or compilers.
 The proposed first public shape is:
 
 ```python
+from dataclasses import field
+
 class PdfCompareSpec:
     kind: Literal["pdf"] = "pdf"
     views: tuple[
         Literal["binary", "extracted_text", "objects_metadata", "rendered_pages"],
         ...
-    ] = ("extracted_text",)
-    text: PdfTextOptions = PdfTextOptions()
-    objects: PdfObjectOptions = PdfObjectOptions()
-    rendering: PdfRenderOptions = PdfRenderOptions()
+    ] = ("binary",)
+    text: PdfTextOptions = field(default_factory=PdfTextOptions)
+    objects: PdfObjectOptions = field(default_factory=PdfObjectOptions)
+    rendering: PdfRenderOptions = field(default_factory=PdfRenderOptions)
     artifact_policy: Literal["none"] = "none"
-    limits: PdfResourceLimits = PdfResourceLimits()
+    limits: PdfResourceLimits = field(default_factory=PdfResourceLimits)
 ```
+
+`PdfCompareSpec()` is therefore constructable and means explicit PDF binary
+comparison. Dataclass implementations must use `default_factory` for nested
+model defaults. Nonbinary backend limits are validated only when their view is
+selected.
 
 The PDF options are closed and fully serialized:
 
@@ -694,7 +701,9 @@ PDF policy yields `warn`.
 ### PDF resources and failures
 
 ```python
-class PdfResourceLimits:
+from dataclasses import field
+
+class PdfBaseResourceLimits:
     max_input_bytes: int = 64 * 1024 * 1024
     max_fact_text_bytes: int = 4096
     max_fact_value_bytes: int = 4096
@@ -702,55 +711,100 @@ class PdfResourceLimits:
     max_change_items: int = 10_000
     max_change_payload_bytes: int = 4 * 1024 * 1024
 
-    # Nonbinary PDF gates must set finite defaults with backend evidence.
+class PdfTextResourceLimits:
+    max_worker_rss_bytes: int
+    max_pages: int
+    max_stream_bytes: int
+    max_decoded_stream_bytes: int
+    max_text_runs: int
+    max_backend_seconds: int
+    max_temp_bytes: int
+    max_worker_output_bytes: int
+    max_worker_processes: int
+
+class PdfObjectResourceLimits:
     max_worker_rss_bytes: int
     max_objects: int
     max_pages: int
     max_stream_bytes: int
     max_decoded_stream_bytes: int
-    max_text_runs: int
+    max_backend_seconds: int
+    max_temp_bytes: int
+    max_worker_output_bytes: int
+    max_worker_processes: int
+
+class PdfRenderResourceLimits:
+    max_worker_rss_bytes: int
+    max_pages: int
     max_render_pixels_per_page: int
     max_rendered_pages: int
     max_backend_seconds: int
     max_temp_bytes: int
     max_worker_output_bytes: int
     max_worker_processes: int
+
+class PdfResourceLimits:
+    base: PdfBaseResourceLimits = field(default_factory=PdfBaseResourceLimits)
+    extracted_text: PdfTextResourceLimits | None = None
+    objects_metadata: PdfObjectResourceLimits | None = None
+    rendered_pages: PdfRenderResourceLimits | None = None
 ```
 
-PDF has both whole-invocation and per-view budgets. `max_input_bytes`,
-`max_worker_rss_bytes`, `max_backend_seconds`, `max_temp_bytes`,
-`max_worker_output_bytes`, `max_worker_processes`, `max_compare_work`,
-`max_change_items`, and `max_change_payload_bytes` apply cumulatively across
-the complete PDF invocation. Fact text/value ceilings apply to each retained
-`PdfFact` before the complete change item is charged to the payload budget.
-Page, object, stream, text-run, and pixel limits apply per view and also charge
-the cumulative work budget. The host checks cumulative limits before
-dispatching each worker step and before accepting each bounded result chunk from
-a worker.
+PDF has both whole-invocation and per-view budgets. `base.max_input_bytes`,
+`base.max_compare_work`, `base.max_change_items`, and
+`base.max_change_payload_bytes` apply cumulatively across the complete PDF
+invocation. Fact text/value ceilings apply to each retained `PdfFact` before
+the complete change item is charged to the payload budget. Selected nonbinary
+views additionally require their matching per-view limit object:
+`limits.extracted_text`, `limits.objects_metadata`, or
+`limits.rendered_pages`. Worker RSS, backend seconds, temporary bytes, worker
+output, and worker process counts are per-view fields, but their consumption is
+also charged to the cumulative invocation budget. Page, object, stream,
+text-run, and pixel limits apply only to the views that define them. The host
+checks cumulative limits before dispatching each worker step and before
+accepting each bounded result chunk from a worker.
 
-The RFC-wide defaults accepted now are limited to the binary-safe fields shown
-with concrete values: input bytes, retained fact text/value bytes, comparison
-work, returned change count, and returned change payload bytes. These bounds are
-independent of a PDF parser or renderer and are sufficient for P6-P1a. They do
-not approve object-count, page-count, stream, text-run, raster-pixel, worker
-RSS, timeout, temporary-storage, worker-output, or worker-process defaults.
+The RFC-wide defaults accepted now are exactly
+`PdfBaseResourceLimits()`. These fields are binary-safe: input bytes, retained
+fact text/value bytes, comparison work, returned change count, and returned
+change payload bytes. They are independent of a PDF parser or renderer and are
+sufficient for P6-P1a. They do not approve object-count, page-count, stream,
+text-run, raster-pixel, worker RSS, timeout, temporary-storage, worker-output,
+or worker-process defaults.
 
 P6-P1b, P6-P2, and P6-P3 each must supply backend-specific numeric defaults in
 their own evidence gate before implementation starts. The gate evidence must
 name the backend/version/platform, explain why each default is enforceable,
 include adversarial fixtures for the limit, and prove check-before-allocate
-behavior. Until that evidence exists, the schema records those fields as
-required finite limits, not accepted numeric defaults. Decompression bombs and
-recursive object references fail before allocating the next object or stream
-segment. No completed result depends on wall-clock time; timeouts produce a
-failed or unavailable outcome, not a partial equality claim.
+behavior. Until that evidence exists, omitted nonbinary limit objects are valid
+only when their corresponding view is not selected; selecting a nonbinary view
+without its matching finite limit object is `failed/invalid_spec` before backend
+resolution. Decompression bombs and recursive object references fail before
+allocating the next object or stream segment. No completed result depends on
+wall-clock time; timeouts produce a failed or unavailable outcome, not a partial
+equality claim.
+
+Validation examples are part of the contract:
+
+- `PdfCompareSpec()` is valid and normalizes to `views=("binary",)` with
+  `PdfResourceLimits(base=PdfBaseResourceLimits())`;
+- `PdfCompareSpec(views=("binary",), limits=PdfResourceLimits())` is valid and
+  requires no nonbinary backend limits;
+- `PdfCompareSpec(views=("extracted_text",), limits=PdfResourceLimits())` is
+  invalid before backend resolution because `limits.extracted_text` is absent;
+- a multi-view spec with `views=("binary", "rendered_pages")` is invalid before
+  backend resolution unless `limits.rendered_pages` is present and finite;
+- providing `limits.objects_metadata` while `objects_metadata` is not selected
+  is allowed only as inert serialized configuration and does not authorize
+  object parsing.
 
 The acceptance/start boundary is explicit:
 
 - P6-S1 and P6-S2 are source-code gates and are not blocked by PDF backend
   numeric defaults;
-- P6-P1a may be accepted and started with only the RFC-wide binary-safe PDF
-  limits above because it does not parse nonbinary PDF content;
+- P6-P1a may be accepted and started with `PdfCompareSpec()` and
+  `PdfResourceLimits()` because the default view is `binary` and it does not
+  parse nonbinary PDF content;
 - P6-P1b may not start until text extraction supplies default page, text-run,
   worker RSS, timeout, temp, output, process, and stream/decode limits with
   evidence;
@@ -784,6 +838,8 @@ Failures remain distinguishable:
 
 - missing parser/text/render backend: `unavailable/backend_unavailable`;
 - encrypted input with selected nonbinary view: `failed/pdf_encrypted`;
+- selected nonbinary view without matching finite limits:
+  `failed/invalid_spec`;
 - malformed syntax or unsupported object graph: `failed/decode_error`;
 - decompression or size limit: `failed/resource_limit_exceeded`;
 - comparison work limit: `failed/compare_resource_limit`;
@@ -1017,6 +1073,7 @@ fetch, render, OCR, extract, or execute source documents itself.
 | Explicit source `syntax_tree`, parser/resource bound exceeded | `decoding/failed/resource_limit_exceeded`; no partial result. |
 | Explicit source `syntax_tree`, alignment ambiguity or work bound exceeded | `aligning/failed/alignment_failed` or `comparing/failed/compare_resource_limit`; no approximate result. |
 | PDF `views=("binary",)`, encrypted input | Completed binary-view comparison of original bytes if byte limits are satisfied. |
+| PDF includes any nonbinary view without matching finite limits | `validating/failed/invalid_spec`; no backend resolution and no `DiffResult`. |
 | PDF includes any nonbinary view and input is encrypted | `decoding/failed/pdf_encrypted`; no fallback to binary and no `DiffResult`. |
 | PDF nonbinary backend unavailable or platform cannot supervise worker | `resolving/unavailable/backend_unavailable`; no worker starts. |
 | PDF required multi-view run where an early view fails | Top-level failed/unavailable outcome; completed earlier view work appears only in execution attempts. |

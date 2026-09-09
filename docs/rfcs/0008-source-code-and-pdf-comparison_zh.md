@@ -454,18 +454,23 @@ platform 返回 `backend_unavailable`。Dependency installation 仍属于用户�
 提议的首个 public shape 为：
 
 ```python
+from dataclasses import field
+
 class PdfCompareSpec:
     kind: Literal["pdf"] = "pdf"
     views: tuple[
         Literal["binary", "extracted_text", "objects_metadata", "rendered_pages"],
         ...
-    ] = ("extracted_text",)
-    text: PdfTextOptions = PdfTextOptions()
-    objects: PdfObjectOptions = PdfObjectOptions()
-    rendering: PdfRenderOptions = PdfRenderOptions()
+    ] = ("binary",)
+    text: PdfTextOptions = field(default_factory=PdfTextOptions)
+    objects: PdfObjectOptions = field(default_factory=PdfObjectOptions)
+    rendering: PdfRenderOptions = field(default_factory=PdfRenderOptions)
     artifact_policy: Literal["none"] = "none"
-    limits: PdfResourceLimits = PdfResourceLimits()
+    limits: PdfResourceLimits = field(default_factory=PdfResourceLimits)
 ```
+
+因此 `PdfCompareSpec()` 可构造，含义是显式 PDF binary comparison。Dataclass 实现必须对嵌套
+model default 使用 `default_factory`。Nonbinary backend limit 只在对应 view 被选中时验证。
 
 PDF option 是封闭集合并完整序列化：
 
@@ -622,7 +627,9 @@ subpixel 与 aggregation 语义，才能产生 pass/warn。首批 PDF policy 不
 ### PDF resource 与 failure
 
 ```python
-class PdfResourceLimits:
+from dataclasses import field
+
+class PdfBaseResourceLimits:
     max_input_bytes: int = 64 * 1024 * 1024
     max_fact_text_bytes: int = 4096
     max_fact_value_bytes: int = 4096
@@ -630,49 +637,88 @@ class PdfResourceLimits:
     max_change_items: int = 10_000
     max_change_payload_bytes: int = 4 * 1024 * 1024
 
-    # Nonbinary PDF gate 必须用 backend evidence 设置有限默认值。
+class PdfTextResourceLimits:
+    max_worker_rss_bytes: int
+    max_pages: int
+    max_stream_bytes: int
+    max_decoded_stream_bytes: int
+    max_text_runs: int
+    max_backend_seconds: int
+    max_temp_bytes: int
+    max_worker_output_bytes: int
+    max_worker_processes: int
+
+class PdfObjectResourceLimits:
     max_worker_rss_bytes: int
     max_objects: int
     max_pages: int
     max_stream_bytes: int
     max_decoded_stream_bytes: int
-    max_text_runs: int
+    max_backend_seconds: int
+    max_temp_bytes: int
+    max_worker_output_bytes: int
+    max_worker_processes: int
+
+class PdfRenderResourceLimits:
+    max_worker_rss_bytes: int
+    max_pages: int
     max_render_pixels_per_page: int
     max_rendered_pages: int
     max_backend_seconds: int
     max_temp_bytes: int
     max_worker_output_bytes: int
     max_worker_processes: int
+
+class PdfResourceLimits:
+    base: PdfBaseResourceLimits = field(default_factory=PdfBaseResourceLimits)
+    extracted_text: PdfTextResourceLimits | None = None
+    objects_metadata: PdfObjectResourceLimits | None = None
+    rendered_pages: PdfRenderResourceLimits | None = None
 ```
 
-PDF 同时具有 whole-invocation budget 与 per-view budget。`max_input_bytes`、
-`max_worker_rss_bytes`、`max_backend_seconds`、`max_temp_bytes`、
-`max_worker_output_bytes`、`max_worker_processes`、`max_compare_work`、
-`max_change_items` 与 `max_change_payload_bytes` 对完整 PDF invocation 累计适用。Fact
-text/value ceiling 先应用到每个保留的 `PdfFact`，然后完整 change item 才计入 payload
-budget。Page、object、stream、text-run 与 pixel limit 按 view 适用，同时也消耗累计 work
-budget。Host 在派发每个 worker step 前、以及接受 worker 的每个有界 result chunk 前检查累计
-limit。
+PDF 同时具有 whole-invocation budget 与 per-view budget。`base.max_input_bytes`、
+`base.max_compare_work`、`base.max_change_items` 与 `base.max_change_payload_bytes` 对完整
+PDF invocation 累计适用。Fact text/value ceiling 先应用到每个保留的 `PdfFact`，然后完整
+change item 才计入 payload budget。Selected nonbinary view 还要求匹配的 per-view limit
+object：`limits.extracted_text`、`limits.objects_metadata` 或 `limits.rendered_pages`。
+Worker RSS、backend seconds、temporary bytes、worker output 与 worker process count 是
+per-view field，但其消耗也计入累计 invocation budget。Page、object、stream、text-run 与
+pixel limit 只适用于定义它们的 view。Host 在派发每个 worker step 前、以及接受 worker 的
+每个有界 result chunk 前检查累计 limit。
 
-本 RFC 现在接受的 RFC-wide 默认值仅限于上方带具体数值且对 binary 安全的字段：input
-bytes、retained fact text/value bytes、comparison work、returned change count 与 returned
-change payload bytes。这些 bound 不依赖 PDF parser 或 renderer，足以支持 P6-P1a。它们不
+本 RFC 现在接受的 RFC-wide 默认值正是 `PdfBaseResourceLimits()`。这些字段对 binary 安全：
+input bytes、retained fact text/value bytes、comparison work、returned change count 与
+returned change payload bytes。它们不依赖 PDF parser 或 renderer，足以支持 P6-P1a。它们不
 批准 object-count、page-count、stream、text-run、raster-pixel、worker RSS、timeout、
 temporary-storage、worker-output 或 worker-process 的默认值。
 
 P6-P1b、P6-P2 与 P6-P3 各自必须在自己的 evidence gate 中提供 backend-specific numeric
 default，之后才能开始实现。Gate evidence 必须命名 backend/version/platform，解释每个默认值
 为何可强制执行，包含针对该 limit 的 adversarial fixture，并证明 check-before-allocate 行为。
-在该 evidence 存在前，schema 只记录这些字段是 required finite limit，而不是已接受的数值默认。
-Decompression bomb 与 recursive object reference 必须在分配下一个 object 或 stream segment
-前失败。Completed result 不依赖 wall-clock time；timeout 产生 failed 或 unavailable outcome，
-不产生 partial equality claim。
+在该 evidence 存在前，省略 nonbinary limit object 只有在其对应 view 未选中时才合法；选择
+nonbinary view 但缺少对应 finite limit object，会在 backend resolution 前得到
+`failed/invalid_spec`。Decompression bomb 与 recursive object reference 必须在分配下一个
+object 或 stream segment 前失败。Completed result 不依赖 wall-clock time；timeout 产生
+failed 或 unavailable outcome，不产生 partial equality claim。
+
+Validation example 是契约的一部分：
+
+- `PdfCompareSpec()` 合法，并规范化为 `views=("binary",)` 与
+  `PdfResourceLimits(base=PdfBaseResourceLimits())`；
+- `PdfCompareSpec(views=("binary",), limits=PdfResourceLimits())` 合法，不需要 nonbinary
+  backend limit；
+- `PdfCompareSpec(views=("extracted_text",), limits=PdfResourceLimits())` 在 backend
+  resolution 前非法，因为缺少 `limits.extracted_text`；
+- `views=("binary", "rendered_pages")` 的 multi-view spec 在 backend resolution 前非法，
+  除非 `limits.rendered_pages` 存在且有限；
+- 当 `objects_metadata` 未选中时提供 `limits.objects_metadata` 只允许作为 inert serialized
+  configuration，不授权 object parsing。
 
 接受/启动边界如下：
 
 - P6-S1 与 P6-S2 是 source-code gate，不受 PDF backend numeric default 阻塞；
-- P6-P1a 只使用上方 RFC-wide binary-safe PDF limit，因此可以在没有 nonbinary PDF backend
-  numeric default 的情况下接受并启动；
+- P6-P1a 可以使用 `PdfCompareSpec()` 与 `PdfResourceLimits()` 接受并启动，因为默认 view 是
+  `binary`，且不解析 nonbinary PDF content；
 - P6-P1b 在开始前必须为 text extraction 提供并论证默认 page、text-run、worker RSS、
   timeout、temp、output、process 与 stream/decode limit；
 - P6-P2 在开始前必须为 object/metadata inspection 提供并论证默认 object、page、
@@ -696,6 +742,7 @@ Failure 保持可区分：
 
 - 缺少 parser/text/render backend：`unavailable/backend_unavailable`；
 - selected nonbinary view 遇到 encrypted input：`failed/pdf_encrypted`；
+- selected nonbinary view 缺少匹配的 finite limit：`failed/invalid_spec`；
 - malformed syntax 或 unsupported object graph：`failed/decode_error`；
 - decompression 或 size limit：`failed/resource_limit_exceeded`；
 - comparison work limit：`failed/compare_resource_limit`；
@@ -897,6 +944,7 @@ validation、digital signature 与 archival conformance 都是独立契约。
 | 显式 source `syntax_tree`，parser/resource bound exceeded | `decoding/failed/resource_limit_exceeded`；没有 partial result。 |
 | 显式 source `syntax_tree`，alignment ambiguity 或 work bound exceeded | `aligning/failed/alignment_failed` 或 `comparing/failed/compare_resource_limit`；没有 approximate result。 |
 | PDF `views=("binary",)`，encrypted input | 若 byte limit 满足，则对 original bytes 完成 binary-view comparison。 |
+| PDF 包含任一 nonbinary view 但缺少匹配的 finite limit | `validating/failed/invalid_spec`；不进行 backend resolution，且没有 `DiffResult`。 |
 | PDF 包含任一 nonbinary view 且 input encrypted | `decoding/failed/pdf_encrypted`；不 fallback 到 binary，且没有 `DiffResult`。 |
 | PDF nonbinary backend unavailable，或 platform 无法监督 worker | `resolving/unavailable/backend_unavailable`；不启动 worker。 |
 | PDF required multi-view run 中早期 view failed | 顶层 failed/unavailable outcome；已完成的早期 view work 只进入 execution attempt。 |
