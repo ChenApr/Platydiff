@@ -237,6 +237,12 @@ In exact mode, both images are decoded to an explicitly selected size, orientati
 
 A one-pixel translation can create a large apparent difference. Registration, cropping, and scaling therefore belong to a separate alignment stage and must never be hidden inside a metric implementation.
 
+[RFC 0007](rfcs/0007-image-comparison.md) proposes a narrower first image
+slice: explicit built-in comparison of static 8-bit PNG decoded samples, with
+encoded identity left to the binary comparator and no implicit orientation,
+color, alpha, resize, crop, artifact, plugin, or detection behavior. It remains
+Proposed and does not authorize implementation.
+
 ### 6.5 Audio
 
 Audio comparison first applies explicit sample-rate, channel, and sample-format policies, then aligns by timestamp or cross-correlation. It can compare PCM waveforms, STFT or Mel spectra, SNR, or perceptual quality. Millisecond delays, gain changes, and resampling can all break exact sample comparison, so the system must distinguish “identical signal” from “perceptually similar.” ViSQOL, PESQ/POLQA, and comparable systems belong in optional backends rather than core dependencies.
@@ -275,7 +281,10 @@ terminal/JSON renderers, and the explicit plugin boundary. They remain
 unreleased. Phase 4 structured-data contracts are accepted in
 [RFC 0006](rfcs/0006-structured-data-comparison.md) but remain unimplemented and
 require separate gate authorization. Every other modality and renderer below is
-planned.
+planned. Phase 5 image contracts are proposed in
+[RFC 0007](rfcs/0007-image-comparison.md); they are not implementation
+authorization and require the actual merged schema-v3 predecessor to be
+revalidated first.
 
 ### v0.1: Core loop
 
