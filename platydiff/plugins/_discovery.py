@@ -20,6 +20,7 @@ from platydiff.plugin_sdk import (
     RuntimeDependencyV1,
 )
 from platydiff.plugin_sdk._models import (
+    _bounded_integer,
     _bounded_text,
     _plugin_identifier,
     _stable_identifier,
@@ -184,6 +185,7 @@ class LoadedPluginV1:
     def __post_init__(self) -> None:
         if self.entry_point.plugin_id != self.manifest.plugin_id:
             raise ValueError("entry-point and manifest plugin IDs must match")
+        _bounded_integer(self.negotiated_api_minor, "negotiated_api_minor")
         if self.negotiated_api_minor != PLUGIN_API_MINOR:
             raise ValueError("catalog must use the current host API minor")
         if self.negotiated_host_features != tuple(
@@ -260,18 +262,27 @@ class _Candidate:
     entry_point: _EntryPointLike
 
 
-def _metadata_key(item: PluginEntryPointV1) -> tuple[str, str, str, str]:
+@dataclass(frozen=True, slots=True)
+class _RawClaim:
+    plugin_id: str
+    distribution_name: str
+    distribution_version: str
+    entry_point_value: str
+
+
+def _metadata_key(item: PluginEntryPointV1) -> tuple[str, str, str, str, str]:
     return (
         item.plugin_id,
         item.normalized_distribution_name,
         item.distribution_version,
         item.value,
+        item.distribution_name,
     )
 
 
 def _issue_key(
     item: PluginDiscoveryIssueV1,
-) -> tuple[str, str, str, str, str, str]:
+) -> tuple[str, str, str, str, str, str, str]:
     return (
         item.plugin_id,
         _normalized_distribution_name(item.distribution_name),
@@ -279,6 +290,7 @@ def _issue_key(
         item.entry_point_value,
         item.reason_code,
         item.capability_id or "",
+        item.distribution_name,
     )
 
 
@@ -312,20 +324,24 @@ def _installed_entry_points() -> tuple[_EntryPointLike, ...]:
 
 
 def _enumerate() -> tuple[
-    tuple[_Candidate, ...], tuple[PluginDiscoveryIssueV1, ...], frozenset[str]
+    tuple[_Candidate, ...],
+    tuple[PluginDiscoveryIssueV1, ...],
+    tuple[_RawClaim, ...],
 ]:
     candidates: list[_Candidate] = []
     issues: list[PluginDiscoveryIssueV1] = []
-    claimed_names: set[str] = set()
+    claims: list[_RawClaim] = []
     for entry_point in _installed_entry_points():
         raw_name = ""
         raw_distribution_name = ""
         raw_distribution_version = ""
         raw_value = ""
+        metadata: PluginEntryPointV1 | None = None
         try:
-            raw_name = _safe_metadata_text(entry_point.name)
-            if raw_name:
-                claimed_names.add(raw_name)
+            entry_point_name = entry_point.name
+            entry_point_group = entry_point.group
+            entry_point_value = entry_point.value
+            raw_name = _safe_metadata_text(entry_point_name)
             distribution = entry_point.dist
             raw_distribution_name = (
                 _safe_metadata_text(distribution.name)
@@ -337,11 +353,11 @@ def _enumerate() -> tuple[
                 if distribution is not None
                 else ""
             )
-            raw_value = _safe_metadata_text(entry_point.value)
+            raw_value = _safe_metadata_text(entry_point_value)
             metadata = PluginEntryPointV1(
-                plugin_id=entry_point.name,
-                group=cast(Literal["platydiff.plugins.v1"], entry_point.group),
-                value=entry_point.value,
+                plugin_id=entry_point_name,
+                group=cast(Literal["platydiff.plugins.v1"], entry_point_group),
+                value=entry_point_value,
                 distribution_name=raw_distribution_name,
                 distribution_version=raw_distribution_version,
             )
@@ -357,19 +373,44 @@ def _enumerate() -> tuple[
                     entry_point_value=raw_value,
                 )
             )
-            continue
-        candidates.append(_Candidate(metadata, entry_point))
+        if raw_name:
+            try:
+                _plugin_identifier(raw_name)
+            except ValueError:
+                pass
+            else:
+                claims.append(
+                    _RawClaim(
+                        raw_name,
+                        raw_distribution_name,
+                        raw_distribution_version,
+                        raw_value,
+                    )
+                )
+        if metadata is not None:
+            candidates.append(_Candidate(metadata, entry_point))
     return (
         tuple(sorted(candidates, key=lambda item: _metadata_key(item.metadata))),
         tuple(sorted(issues, key=_issue_key)),
-        frozenset(claimed_names),
+        tuple(
+            sorted(
+                claims,
+                key=lambda item: (
+                    item.plugin_id,
+                    _normalized_distribution_name(item.distribution_name),
+                    item.distribution_version,
+                    item.entry_point_value,
+                    item.distribution_name,
+                ),
+            )
+        ),
     )
 
 
 def _select(
     candidates: tuple[_Candidate, ...],
     policy: PluginDiscoveryPolicy,
-    claimed_names: frozenset[str],
+    claims: tuple[_RawClaim, ...],
 ) -> tuple[tuple[_Candidate, ...], tuple[PluginDiscoveryIssueV1, ...]]:
     by_plugin: dict[str, list[_Candidate]] = defaultdict(list)
     for candidate in candidates:
@@ -377,18 +418,34 @@ def _select(
     selected: list[_Candidate] = []
     issues: list[PluginDiscoveryIssueV1] = []
     enabled = frozenset(policy.enabled_plugin_ids)
+    claims_by_plugin: dict[str, list[_RawClaim]] = defaultdict(list)
+    for claim in claims:
+        claims_by_plugin[claim.plugin_id].append(claim)
+    conflicted_plugin_ids = {
+        plugin_id
+        for plugin_id, plugin_claims in claims_by_plugin.items()
+        if len(plugin_claims) > 1
+    }
     for plugin_id, claimants in sorted(by_plugin.items()):
-        if len(claimants) > 1:
-            issues.extend(
-                _issue("plugin_id_conflict", claimant.metadata)
-                for claimant in claimants
-            )
-        elif plugin_id in enabled:
+        if plugin_id in conflicted_plugin_ids:
+            continue
+        if plugin_id in enabled:
             selected.append(claimants[0])
         else:
             issues.append(_issue("plugin_disabled", claimants[0].metadata))
+    for plugin_id in sorted(conflicted_plugin_ids):
+        for claim in claims_by_plugin[plugin_id]:
+            issues.append(
+                _issue(
+                    "plugin_id_conflict",
+                    plugin_id=claim.plugin_id,
+                    distribution_name=claim.distribution_name,
+                    distribution_version=claim.distribution_version,
+                    entry_point_value=claim.entry_point_value,
+                )
+            )
     for plugin_id in policy.enabled_plugin_ids:
-        if plugin_id not in claimed_names:
+        if plugin_id not in claims_by_plugin:
             issues.append(_issue("plugin_not_found", plugin_id=plugin_id))
     return tuple(selected), tuple(sorted(issues, key=_issue_key))
 
@@ -559,8 +616,8 @@ def discover_plugins(policy: PluginDiscoveryPolicy) -> PluginCatalogV1:
     """Enumerate, select, and load only the exact SDK-v1 allowlist."""
     if not isinstance(policy, PluginDiscoveryPolicy):
         raise TypeError("policy must be a PluginDiscoveryPolicy")
-    candidates, enumeration_issues, claimed_names = _enumerate()
-    selected, selection_issues = _select(candidates, policy, claimed_names)
+    candidates, enumeration_issues, claims = _enumerate()
+    selected, selection_issues = _select(candidates, policy, claims)
     plugins, load_issues = _load(selected)
     capabilities, capability_issues = _catalog_capabilities(plugins)
     return PluginCatalogV1(

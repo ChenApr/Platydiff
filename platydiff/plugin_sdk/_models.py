@@ -42,8 +42,8 @@ def _bounded_text(value: object, field_name: str, *, allow_empty: bool = False) 
     return value
 
 
-def _identity_text(value: object, field_name: str) -> str:
-    text = _bounded_text(value, field_name)
+def _identity_text(value: object, field_name: str, *, allow_empty: bool = False) -> str:
+    text = _bounded_text(value, field_name, allow_empty=allow_empty)
     if "/" in text or "\\" in text:
         raise ValueError(f"{field_name} must not contain a filesystem path")
     return text
@@ -87,16 +87,18 @@ def _string_tuple(
     field_name: str,
     *,
     identifiers: bool = False,
+    path_free: bool = False,
 ) -> tuple[str, ...]:
     if not isinstance(value, tuple):
         raise ValueError(f"{field_name} must be a tuple")
     normalized: list[str] = []
     for item in value:
-        normalized.append(
-            _stable_identifier(item, field_name)
-            if identifiers
-            else _bounded_text(item, field_name)
-        )
+        if identifiers:
+            normalized.append(_stable_identifier(item, field_name))
+        elif path_free:
+            normalized.append(_identity_text(item, field_name))
+        else:
+            normalized.append(_bounded_text(item, field_name))
     if len(normalized) != len(set(normalized)):
         raise ValueError(f"{field_name} must be unique")
     return tuple(sorted(normalized))
@@ -131,7 +133,7 @@ class RuntimeDependencyV1:
             raise ValueError(
                 "distribution_name must be a valid Python distribution name"
             )
-        _bounded_text(self.version_specifier, "version_specifier", allow_empty=True)
+        _identity_text(self.version_specifier, "version_specifier", allow_empty=True)
         if not isinstance(self.optional, bool):
             raise ValueError("optional must be a boolean")
 
@@ -208,12 +210,18 @@ class CapabilityDeclarationV1:
         object.__setattr__(
             self,
             "supported_python_versions",
-            _string_tuple(self.supported_python_versions, "supported_python_versions"),
+            _string_tuple(
+                self.supported_python_versions,
+                "supported_python_versions",
+                path_free=True,
+            ),
         )
         object.__setattr__(
             self,
             "supported_platforms",
-            _string_tuple(self.supported_platforms, "supported_platforms"),
+            _string_tuple(
+                self.supported_platforms, "supported_platforms", path_free=True
+            ),
         )
         if not isinstance(self.components, tuple) or not all(
             isinstance(item, ComponentDeclarationV1) for item in self.components
@@ -244,10 +252,12 @@ class PluginManifestV1:
     license_expression: str
 
     def __post_init__(self) -> None:
+        _bounded_integer(self.manifest_schema_version, "manifest_schema_version")
         if self.manifest_schema_version != PLUGIN_MANIFEST_SCHEMA_VERSION:
             raise ValueError("unsupported plugin manifest schema version")
         plugin_id = _plugin_identifier(self.plugin_id)
         _identity_text(self.plugin_version, "plugin_version")
+        _bounded_integer(self.api_major, "api_major")
         if self.api_major != PLUGIN_API_MAJOR:
             raise ValueError("unsupported plugin API major")
         minimum = _bounded_integer(self.minimum_api_minor, "minimum_api_minor")
@@ -285,7 +295,7 @@ class PluginManifestV1:
                 )
             ),
         )
-        _bounded_text(self.license_expression, "license_expression")
+        _identity_text(self.license_expression, "license_expression")
 
 
 class PluginManifestFactoryV1(Protocol):

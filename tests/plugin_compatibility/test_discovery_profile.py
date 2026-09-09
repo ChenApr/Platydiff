@@ -13,7 +13,13 @@ from platydiff.plugin_sdk import (
     CapabilityKind,
     PluginManifestV1,
 )
-from platydiff.plugins import PluginDiscoveryPolicy, _discovery, discover_plugins
+from platydiff.plugins import (
+    LoadedPluginV1,
+    PluginDiscoveryPolicy,
+    PluginEntryPointV1,
+    _discovery,
+    discover_plugins,
+)
 from tests.plugin_compatibility.fakes import FakeEntryPoint
 from tests.plugin_compatibility.profiles import (
     canonical_profile_json,
@@ -129,6 +135,60 @@ def test_issue_order_uses_normalized_distribution_identity(
         "zeta_plugin",
     ]
     assert alpha.load_count == zeta.load_count == 0
+
+
+def test_duplicate_claim_with_invalid_metadata_quarantines_every_claimant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: set[str] = set()
+    for seed in range(20):
+        valid = FakeEntryPoint(
+            "org.example.same",
+            lambda: _manifest("org.example.same"),
+            distribution_name="valid-plugin",
+        )
+        invalid = FakeEntryPoint(
+            "org.example.same",
+            lambda: _manifest("org.example.same"),
+            distribution_name="bad distribution",
+        )
+        entries = [valid, invalid]
+        random.Random(seed).shuffle(entries)
+        _install(monkeypatch, tuple(entries))
+        catalog = discover_plugins(PluginDiscoveryPolicy(("org.example.same",)))
+        assert valid.load_count == invalid.load_count == 0
+        assert catalog.plugins == ()
+        assert [issue.reason_code for issue in catalog.issues].count(
+            "plugin_id_conflict"
+        ) == 2
+        assert [issue.reason_code for issue in catalog.issues].count(
+            "plugin_metadata_invalid"
+        ) == 1
+        observed.add(canonical_profile_json(catalog_profile_data(catalog)))
+    assert len(observed) == 1
+
+
+def test_raw_distribution_name_breaks_normalization_sort_ties(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: set[str] = set()
+    for seed in range(20):
+        first = FakeEntryPoint(
+            "org.example.same",
+            lambda: _manifest("org.example.same"),
+            distribution_name="Foo_Bar",
+        )
+        second = FakeEntryPoint(
+            "org.example.same",
+            lambda: _manifest("org.example.same"),
+            distribution_name="foo-bar",
+        )
+        entries = [first, second]
+        random.Random(seed).shuffle(entries)
+        _install(monkeypatch, tuple(entries))
+        catalog = discover_plugins(PluginDiscoveryPolicy(("org.example.same",)))
+        observed.add(canonical_profile_json(catalog_profile_data(catalog)))
+    assert len(observed) == 1
 
 
 def test_one_factory_failure_does_not_discard_another_plugin(
@@ -331,3 +391,34 @@ def test_mutated_typed_manifest_is_revalidated_and_quarantined(
     assert catalog.plugins == ()
     assert catalog.issues[0].reason_code == "plugin_manifest_invalid"
     assert "/private" not in repr(catalog)
+
+
+@pytest.mark.parametrize("field", ["manifest_schema_version", "api_major"])
+def test_mutated_boolean_protocol_version_is_quarantined(
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+) -> None:
+    manifest = _manifest("org.example.scidiff")
+    object.__setattr__(manifest, field, True)
+    entry_point = FakeEntryPoint("org.example.scidiff", lambda: manifest)
+    _install(monkeypatch, (entry_point,))
+    catalog = discover_plugins(PluginDiscoveryPolicy(("org.example.scidiff",)))
+    assert catalog.plugins == ()
+    assert catalog.issues[0].reason_code == "plugin_manifest_invalid"
+
+
+def test_loaded_plugin_rejects_boolean_negotiated_api_minor() -> None:
+    entry_point = PluginEntryPointV1(
+        "org.example.scidiff",
+        "platydiff.plugins.v1",
+        "compat_plugin:manifest",
+        "compat-plugin",
+        "1",
+    )
+    with pytest.raises(ValueError, match="integer"):
+        LoadedPluginV1(
+            entry_point,
+            _manifest("org.example.scidiff"),
+            False,
+            (),
+        )

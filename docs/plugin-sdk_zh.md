@@ -47,10 +47,11 @@ def manifest() -> PluginManifestV1:
 ```
 
 manifest、capability、dependency 与 component declaration 都是 frozen value
-object。实现会验证 ID 与整数范围，把 collection 规范化为确定性 tuple，限制 provider
-identity string 并拒绝其中的文件系统路径；capability/backend ID 必须使用 plugin ID
-前缀。dependency、license、Python version、platform 与 native/external component
-field 只用于 inventory；host 不负责解析依赖，也不据此作出法律或平台支持判断。
+object。实现会验证 ID 与整数范围，把 collection 规范化为确定性 tuple；所有会进入
+catalog 或 compatibility profile 的 manifest string 都有长度边界，且不得包含 control
+character 或文件系统路径。capability/backend ID 必须使用 plugin ID 前缀。dependency、
+license、Python version、platform 与 native/external component field 只用于 inventory；
+host 不负责解析依赖，也不据此作出法律或平台支持判断。
 
 ## 发现精确 allowlist
 
@@ -89,3 +90,17 @@ registry、`PluginHost.compare()`、capability invocation、插件 CLI option、
 hook、schema-v2 provider record、v1-to-v2 upgrader 或已发布 compatibility receipt。
 Phase 1/2 的私有 request、registry、execution-limit、source-snapshot 与 stage-runner
 type 继续保持私有，也不会传给插件。
+
+## 版本基线与后续执行
+
+P3-A 刻意把 SDK API `1.0` 冻结为仅声明的基线。`CapabilityDeclarationV1` 只包含
+inventory data，不含 executor、callback、detector、comparator、renderer、source
+service 或私有 core handle。因此 minor-0 manifest 可用于显式 discovery 与协商，
+但不能运行 comparison。
+
+P3-B 可以通过 additive SDK minor 或 negotiated host feature 增加 executable typed-handle
+protocol 与 host composition。它必须把新 handle 与现有 declaration 关联，而不能重新
+解释 `CapabilityDeclarationV1` 或向其中加入 callable state；现有 API-1.0 manifest
+factory、field、default、validation 与 discovery result 必须继续有效。删除或改变这个
+已冻结 declaration 契约的含义需要新的 major entry-point group，不能作为 P3-B minor
+update 完成。

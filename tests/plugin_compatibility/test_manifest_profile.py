@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import fields
+
 import pytest
 
 from platydiff.plugin_sdk import (
+    PLUGIN_API_MINOR,
     CapabilityDeclarationV1,
     CapabilityKind,
     ComponentDeclarationV1,
@@ -70,6 +73,21 @@ def test_manifest_profile_has_exact_golden_evidence() -> None:
     )
 
 
+def test_api_minor_zero_is_a_declaration_only_compatibility_baseline() -> None:
+    assert PLUGIN_API_MINOR == 0
+    field_names = {item.name for item in fields(CapabilityDeclarationV1)}
+    assert field_names.isdisjoint(
+        {
+            "callback",
+            "comparator",
+            "detector",
+            "executor",
+            "renderer",
+            "source_service",
+        }
+    )
+
+
 @pytest.mark.parametrize(
     "field",
     [
@@ -124,3 +142,89 @@ def test_manifest_profile_keeps_distribution_and_plugin_versions_separate() -> N
     data = manifest_profile_data(_golden_manifest())
     assert data["plugin_version"] == "1.0"
     assert "distribution_version" not in data
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "license_expression",
+        "version_specifier",
+        "supported_python_versions",
+        "supported_platforms",
+    ],
+)
+def test_manifest_profile_rejects_paths_in_all_serialized_inventory(
+    field: str,
+) -> None:
+    with pytest.raises(ValueError, match="filesystem path"):
+        if field == "license_expression":
+            PluginManifestV1(
+                1,
+                "org.example.scidiff",
+                "1",
+                1,
+                0,
+                0,
+                (),
+                (),
+                "/local/license",
+            )
+        elif field == "version_specifier":
+            RuntimeDependencyV1("numpy", "/local/version")
+        elif field == "supported_python_versions":
+            CapabilityDeclarationV1(
+                "org.example.scidiff.text_exact",
+                CapabilityKind.COMPARATOR,
+                "1",
+                supported_python_versions=("/local/python",),
+            )
+        else:
+            CapabilityDeclarationV1(
+                "org.example.scidiff.text_exact",
+                CapabilityKind.COMPARATOR,
+                "1",
+                supported_platforms=(r"C:\\local\\platform",),
+            )
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "license_expression",
+        "version_specifier",
+        "supported_python_versions",
+        "supported_platforms",
+    ],
+)
+def test_manifest_profile_rejects_controls_in_all_serialized_inventory(
+    field: str,
+) -> None:
+    with pytest.raises(ValueError, match="control"):
+        if field == "license_expression":
+            PluginManifestV1(
+                1,
+                "org.example.scidiff",
+                "1",
+                1,
+                0,
+                0,
+                (),
+                (),
+                "Apache-2.0\n",
+            )
+        elif field == "version_specifier":
+            RuntimeDependencyV1("numpy", ">=2\n")
+        elif field == "supported_python_versions":
+            CapabilityDeclarationV1(
+                "org.example.scidiff.text_exact",
+                CapabilityKind.COMPARATOR,
+                "1",
+                supported_python_versions=(">=3.12\n",),
+            )
+        else:
+            CapabilityDeclarationV1(
+                "org.example.scidiff.text_exact",
+                CapabilityKind.COMPARATOR,
+                "1",
+                supported_platforms=("linux\x7f",),
+            )

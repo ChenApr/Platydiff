@@ -174,3 +174,35 @@ def test_provider_identity_versions_reject_filesystem_paths() -> None:
             (),
             "Apache-2.0",
         )
+
+
+@pytest.mark.parametrize("field", ["manifest_schema_version", "api_major"])
+@pytest.mark.parametrize("value", [True, 1.0, "1"])
+def test_protocol_versions_reject_non_integer_values(field: str, value: object) -> None:
+    values: dict[str, object] = {
+        "manifest_schema_version": 1,
+        "api_major": 1,
+    }
+    values[field] = value
+    with pytest.raises(ValueError, match="integer"):
+        PluginManifestV1(
+            manifest_schema_version=values["manifest_schema_version"],  # type: ignore[arg-type]
+            plugin_id="org.example.scidiff",
+            plugin_version="1",
+            api_major=values["api_major"],  # type: ignore[arg-type]
+            minimum_api_minor=0,
+            maximum_api_minor=0,
+            required_host_features=(),
+            capabilities=(),
+            license_expression="Apache-2.0",
+        )
+
+
+def test_capability_priority_rejects_boolean_values() -> None:
+    with pytest.raises(ValueError, match="integer"):
+        CapabilityDeclarationV1(
+            "org.example.scidiff.text_exact",
+            CapabilityKind.COMPARATOR,
+            "1",
+            priority=True,
+        )

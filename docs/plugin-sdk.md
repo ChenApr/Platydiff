@@ -49,11 +49,11 @@ def manifest() -> PluginManifestV1:
 
 Manifest, capability, dependency, and component declarations are frozen value
 objects. IDs and integer bounds are validated, collections become deterministic
-tuples, provider identity strings are bounded and path-free, and capability or
-backend IDs must use the plugin ID prefix. Dependency, license, Python-version,
-platform, and native/external component fields are inventory declarations; the
-host does not resolve dependencies or make legal or platform-support claims
-from them.
+tuples, and every manifest string that can enter a catalog or compatibility
+profile is bounded, control-free, and path-free. Capability or backend IDs must
+use the plugin ID prefix. Dependency, license, Python-version, platform, and
+native/external component fields are inventory declarations; the host does not
+resolve dependencies or make legal or platform-support claims from them.
 
 ## Discover an exact allowlist
 
@@ -98,3 +98,19 @@ option, renderer hook, schema-v2 provider record, v1-to-v2 upgrader, or publishe
 compatibility receipt. The private Phase 1/2 request, registry, execution-limit,
 source-snapshot, and stage-runner types remain private and are never passed to a
 plugin.
+
+## Version baseline and later execution
+
+P3-A deliberately freezes SDK API `1.0` as a declaration-only baseline.
+`CapabilityDeclarationV1` contains inventory data and no executor, callback,
+detector, comparator, renderer, source service, or private core handle. A minor-0
+manifest is therefore useful for explicit discovery and negotiation but cannot
+run a comparison.
+
+P3-B can add executable typed-handle protocols and host composition as an
+additive SDK minor or a negotiated host feature. It must associate those new
+handles with the existing declarations rather than reinterpret or add callable
+state to `CapabilityDeclarationV1`; existing API-1.0 manifest factories, fields,
+defaults, validation, and discovery results remain valid. Removing or changing
+the meaning of this frozen declaration contract requires a new major
+entry-point group, not a P3-B minor update.
