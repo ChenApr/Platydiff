@@ -4,6 +4,7 @@
 
 - Status: Proposed
 - Date: 2026-09-10
+- Review revision: 2026-09-10
 - Owners: Platydiff maintainers
 - Implementation owner: unassigned pending acceptance and separate authorization
 
@@ -65,6 +66,13 @@ modalities; and HTML, TUI, desktop, or local-web UI implementation.
 
 Until accepted decisions are recorded here, this RFC remains `Proposed` and no
 implementation gate is authorized.
+
+The 2026-09-10 review revision tightens evidence digests, change invariants,
+metrics, provenance vocabulary, privacy claims, and resource accounting. It
+does not change any S1-S12 recommendation. It does change the proposed keyed
+table coordinate from a deterministic `key_digest` to a canonical
+`key_ordinal`, reducing low-entropy key exposure while preserving deterministic
+navigation.
 
 ## Schema-v3 compatibility contract
 
@@ -140,15 +148,56 @@ class StructuredChange:
     after_digest: str | None
 ```
 
-Digests are SHA-256 of schema-v3 canonical typed values and reveal no payload.
-Add lacks before facts, remove lacks after facts, and replace has both. Type
-changes are replacements; moves are not inferred. Changes are observations, not
-patches. Deterministic depth-first pre-order uses sorted mapping keys and rising
-sequence indices. A wholly added/removed subtree produces one change at its
-highest pointer. Full count is known before applying item/payload truncation.
+Digests use the domain-separated evidence encoding below. Add lacks before
+facts, remove lacks after facts, and replace has both. Type changes are
+replacements; moves are not inferred. Changes are observations, not patches.
+Deterministic depth-first pre-order uses sorted mapping keys and rising sequence
+indices. A wholly added/removed subtree produces one change at its highest
+pointer. Full count is known before applying item/payload truncation.
 Pointers necessarily expose bounded decoded mapping-key names as comparison
 coordinates. They never expose scalar values, and renderers must escape them as
 untrusted text.
+
+### Evidence digest and privacy contract
+
+Every `*_digest` is lowercase SHA-256 over this framing:
+
+```text
+UTF8("platydiff/v3/" + domain) || 0x00 || U64BE(payload_length) || payload
+```
+
+Canonical structured-value payload tags are `00` null, `01` false, `02` true,
+`03` integer, `04` decimal, `05` string, `06` sequence, and `07` mapping.
+Variable fields use U64BE byte lengths. Integers use one sign byte followed by
+minimal big-endian unsigned magnitude; zero has positive sign and empty
+magnitude. Value-mode decimals use one sign byte, canonical ASCII coefficient
+without leading/trailing zeroes, and minimal signed big-endian exponent; zero is
+positive coefficient `0` exponent zero. Strings use UTF-8, sequences retain
+order, and mappings contain canonical string-key/value pairs in key order.
+Container element counts precede children.
+The encoder feeds this framing incrementally into SHA-256 and never materializes
+a complete container payload; encoded lengths use checked arithmetic. The exact
+byte fixtures are a schema-v3 compatibility artifact.
+
+Structured value mode uses domain `structured/value`. In JSON lexical number
+mode, a number uses domain `structured/number/lexical` and its payload is the
+exact validated UTF-8 number token, including sign, decimal point, exponent
+marker/sign, and zeroes. Therefore `1`, `1.0`, and `1e0` yield distinct evidence
+digests and a coherent replace change in lexical mode, while value mode produces
+no change.
+
+Evidence digests are reproducible integrity fingerprints, not encryption,
+redaction, or proof that a value is secret. Low-entropy values can be recovered
+by dictionary guessing, and equality of equal domain/payload pairs is visible.
+Conversely, equal digests do not alone prove comparison equality: a policy can
+declare identical NaN representations unequal. Relation and policy evaluation
+remain authoritative.
+Changing a digest to a randomized or keyed construction would be a schema
+change because it would weaken deterministic cross-run evidence. Callers must
+protect an outcome as they protect pseudonymous source-derived metadata; a
+renderer labels these fields as evidence digests and does not call them hidden
+or anonymous. Compatibility tests include known low-entropy inputs to document
+guessability and prevent a false secrecy claim.
 
 ## JSON contract
 
@@ -267,15 +316,37 @@ class TableChange:
         "row_add", "row_remove", "cell_replace"
     ]
     row: int | None
-    key_digest: str | None
+    key_ordinal: int | None
     column: str | None
     before_digest: str | None
     after_digest: str | None
 ```
 
-Rows are one-based data rows excluding the header. Key and cell values are
-represented only by canonical typed SHA-256 digests. Schema changes precede row
-changes, then cell changes, with deterministic alignment order inside each group.
+For positional alignment, `row` is present and `key_ordinal` is absent on every
+row/cell operation. It is the one-based before index for `row_remove`, the
+one-based after index for `row_add`, and the shared position for `cell_replace`.
+For keyed alignment, `row` is absent and `key_ordinal` is the one-based rank of
+the key in the canonical sorted union of before/after keys. Physical keyed-row
+order is ignored. Both coordinates are absent on column operations.
+
+`column` is present for column add/remove and cell replace, and absent for
+column reorder and row add/remove. Add operations have only `after_digest`;
+remove operations have only `before_digest`; reorder and replace operations have
+both. The digest domains and payloads are:
+
+| Operation | Domain | Canonical payload |
+| --- | --- | --- |
+| `column_add` / `column_remove` | `table/column/schema` | name, dtype, ordered missing tokens, and numeric policy |
+| `column_reorder` | `table/columns/order` | complete ordered column-name sequence on that side |
+| `row_add` / `row_remove` | `table/row` | complete row in aligned column order, including typed missing markers |
+| `cell_replace` | `table/cell` | one typed cell value or missing marker |
+
+`key_ordinal` avoids publishing a deterministic digest of often low-entropy key
+values; it still reveals union cardinality and relative canonical order. Column
+names remain bounded untrusted coordinates. Schema changes precede row changes,
+then cell changes, with deterministic alignment order inside each group. Strict
+model validation rejects every illegal field combination before serialization
+or after parsing.
 
 ## Dense-array contract
 
@@ -302,9 +373,11 @@ float values convert once to IEEE 754 binary64. The conversion and source kind
 are recorded. Object coercion, post-construction iteration, buffer aliasing, and
 mutation are forbidden.
 
-Shape and dtype must match. No broadcast, squeeze, reshape, transpose, relabel,
-cross-dtype cast, or coordinate alignment occurs. Shape/dtype mismatch is a
-completed difference with one schema-level change, not alignment failure.
+Shape and dtype are compared independently. No broadcast, squeeze, reshape,
+transpose, relabel, cross-dtype cast, or coordinate alignment occurs. A shape
+mismatch emits `shape_replace`; a dtype mismatch emits `dtype_replace`; when
+both differ, both changes appear in that order. Any schema mismatch suppresses
+element comparison and is a completed difference, not alignment failure.
 
 ```python
 class ArrayChange:
@@ -317,10 +390,16 @@ class ArrayChange:
     relative_error: MetricNumber | None
 ```
 
-Element changes use row-major index order and canonical typed scalar digests.
-Errors exist only for finite numeric pairs. No array CLI exists until a file
-representation is separately selected. Ecosystem adapters need dependency,
-ownership, dtype, coordinate, missing-value, and license review.
+`shape_replace` and `dtype_replace` require `index=None`, both digests, and no
+error fields. Their domains are `array/shape` over rank plus ordered dimensions,
+and `array/dtype` over the exact dtype identifier. `element_replace` requires an
+in-bounds full-rank index and both `array/scalar` digests over the declared dtype
+plus canonical scalar bits. Its error fields follow the numeric rules below;
+non-numeric or non-finite pairs have both errors absent. Element changes use
+row-major index order. Strict construction and round-trip parsing reject any
+operation/field mismatch. No array CLI exists until a file representation is
+separately selected. Ecosystem adapters need dependency, ownership, dtype,
+coordinate, missing-value, and license review.
 
 ## Numeric and missing-value semantics
 
@@ -349,13 +428,111 @@ Keys cannot be missing; first-gate arrays have no missing state. Decimal,
 complex, datetime, units, ULP, symmetric tolerance, and statistical equivalence
 are deferred.
 
-Metrics report compared/equal/changed, missing, NaN, infinity, and finite-numeric
-pair counts. Numeric comparisons report maximum absolute and relative error over
-finite unequal pairs, or an explicit unavailable metric for an empty population.
-No mean is defined, avoiding an unspecified floating-point accumulation order.
-Tolerance changes relation because it is explicit intent; renderers cannot
-apply or reinterpret it. Strict default policy remains equal/pass and
-different/fail.
+For one finite pair, `absolute_error = abs(after-before)`. Relative error is
+`absolute_error / abs(before)` when `before != 0`, zero when both values are
+zero, and tagged positive infinity when `before == 0` and the absolute error is
+non-zero. It is absent for pairs containing NaN or infinity. Maximum error
+metrics include all finite numeric pairs, including pairs accepted by tolerance
+and positive-infinity relative errors caused by a zero reference. They are
+omitted, rather than encoded as zero or NaN, when
+`finite_numeric_pairs == 0`.
+
+### Stable metric registry
+
+All count metrics use finite integer-valued `NumericValue`, unit `items`, and
+aggregation `count`. They are always present. Maximum metrics use binary64
+`NumericValue`, aggregation `maximum`, and are conditionally present as stated.
+JSON/YAML admit neither missing nor non-finite values and define no tolerance
+error metric, so missing/NaN/infinity counts and maximum errors are inapplicable
+and absent for those modalities rather than serialized as invented zeroes.
+
+| Modality | Metric name | Meaning/applicability | Unit | Direction | Empty population |
+| --- | --- | --- | --- | --- | --- |
+| JSON | `json.compared_values` | visited paired values plus roots of wholly added/removed subtrees | `items` | `neutral` | zero |
+| JSON | `json.equal_values` | visited values equal under selected number mode | `items` | `neutral` | zero |
+| JSON | `json.changed_values` | emitted add/remove/replace observations before truncation | `items` | `lower_is_better` | zero |
+| YAML | `yaml.compared_values` | same counting rule as JSON | `items` | `neutral` | zero |
+| YAML | `yaml.equal_values` | values equal under YAML semantic profile | `items` | `neutral` | zero |
+| YAML | `yaml.changed_values` | emitted observations before truncation | `items` | `lower_is_better` | zero |
+| Table | `table.compared_cells` | aligned cell pairs actually evaluated | `items` | `neutral` | zero |
+| Table | `table.equal_cells` | evaluated pairs equal under dtype/missing/numeric policy | `items` | `neutral` | zero |
+| Table | `table.changed_cells` | unequal evaluated cell pairs | `items` | `lower_is_better` | zero |
+| Table | `table.changed_items` | all column, row, and cell changes before truncation | `items` | `lower_is_better` | zero |
+| Table | `table.missing_pairs` | evaluated pairs with at least one missing side | `items` | `neutral` | zero |
+| Table | `table.nan_pairs` | evaluated float pairs with at least one NaN | `items` | `neutral` | zero |
+| Table | `table.infinity_pairs` | evaluated float pairs with at least one infinity | `items` | `neutral` | zero |
+| Table | `table.finite_numeric_pairs` | evaluated pairs with two finite float64 values | `items` | `neutral` | zero |
+| Table | `table.maximum_absolute_error` | all finite float64 pairs | `numeric_values` | `lower_is_better` | metric omitted |
+| Table | `table.maximum_relative_error` | all finite float64 pairs | `ratio` | `lower_is_better` | metric omitted |
+| Array | `array.compared_elements` | positional element pairs evaluated when shape/dtype match | `items` | `neutral` | zero |
+| Array | `array.equal_elements` | evaluated pairs equal under numeric policy | `items` | `neutral` | zero |
+| Array | `array.changed_elements` | unequal evaluated element pairs | `items` | `lower_is_better` | zero |
+| Array | `array.changed_items` | shape, dtype, or element changes before truncation | `items` | `lower_is_better` | zero |
+| Array | `array.missing_pairs` | reserved first-gate count, always zero | `items` | `neutral` | zero |
+| Array | `array.nan_pairs` | float pairs with at least one NaN | `items` | `neutral` | zero |
+| Array | `array.infinity_pairs` | float pairs with at least one infinity | `items` | `neutral` | zero |
+| Array | `array.finite_numeric_pairs` | float64 pairs with two finite values | `items` | `neutral` | zero |
+| Array | `array.maximum_absolute_error` | all finite float64 pairs | `numeric_values` | `lower_is_better` | metric omitted |
+| Array | `array.maximum_relative_error` | all finite float64 pairs | `ratio` | `lower_is_better` | metric omitted |
+
+Metric order is exactly table order filtered to the current modality and
+applicability. No mean is defined, avoiding an unspecified accumulation order.
+Count identities such as equal plus changed equals compared are validated when
+applicable; schema/unmatched-row changes contribute to changed items, not
+changed cells.
+
+For JSON/YAML, the counted observation frontier consists of scalar pairs, empty
+container pairs, type-mismatch pairs, and the highest roots of wholly
+added/removed subtrees. A non-empty paired container that is descended is not a
+separate observation. Equal and changed values partition this frontier, and
+changed values equals `changes.total_count`. For tables, equal plus changed cells
+equals compared cells. For arrays with matching shape/dtype, equal plus changed
+elements equals compared elements; on schema replacement all three element
+counts are zero and changed items is one or two according to the number of
+shape/dtype replacements.
+
+Tolerance is comparison intent and determines cell/element equality and thus
+relation. It is not itself a verdict threshold. Exactly one default evaluation
+is present: `json.semantic_equality` observes `json.changed_values`,
+`yaml.semantic_equality` observes `yaml.changed_values`,
+`table.value_equality` observes `table.changed_items`, or
+`array.value_equality` observes `array.changed_items`, each with operator `eq`
+and threshold zero. Observed zero yields pass; non-zero yields fail. No default
+rule yields warn. Renderers display the recorded metric and evaluation and do
+not reapply tolerance or derive verdict.
+
+## Normalization, alignment, and provenance vocabulary
+
+The normalized spec records all effective caller intent, including defaults.
+`TransformationRecord` records behavior actually executed after validation; it
+does not encode a second choice, infer user intent, or claim that a syntactic
+feature occurred. Records use this fixed stage/id/order vocabulary:
+
+| Modality | Stage | Transformation ID | When recorded / parameters |
+| --- | --- | --- | --- |
+| JSON | decoding | `json.decode.utf8` | bytes/path input; effective encoding |
+| JSON | normalizing | `json.object_order.ignore` | always; no parameters |
+| JSON | normalizing | `json.number.value` or `json.number.lexical` | always; selected mode |
+| JSON | aligning | `json.pointer.position` | always; RFC 6901 and positional arrays |
+| YAML | decoding | `yaml.decode.utf8` | bytes/path input; encoding and `yaml12_core_safe` profile |
+| YAML | normalizing | `yaml.presentation.elide` | always; comments, style, and anchor names |
+| YAML | normalizing | `yaml.object_order.ignore` | always; no parameters |
+| YAML | aligning | `yaml.pointer.position` | always; RFC 6901 and positional sequences |
+| Table | decoding | `table.csv.decode` or `table.tsv.decode` | always; dialect, encoding, header policy |
+| Table | normalizing | `table.presentation.elide` | always; quoting and record terminators |
+| Table | normalizing | `table.cells.typed` | only with column schema; dtype and missing-token policy digest |
+| Table | aligning | `table.columns.exact` or `table.columns.by_name` | always; selected column mode |
+| Table | aligning | `table.rows.position` or `table.rows.key` | always; selected row mode and key-column names |
+| Array | decoding | `array.float64.convert` | float64 source; conversion=`ieee754_binary64`, roles converted |
+| Array | aligning | `array.elements.position` | always; order=`c_row_major` |
+
+For YAML, presentation elision covers comment/style/anchor-name removal, while
+alias expansion is structural decoding and is represented by resource usage,
+not called normalization. Table parameter values are JSON-safe and bounded;
+the missing-token policy is represented by the same evidence-digest threat
+model rather than raw tokens. Writers emit records in the order above. Readers
+require known built-in IDs for schema-v3 built-in results and test exact round
+trips; later IDs require a schema change or a namespaced extension mechanism.
 
 ## Resources and failures
 
@@ -377,6 +554,7 @@ class StructuredResourceLimits:
 class YamlResourceLimits(StructuredResourceLimits):
     max_aliases: int = 10_000
     max_expanded_nodes: int = 1_000_000
+    max_expanded_scalar_bytes: int = 16 * 1024 * 1024
 
 class TableResourceLimits:
     max_input_bytes: int = 16 * 1024 * 1024
@@ -406,13 +584,48 @@ class ArrayResourceLimits:
 | Nodes/elements | 1,000,000 | 1,000,000 cells | 2,000,000 elements |
 | Rows/columns | n/a | 200,000 / 10,000 | n/a |
 | Number digits / absolute exponent | 10,000 / 1,000,000 | 10,000 / 1,000,000 | fixed dtype |
-| YAML aliases / expanded nodes | 10,000 / 1,000,000 | n/a | n/a |
+| YAML aliases / expanded nodes / expanded scalar bytes | 10,000 / 1,000,000 / 16 MiB | n/a | n/a |
 | Compare work units | 5,000,000 | 5,000,000 | 5,000,000 |
 | Returned changes / payload | 10,000 / 4 MiB | 10,000 / 4 MiB | 10,000 / 4 MiB |
 
-Dimension products use checked arithmetic before allocation. Decoders increment
-counters before constructing a node, row, cell, or expanded alias. Comparator
-work units are documented per implementation and never use wall-clock time.
+`max_input_bytes` counts original source bytes before decoding. For `TextSource`,
+it counts strict UTF-8 encoding exactly as existing source handling does.
+`max_scalar_bytes` and `max_cell_bytes` count the decoded Unicode scalar's UTF-8
+length after escape removal, YAML scalar resolution, or CSV unquoting; original
+token bytes remain bounded by `max_input_bytes`. YAML counts each composed scalar
+once against `max_scalar_bytes`, each alias occurrence against `max_aliases`,
+every materialized occurrence against `max_expanded_nodes`, and the UTF-8 length
+of every materialized scalar occurrence—including aliases—against
+`max_expanded_scalar_bytes`.
+
+`max_number_digits` counts every ASCII digit in the validated source token before
+normalization, including integer, fractional, and exponent digits. Sign, decimal
+point, and exponent marker do not count. `max_abs_exponent` applies to the parsed
+base-10 exponent after fractional-place adjustment. Parsing checks digit count
+and exponent magnitude incrementally; it never constructs a proportional power
+of ten, integer, or decimal first.
+
+Required deterministic work is charged before performing the next logical unit:
+
+- JSON/YAML: one unit per paired node visited and one per wholly added/removed
+  subtree root; decoding and canonical-digest bytes are bounded separately;
+- table positional: one per compared column-schema item, aligned cell pair, and
+  unmatched row; keyed mode additionally charges one per input row indexed and
+  one per UTF-8 byte in its canonical composite key; and
+- array: one per paired or unmatched shape dimension, one for the dtype
+  comparison, and—only when both schema checks match—one per element pair.
+
+Canonical keyed sorting remains bounded by row, cell, key-byte, and computed
+work limits; the implementation gate must use a deterministic sort independent
+of locale and source order. These formulas are schema-v3 compatibility fixtures,
+not implementation notes.
+
+Dimension products and cumulative byte/work additions use checked arithmetic.
+Host counters are checked before allocating the next host node, decoded scalar,
+expanded alias value, row, cell, key entry, or array buffer. The YAML backend may
+allocate bounded parser tokens from the already byte-limited source, but it must
+not eagerly construct an unbounded application object graph. No normal result
+depends on wall-clock time.
 
 Limit failure uses existing `resource_limit_exceeded` or
 `compare_resource_limit` with the observed stage. Syntax/typed-cell failure uses
@@ -464,7 +677,10 @@ These are plans, not implementation authorization.
 
 Tests cover v1/v2 stability and migration, strict v3 round trips, all model
 invariants, duplicate keys, number modes, pointers, ordering, every limit,
-truncation, source mutation, CLI aliases/exits, and randomized tree oracles.
+truncation, source mutation, CLI aliases/exits, transformation vocabulary, and
+randomized tree oracles. Fixtures prove that lexical `1`, `1.0`, and `1e0`
+produce distinct coherent change digests while value mode remains equal. Known
+low-entropy fixtures document digest guessability rather than claiming secrecy.
 
 ### P4-A2: YAML backend
 
@@ -486,7 +702,9 @@ depth/expansion, dependency inventory, and unchanged existing auto fixtures.
 
 Tests cover malformed quoting, embedded newlines, empty/header-only and ragged
 input, duplicate headers/keys, every dtype/missing token, alignments, column
-order, tolerance boundaries, NaN/Inf/signed zero, limits, determinism, and exits.
+order, tolerance boundaries, NaN/Inf/signed zero, per-operation change
+invariants and digest domains, metric/evaluation fixtures, limit/work formulas,
+deterministic round trips, and exits.
 
 ### P4-B2: dense arrays
 
@@ -496,7 +714,9 @@ order, tolerance boundaries, NaN/Inf/signed zero, limits, determinism, and exits
 
 Tests cover scalar/empty/multidimensional shapes, checked products, copy and
 mutation isolation, dtype bounds, row-major indices, schema changes, numeric
-special cases/boundaries, deterministic metrics, truncation, and work limits.
+special cases/boundaries, shape/dtype/scalar digest domains, operation
+invariants, deterministic metric/evaluation fixtures, truncation, and work
+limits.
 
 Every gate runs Ruff format/lint, strict mypy, complete pytest, build,
 wheel/sdist inspection, and documentation/link checks. Public models add

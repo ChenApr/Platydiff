@@ -4,6 +4,7 @@
 
 - Status: Proposed
 - Date: 2026-09-10
+- Review revision: 2026-09-10
 - Owners: Platydiff maintainers
 - Implementation owner: 尚未指派，等待接受 RFC 并另行授权
 
@@ -60,6 +61,11 @@ local-web UI 实现。
 | S12 | Phase 4 不产出 artifact；renderer 只展示 validated bounded facts。 | 现在加入 patch、preview、downloadable value 或 report。 |
 
 在接受的决策写回本文前，本 RFC 保持 `Proposed`，且不授权任何实现门禁。
+
+2026-09-10 review revision 收紧 evidence digest、change invariant、metric、provenance vocabulary、
+privacy claim 与 resource accounting，不改变任何 S1-S12 推荐方向。它确实把提议的 keyed table
+coordinate 从 deterministic `key_digest` 改为 canonical `key_ordinal`，以减少低熵 key 暴露，
+同时保留 deterministic navigation。
 
 ## Schema v3 兼容性契约
 
@@ -131,13 +137,45 @@ class StructuredChange:
     after_digest: str | None
 ```
 
-digest 是 schema-v3 canonical typed value 的 SHA-256，不泄露 payload。add 没有 before
-facts，remove 没有 after facts，replace 两者都有。type change 是 replace；不推断 move。
-change 是观察结果，不是 patch。确定性 depth-first pre-order 使用排序后的 mapping key 与
+digest 使用下文 domain-separated evidence encoding。add 没有 before facts，remove 没有
+after facts，replace 两者都有。type change 是 replace；不推断 move。change 是观察结果，
+不是 patch。确定性 depth-first pre-order 使用排序后的 mapping key 与
 递增 sequence index。整个 added/removed subtree 在最高 pointer 产生一个 change。完整 count
 已知后才应用 item/payload truncation。
 pointer 作为比较坐标必然暴露有界 decoded mapping-key name；它不暴露 scalar value，且
 renderer 必须把它作为 untrusted text 转义。
+
+### Evidence digest 与隐私契约
+
+每个 `*_digest` 都是以下 framing 的 lowercase SHA-256：
+
+```text
+UTF8("platydiff/v3/" + domain) || 0x00 || U64BE(payload_length) || payload
+```
+
+canonical structured-value payload tag 为：`00` null、`01` false、`02` true、`03` integer、
+`04` decimal、`05` string、`06` sequence、`07` mapping。variable field 使用 U64BE byte length。
+integer 使用一个 sign byte 加 minimal big-endian unsigned magnitude；zero 使用 positive sign 与
+empty magnitude。value-mode decimal 使用一个 sign byte、无 leading/trailing zero 的 canonical
+ASCII coefficient，以及 minimal signed big-endian exponent；zero 是 positive coefficient `0`、
+exponent zero。string 使用 UTF-8；sequence 保持顺序；mapping 按 key order 包含 canonical string-
+key/value pair。container element count 位于 child 前。encoder 把 framing 增量送入 SHA-256，不 materialize 完整
+container payload；encoded length 使用 checked arithmetic。精确 byte fixture 是 schema-v3
+compatibility artifact。
+
+structured value mode 使用 domain `structured/value`。JSON lexical number mode 下，number
+使用 `structured/number/lexical`，payload 是完整 validated UTF-8 number token，包括 sign、
+decimal point、exponent marker/sign 与 zero。因此 lexical mode 中 `1`、`1.0`、`1e0` 产生
+不同 evidence digest 与一致的 replace change；value mode 中不产生 change。
+
+evidence digest 是可复现 integrity fingerprint，不是 encryption、redaction，也不证明 value
+保密。低熵 value 可通过 dictionary guessing 恢复；相同 domain/payload pair 的相等性也可见。
+反之，仅 digest 相同也不证明 comparison equality：policy 可以把相同 NaN representation 定义为
+不相等。relation 与 policy evaluation 仍是权威事实。
+改成 randomized/keyed construction 会削弱 deterministic cross-run evidence，因此属于 schema
+change。caller 应按 pseudonymous source-derived metadata 保护 outcome；renderer 将其标为
+evidence digest，不能称为 hidden/anonymous。compatibility test 使用已知低熵输入记录其可猜测性，
+防止产生虚假保密声明。
 
 ## JSON 契约
 
@@ -242,14 +280,32 @@ class TableChange:
         "row_add", "row_remove", "cell_replace"
     ]
     row: int | None
-    key_digest: str | None
+    key_ordinal: int | None
     column: str | None
     before_digest: str | None
     after_digest: str | None
 ```
 
-row 是不含 header 的一基 data row。key/cell value 只用 canonical typed SHA-256 digest
-表示。schema change 先于 row change，随后是 cell change；组内使用确定性 alignment order。
+positional alignment 下，每个 row/cell operation 都存在 `row` 且不存在 `key_ordinal`。
+`row_remove` 使用一基 before index，`row_add` 使用一基 after index，`cell_replace` 使用两侧
+共享位置。keyed alignment 下，`row` 不存在；`key_ordinal` 是 key 在 before/after canonical
+sorted union 中的一基 rank。忽略 keyed row 的物理顺序。column operation 两种坐标都不存在。
+
+column add/remove 与 cell replace 存在 `column`；column reorder 与 row add/remove 不存在。
+add operation 只有 `after_digest`，remove 只有 `before_digest`，reorder/replace 两者都有。
+digest domain 与 payload 为：
+
+| operation | domain | canonical payload |
+| --- | --- | --- |
+| `column_add` / `column_remove` | `table/column/schema` | name、dtype、ordered missing token 与 numeric policy |
+| `column_reorder` | `table/columns/order` | 该侧完整 ordered column-name sequence |
+| `row_add` / `row_remove` | `table/row` | aligned column order 下的完整 row，含 typed missing marker |
+| `cell_replace` | `table/cell` | 一个 typed cell value 或 missing marker |
+
+`key_ordinal` 避免发布通常低熵 key value 的 deterministic digest；它仍会暴露 union cardinality
+与相对 canonical order。column name 是有界 untrusted coordinate。schema change 先于 row
+change，随后是 cell change；组内使用确定性 alignment order。strict model validation 在
+serialization 前与 parsing 后拒绝每种非法 field combination。
 
 ## 稠密数组契约
 
@@ -274,9 +330,10 @@ construction 验证并复制 value。row-major C order 是规范，length 等于
 dtype；float value 转换一次为 IEEE 754 binary64。转换与 source kind 被记录。禁止 object
 coercion、construction 后 iteration、buffer aliasing 与 mutation。
 
-shape/dtype 必须匹配。不做 broadcast、squeeze、reshape、transpose、relabel、跨 dtype cast
-或 coordinate alignment。shape/dtype mismatch 是带一个 schema-level change 的 completed
-difference，而不是 alignment failure。
+shape 与 dtype 独立比较。不做 broadcast、squeeze、reshape、transpose、relabel、跨 dtype cast
+或 coordinate alignment。shape mismatch 产生 `shape_replace`，dtype mismatch 产生
+`dtype_replace`；两者都不同时按此顺序产生两个 change。任何 schema mismatch 都停止 element
+comparison，并形成 completed difference，而不是 alignment failure。
 
 ```python
 class ArrayChange:
@@ -289,9 +346,14 @@ class ArrayChange:
     relative_error: MetricNumber | None
 ```
 
-element change 按 row-major index order，使用 canonical typed scalar digest。仅 finite numeric
-pair 有 error。单独选择 file representation 前没有 array CLI。生态 adapter 需要 dependency、
-ownership、dtype、coordinate、missing-value 与 license review。
+`shape_replace` 与 `dtype_replace` 要求 `index=None`、两侧 digest、无 error field。其 domain
+分别是 `array/shape`（rank 与 ordered dimension）和 `array/dtype`（精确 dtype identifier）。
+`element_replace` 要求 in-bounds full-rank index，并在 `array/scalar` domain 下对 declared dtype
+与 canonical scalar bit 产生两侧 digest。error field 遵循下述 numeric rule；non-numeric 或
+non-finite pair 两项都不存在。element change 按 row-major index order。strict construction 与
+round-trip parsing 拒绝任何 operation/field mismatch。单独选择 file representation 前没有
+array CLI。生态 adapter 需要 dependency、ownership、dtype、coordinate、missing-value 与
+license review。
 
 ## 数值与 missing-value 语义
 
@@ -318,11 +380,98 @@ missing 是独立 tagged state：missing 与 missing 相等，与所有 present 
 missing；首个 array gate 没有 missing state。decimal、complex、datetime、unit、ULP、symmetric
 tolerance 与 statistical equivalence 延后。
 
-metric 报告 compared/equal/changed、missing、NaN、infinity 与 finite-numeric pair count。
-numeric comparison 报告 finite unequal pair 的 maximum absolute/relative error；空 population
-使用显式 unavailable metric。不定义 mean，避免未指定 floating-point accumulation order。
-tolerance 因为是显式 intent，所以改变 relation；renderer 不得应用或重新解释。strict default
-policy 仍为 equal/pass 与 different/fail。
+对一组 finite pair，`absolute_error = abs(after-before)`。当 `before != 0` 时，relative
+error 为 `absolute_error / abs(before)`；两值均为 zero 时为 zero；`before == 0` 且 absolute
+error 非零时为 tagged positive infinity。包含 NaN/infinity 的 pair 不存在 relative error。
+maximum error metric 包含所有 finite numeric pair（包括被 tolerance 接受的 pair），也包括 zero
+reference 导致的 positive-infinity relative error。`finite_numeric_pairs == 0` 时省略 maximum
+metric，不编码成 zero 或 NaN。
+
+### 稳定 metric registry
+
+所有 count metric 使用 integer-valued finite `NumericValue`、unit `items`、aggregation `count`，
+并始终存在。maximum metric 使用 binary64 `NumericValue`、aggregation `maximum`，并按说明
+有条件存在。
+JSON/YAML 不允许 missing/non-finite value，也不定义 tolerance error metric；因此这些 modality
+不适用且不输出 missing/NaN/infinity count 与 maximum error，而不是虚构 zero。
+
+| modality | metric name | 含义/适用范围 | unit | direction | empty population |
+| --- | --- | --- | --- | --- | --- |
+| JSON | `json.compared_values` | visited paired value 加整个 added/removed subtree root | `items` | `neutral` | zero |
+| JSON | `json.equal_values` | selected number mode 下相等的 visited value | `items` | `neutral` | zero |
+| JSON | `json.changed_values` | truncation 前的 add/remove/replace observation | `items` | `lower_is_better` | zero |
+| YAML | `yaml.compared_values` | 与 JSON 相同 counting rule | `items` | `neutral` | zero |
+| YAML | `yaml.equal_values` | YAML semantic profile 下相等的 value | `items` | `neutral` | zero |
+| YAML | `yaml.changed_values` | truncation 前的 observation | `items` | `lower_is_better` | zero |
+| Table | `table.compared_cells` | 实际 evaluated aligned cell pair | `items` | `neutral` | zero |
+| Table | `table.equal_cells` | dtype/missing/numeric policy 下相等的 evaluated pair | `items` | `neutral` | zero |
+| Table | `table.changed_cells` | 不相等的 evaluated cell pair | `items` | `lower_is_better` | zero |
+| Table | `table.changed_items` | truncation 前所有 column/row/cell change | `items` | `lower_is_better` | zero |
+| Table | `table.missing_pairs` | 至少一侧 missing 的 evaluated pair | `items` | `neutral` | zero |
+| Table | `table.nan_pairs` | 至少一侧 NaN 的 evaluated float pair | `items` | `neutral` | zero |
+| Table | `table.infinity_pairs` | 至少一侧 infinity 的 evaluated float pair | `items` | `neutral` | zero |
+| Table | `table.finite_numeric_pairs` | 两侧均为 finite float64 value 的 evaluated pair | `items` | `neutral` | zero |
+| Table | `table.maximum_absolute_error` | 所有 finite float64 pair | `numeric_values` | `lower_is_better` | 省略 metric |
+| Table | `table.maximum_relative_error` | 所有 finite float64 pair | `ratio` | `lower_is_better` | 省略 metric |
+| Array | `array.compared_elements` | shape/dtype 匹配时 evaluated positional element pair | `items` | `neutral` | zero |
+| Array | `array.equal_elements` | numeric policy 下相等的 evaluated pair | `items` | `neutral` | zero |
+| Array | `array.changed_elements` | 不相等的 evaluated element pair | `items` | `lower_is_better` | zero |
+| Array | `array.changed_items` | truncation 前 shape/dtype/element change | `items` | `lower_is_better` | zero |
+| Array | `array.missing_pairs` | 首门禁保留 count，始终 zero | `items` | `neutral` | zero |
+| Array | `array.nan_pairs` | 至少一侧 NaN 的 float pair | `items` | `neutral` | zero |
+| Array | `array.infinity_pairs` | 至少一侧 infinity 的 float pair | `items` | `neutral` | zero |
+| Array | `array.finite_numeric_pairs` | 两侧均为 finite value 的 float64 pair | `items` | `neutral` | zero |
+| Array | `array.maximum_absolute_error` | 所有 finite float64 pair | `numeric_values` | `lower_is_better` | 省略 metric |
+| Array | `array.maximum_relative_error` | 所有 finite float64 pair | `ratio` | `lower_is_better` | 省略 metric |
+
+metric order 恰好是当前 modality 过滤 applicability 后的表格顺序。不定义 mean，避免未指定
+accumulation order。适用时验证 equal + changed = compared 等 count identity；schema/unmatched-row
+change 进入 changed items，不进入 changed cells。
+
+JSON/YAML 的 counted observation frontier 包含 scalar pair、empty container pair、type-mismatch
+pair，以及整个 added/removed subtree 的最高 root。被下钻的 non-empty paired container 不单独作为
+observation。equal/changed value 对 frontier 分区，且 changed values 等于 `changes.total_count`。
+table 中 equal + changed cells = compared cells。shape/dtype 匹配的 array 中 equal + changed
+elements = compared elements；schema replacement 时三个 element count 都是 zero，changed items
+根据 shape/dtype replacement 数量为 one 或 two。
+
+tolerance 是 comparison intent，决定 cell/element equality，从而决定 relation；它不是 verdict
+threshold。恰好存在一个 default evaluation：`json.semantic_equality` 观察
+`json.changed_values`，`yaml.semantic_equality` 观察 `yaml.changed_values`，
+`table.value_equality` 观察 `table.changed_items`，或 `array.value_equality` 观察
+`array.changed_items`；均使用 operator `eq` 与 threshold zero。observed zero 为 pass，非零为
+fail。没有 default rule 产生 warn。renderer 只展示 recorded metric/evaluation，不重新应用
+tolerance 或推导 verdict。
+
+## Normalization、alignment 与 provenance vocabulary
+
+normalized spec 记录全部 effective caller intent（包括 default）。`TransformationRecord` 记录
+validation 后实际执行的 behavior；它不编码第二份选择、不推断 user intent，也不声称输入实际
+出现某种 syntax feature。record 使用以下固定 stage/id/order vocabulary：
+
+| modality | stage | transformation ID | 记录条件/parameter |
+| --- | --- | --- | --- |
+| JSON | decoding | `json.decode.utf8` | bytes/path input；effective encoding |
+| JSON | normalizing | `json.object_order.ignore` | 始终；无 parameter |
+| JSON | normalizing | `json.number.value` 或 `json.number.lexical` | 始终；selected mode |
+| JSON | aligning | `json.pointer.position` | 始终；RFC 6901 与 positional array |
+| YAML | decoding | `yaml.decode.utf8` | bytes/path input；encoding 与 `yaml12_core_safe` profile |
+| YAML | normalizing | `yaml.presentation.elide` | 始终；comment、style、anchor name |
+| YAML | normalizing | `yaml.object_order.ignore` | 始终；无 parameter |
+| YAML | aligning | `yaml.pointer.position` | 始终；RFC 6901 与 positional sequence |
+| Table | decoding | `table.csv.decode` 或 `table.tsv.decode` | 始终；dialect、encoding、header policy |
+| Table | normalizing | `table.presentation.elide` | 始终；quoting 与 record terminator |
+| Table | normalizing | `table.cells.typed` | 有 column schema；dtype 与 missing-token policy digest |
+| Table | aligning | `table.columns.exact` 或 `table.columns.by_name` | 始终；selected column mode |
+| Table | aligning | `table.rows.position` 或 `table.rows.key` | 始终；selected row mode 与 key-column name |
+| Array | decoding | `array.float64.convert` | float64 source；conversion=`ieee754_binary64`、converted role |
+| Array | aligning | `array.elements.position` | 始终；order=`c_row_major` |
+
+YAML presentation elision 包含 comment/style/anchor-name removal；alias expansion 是 structural
+decoding，通过 resource usage 表达，不称作 normalization。table parameter 是 JSON-safe 且有界；
+missing-token policy 通过相同 evidence-digest threat model 表示，不记录 raw token。writer 按上表
+顺序发出 record。reader 对 schema-v3 built-in result 要求 known built-in ID 并测试 exact round
+trip；后续 ID 需要 schema change 或 namespaced extension mechanism。
 
 ## 资源与失败
 
@@ -343,6 +492,7 @@ class StructuredResourceLimits:
 class YamlResourceLimits(StructuredResourceLimits):
     max_aliases: int = 10_000
     max_expanded_nodes: int = 1_000_000
+    max_expanded_scalar_bytes: int = 16 * 1024 * 1024
 
 class TableResourceLimits:
     max_input_bytes: int = 16 * 1024 * 1024
@@ -372,13 +522,40 @@ class ArrayResourceLimits:
 | node/element | 1,000,000 | 1,000,000 cells | 2,000,000 elements |
 | row/column | n/a | 200,000 / 10,000 | n/a |
 | number digit / absolute exponent | 10,000 / 1,000,000 | 10,000 / 1,000,000 | fixed dtype |
-| YAML alias / expanded node | 10,000 / 1,000,000 | n/a | n/a |
+| YAML alias / expanded node / expanded scalar bytes | 10,000 / 1,000,000 / 16 MiB | n/a | n/a |
 | compare work unit | 5,000,000 | 5,000,000 | 5,000,000 |
 | returned change / payload | 10,000 / 4 MiB | 10,000 / 4 MiB | 10,000 / 4 MiB |
 
-dimension product 在 allocation 前使用 checked arithmetic。decoder 在构造 node、row、cell
-或 expanded alias 前增加 counter。comparator work unit 由 implementation 分别记录，绝不使用
-wall-clock time。
+`max_input_bytes` 计算 decoding 前的原始 source byte。对 `TextSource`，它与既有 source handling
+相同，计算 strict UTF-8 encoding。`max_scalar_bytes` 与 `max_cell_bytes` 计算 escape removal、
+YAML scalar resolution 或 CSV unquoting 后 decoded Unicode scalar 的 UTF-8 length；原始 token
+byte 仍受 `max_input_bytes` 限制。YAML 对每个 composed scalar 计算一次 `max_scalar_bytes`；每个
+alias occurrence 进入 `max_aliases`；每个 materialized occurrence 进入 `max_expanded_nodes`；
+包括 alias 在内每个 materialized scalar occurrence 的 UTF-8 length 进入
+`max_expanded_scalar_bytes`。
+
+`max_number_digits` 在 normalization 前计算 validated source token 中每个 ASCII digit，包括 integer、
+fraction 与 exponent digit；sign、decimal point、exponent marker 不计数。`max_abs_exponent` 应用于
+fractional-place adjustment 后 parsed base-10 exponent。parsing 逐步检查 digit count 与 exponent
+magnitude，绝不先构造与其成比例的 power-of-ten、integer 或 decimal。
+
+执行下一个 logical unit 前收取 deterministic work：
+
+- JSON/YAML：每个 visited paired node 一个 unit，每个完整 added/removed subtree root 一个 unit；
+  decoding 与 canonical-digest byte 分别受限；
+- table positional：每个 compared column-schema item、aligned cell pair、unmatched row 各一个；keyed
+  mode 另对每个 indexed input row 以及 canonical composite key 的每个 UTF-8 byte 各收一个；以及
+- array：每个 paired/unmatched shape dimension 一个，dtype comparison 一个；只有两个 schema check
+  均匹配时，每个 element pair 再收一个。
+
+canonical keyed sorting 继续受 row、cell、key-byte 与 computed-work limit 约束；实现门禁必须使用
+不依赖 locale 与 source order 的 deterministic sort。这些公式是 schema-v3 compatibility fixture，
+而不是 implementation note。
+
+dimension product 与 cumulative byte/work addition 使用 checked arithmetic。分配下一个 host node、
+decoded scalar、expanded alias value、row、cell、key entry 或 array buffer 前检查 host counter。
+YAML backend 可从已受 byte limit 的 source 分配 bounded parser token，但不能 eager-construct
+unbounded application object graph。正常结果不依赖 wall-clock time。
 
 触限使用既有 `resource_limit_exceeded` 或 `compare_resource_limit` 与 observed stage。
 syntax/typed-cell failure 使用 `decode_error`；YAML backend 缺失是 unavailable；unsupported source
@@ -424,8 +601,10 @@ signature 不变。
 4. `docs: document schema v3 and JSON comparison`
 
 测试覆盖 v1/v2 stability/migration、strict v3 round trip、全部 model invariant、duplicate key、
-number mode、pointer、ordering、所有 limit、truncation、source mutation、CLI alias/exit 与
-randomized tree oracle。
+number mode、pointer、ordering、所有 limit、truncation、source mutation、CLI alias/exit、
+transformation vocabulary 与 randomized tree oracle。fixture 证明 lexical `1`、`1.0`、`1e0`
+产生不同且一致的 change digest，而 value mode 保持 equal。已知低熵 fixture 记录 digest 可猜测性，
+而不是声称保密。
 
 ### P4-A2：YAML backend
 
@@ -447,7 +626,8 @@ alias、cycle、multi-doc、parser recreation、hostile depth/expansion、depend
 
 测试覆盖 malformed quoting、embedded newline、empty/header-only/ragged input、duplicate header/key、
 每种 dtype/missing token、alignment、column order、tolerance boundary、NaN/Inf/signed zero、limit、
-determinism 与 exit。
+每个 operation 的 change invariant/digest domain、metric/evaluation fixture、limit/work formula、
+deterministic round trip 与 exit。
 
 ### P4-B2：稠密数组
 
@@ -456,7 +636,8 @@ determinism 与 exit。
 3. `docs: document array dtype shape and numeric semantics`
 
 测试覆盖 scalar/empty/multidimensional shape、checked product、copy/mutation isolation、dtype bound、
-row-major index、schema change、numeric special case/boundary、deterministic metric、truncation 与 work limit。
+row-major index、schema change、numeric special case/boundary、shape/dtype/scalar digest domain、operation
+invariant、deterministic metric/evaluation fixture、truncation 与 work limit。
 
 每个门禁运行 Ruff format/lint、strict mypy、完整 pytest、build、wheel/sdist inspection 与 docs/link
 check。public model 增加 serialization/migration fixture；dependency gate 增加 license/package evidence。
