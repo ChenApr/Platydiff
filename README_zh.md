@@ -88,7 +88,7 @@ Phase 1、Phase 2 与 P3-A/P3-B 插件门禁已实现：
 - strict 行级文本比较；
 - 确定性、线性辅助空间的 Myers insert/delete 编辑脚本；
 - 具有有界 change 明细的 terminal 与 JSON renderer；
-- 同时读取 schema-v1 与 schema-v2 outcome 的 terminal 与 JSON renderer；
+- 同时支持 schema-v1 与 schema-v2 outcome 的 terminal 与 JSON renderer；
 - 有界、确定性的文本/二进制探测与内部 capability resolution；
 - collision-safe 的精确二进制比较和不携带 payload 的 change span；
 - immutable SDK-v1 manifest 与 capability/dependency/platform inventory；

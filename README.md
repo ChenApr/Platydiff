@@ -97,7 +97,7 @@ Implemented in Phases 1, 2, and the P3-A/P3-B plugin gates:
 - strict line-oriented text comparison;
 - deterministic linear-space Myers insert/delete edit scripts;
 - terminal and JSON renderers with bounded change details;
-- terminal and JSON readers for both schema-v1 and schema-v2 outcomes;
+- terminal and JSON renderers for both schema-v1 and schema-v2 outcomes;
 - bounded deterministic text/binary detection and internal capability resolution;
 - collision-safe exact binary comparison with payload-free change spans;
 - immutable SDK-v1 manifests and capability/dependency/platform inventory;
