@@ -29,7 +29,7 @@ and provenance.
 
 ## Evidence ledger
 
-| Current evidence at `origin/main` `4b3e129` | Phase 7 constraint |
+| Current evidence at `origin/main` `fde2bd4` | Phase 7 constraint |
 | --- | --- |
 | RFC 0001 separates failed/unavailable execution outcomes from completed `DiffResult` facts. | Decode, backend, timeout, resource, sandbox, model, and rendering failures must not become empty or synthetic media differences. |
 | RFC 0002 requires every new modality to define spec, change, metric, artifact, equivalence relation, policy, failures, and gates before implementation. | This RFC records contracts and gates only; no audio/video code may start from it. |
@@ -38,9 +38,10 @@ and provenance.
 | RFC 0004 makes renderers and UI consume validated outcomes without rereading sources or recomputing facts. | Media thumbnails, waveforms, heatmaps, and frame previews require explicit bounded artifact contracts; UI work remains unauthorized. |
 | RFC 0005 implements SDK v1.1 for text/binary detector, comparator, and renderer handles only. | Audio/video plugins require an SDK-v2 successor RFC; SDK v1.1 cannot introduce media specs or built-in media change kinds. |
 | RFC 0006 accepts schema v3 for structured data, but its implementation state must be revalidated when a later gate starts. | Audio/video schema decisions must migrate from implemented v1/v2 and accepted v3 without assuming unmerged P4-A1 behavior. |
+| RFC 0007 proposes schema v4 for the first image slice, subject to an actual merged schema-v3 predecessor audit. | Phase 7 must not race Phase 5 for v4 or reopen a frozen predecessor; media needs its own globally allocated schema successor. |
 | RFC 0008 proposes source-code/PDF contracts and keeps heavyweight backends, artifacts, auto detection, and SDK v2 separate. | The same separation applies to media: backends and optional artifacts are independent gates. |
 | Runtime dependencies are currently empty; audio/video backends are architecture-level plans. | Codec, model, patent, export, and FFmpeg build/license impact must be reviewed before any dependency or subprocess path is added. |
-| Concurrent P4-A1 and Phase 5 work may exist outside `main`. | Treat that work as design evidence only; every code-dependent assumption below is a later revalidation gate. |
+| P4-A1 and Phase 5 implementation work may still be absent or divergent from `main`. | Treat that work as design evidence only; every code-dependent assumption below is a later revalidation gate. |
 
 ## Goals and non-goals
 
@@ -61,8 +62,9 @@ Phase 7 goals are:
 - resource and security rules for corrupt, truncated, hostile, long-duration,
   high-rate, high-channel-count, high-resolution, high-frame-count, and
   multi-stream inputs;
-- schema compatibility with implemented v1/v2 and accepted schema-v3 design,
-  subject to actual P4-A1 revalidation at implementation start.
+- schema compatibility with implemented v1/v2, the actual P4 schema-v3
+  predecessor, and the Phase 5 schema-v4 reservation, subject to revalidation
+  at implementation start.
 
 Phase 7 does not include:
 
@@ -89,7 +91,7 @@ recommendations, not accepted decisions, until explicitly approved.
 | --- | --- | --- |
 | P7X1 | Keep audio/video comparison explicit-only; existing auto remains text/binary. | Add media candidates to RFC 0003 without defining expensive probes and ambiguity. |
 | P7X2 | Split audio and video into independently authorized gates. | Treat all time-based media as one implementation batch. |
-| P7X3 | Use the schema selected by a later gate: extend schema v3 only if it is still unreleased and implemented/revalidated; otherwise define a schema successor. | Extend v1/v2 closed unions or assume accepted but unimplemented schema-v3 details. |
+| P7X3 | Use a globally allocated media schema successor after auditing the actual P4 schema-v3 predecessor and the Phase 5 schema-v4 reservation. | Extend v1/v2 closed unions, reopen v3, reuse image v4, or assume accepted but unimplemented schema-v3 details. |
 | P7X4 | Reject audio/video plugin comparators under SDK v1.1; require SDK v2 for media modalities. | Let plugin installation introduce media specs or change kinds. |
 | P7X5 | Keep RFC 0004 artifact/UI work separate; first comparison gates may produce no files. | Let decoding or rendering implicitly write previews, thumbnails, clips, heatmaps, or waveforms. |
 | P7X6 | Forbid fallback that changes relation after backend execution begins. | On failure, silently retry as bytes, another codec/backend, a lower-fidelity decode, or a perceptual metric. |
@@ -111,37 +113,47 @@ recommendations, not accepted decisions, until explicitly approved.
 
 ## Schema and compatibility contract
 
-The implementation gate chooses the concrete schema according to the state of
-`main` at that time.
+Phase 7 uses a globally allocated media schema successor. The provisional
+allocation is schema v5 because RFC 0006 reserves schema v3 for structured data
+and RFC 0007 reserves schema v4 for image after the actual P4-A1 predecessor
+audit. A later implementation gate must revalidate the state of `main` and
+record the final schema number in the repository-wide schema ledger before
+adding code. It may not reopen schema v3, consume schema v4, or allocate a
+competing successor in parallel with another modality.
 
-If accepted schema v3 from RFC 0006 has been implemented, remains unreleased,
-and can still be extended safely, Phase 7 built-ins may extend it as follows:
+The media successor is an additive semantic successor to the actually merged
+predecessor chain:
 
 ```python
-CompareSpecV3 = (
-    AutoCompareSpec | TextCompareSpec | BinaryCompareSpec
-    | JsonCompareSpec | YamlCompareSpec | TableCompareSpec | ArrayCompareSpec
-    | AudioCompareSpec | VideoCompareSpec
-)
-ChangeV3 = (
-    TextHunk | BinarySpan | StructuredChange | TableChange | ArrayChange
-    | AudioChange | VideoChange | ExtensionChange
-)
+CompareSpecV5 = CompareSpecV4 | AudioCompareSpec | VideoCompareSpec
+ChangeV5 = ChangeV4 | AudioChange | VideoChange
 ```
 
-If schema v3 has been released, has not been implemented, or has closed-union
-constraints that make a media extension unsafe, Phase 7 must use a schema
-successor instead. In every case:
+If P4-A1 schema v3 is not implemented on `main`, if the implemented v3 differs
+from RFC 0006, or if Phase 5 schema v4 is absent or changes its allocation, a
+Phase 7 implementation gate stops and updates this RFC before code. Media
+schema work therefore depends on the real v3 reader, writer, upgrader, and
+fixtures, not on the accepted design text alone. In every case:
 
 - existing built-in text, binary, and auto calls keep schema v1;
 - existing `PluginHost` text/binary calls keep schema v2;
-- audio/video built-in specs produce the selected media schema, including
-  failures before resolution;
-- readers for the selected media schema accept v1, v2, and any implemented
-  v3 base according to explicit migration helpers;
-- v1/v2/v3 upgraders preserve original facts and add only documented neutral
-  defaults;
-- no automatic downgrade exists for audio/video outcomes;
+- merged Phase 4 structured-data calls keep the actual implemented schema v3;
+- merged Phase 5 image calls keep schema v4;
+- audio/video built-in specs produce the selected media successor, including
+  validation, sourcing, resolution, decode, and backend failures;
+- the selected media reader accepts v1/v2/v3/v4/media-successor payloads and
+  dispatches by explicit schema version before inspecting spec or change kinds;
+- v1/v2/v3/v4-to-media upgraders preserve original facts and add only
+  documented neutral defaults such as empty media field collections;
+- byte-stable v1/v2 fixtures, P4 schema-v3 fixtures, P5 schema-v4 fixtures, and
+  new media round-trip fixtures remain in the compatibility corpus;
+- each new media fixture includes the expected JSON schema version, public
+  spec/change names, metric names, ordering, omitted/null fields, and failure
+  reason codes;
+- no automatic downgrade exists for audio/video outcomes. A lossless helper may
+  downgrade only a media-free result whose facts are representable in the target
+  predecessor; audio/video specs, changes, facts, metrics, transformations, and
+  artifacts are not dropped or summarized to fit an older schema;
 - unknown built-in spec and change kinds remain invalid;
 - unknown namespaced extension changes retain RFC 0001 behavior.
 
@@ -157,30 +169,68 @@ detection RFC is separately accepted.
 | --- | --- | --- | --- | --- |
 | Existing `compare()` and default CLI | v1 | text, binary, auto to either | none | Existing byte-stable fixtures remain valid. |
 | Existing explicit `PluginHost` | v2 | text, binary, auto to either | SDK v1.1 | Existing v2 fixtures and receipts remain valid. |
-| Accepted, unimplemented Phase 4 path | v3 candidate | explicit json/yaml/table/array | none | Revalidate actual P4-A1 implementation before media schema work. |
+| Merged Phase 4 path | v3 | explicit json/yaml/table/array | none | Actual v3 models, migrations, and fixtures are the predecessor. |
+| Proposed Phase 5 image path | v4 | explicit static PNG image | none | Media must not reuse v4 or require image implementation to change. |
 | Proposed Phase 6 source/PDF path | unspecified | source-code/PDF | none until separately authorized | Design evidence only; no dependency for Phase 7. |
-| Proposed Phase 7 audio path | selected media schema | explicit audio | none in first gates | Produces validated audio specs, changes, metrics, transformations, and failures. |
-| Proposed Phase 7 video path | selected media schema | explicit video | none in first gates | Produces validated video specs, changes, metrics, transformations, and failures. |
+| Proposed Phase 7 audio path | media successor, provisionally v5 | explicit audio | none in first gates | Produces validated audio specs, changes, metrics, transformations, and failures. |
+| Proposed Phase 7 video path | media successor, provisionally v5 | explicit video | none in first gates | Remains pending until backend and worker contracts are frozen. |
 | Existing auto on media-looking bytes | v1 | text or binary only | existing rules | Detection evidence and result do not change. |
 | Future SDK v2 or media auto | unspecified | unspecified | unspecified | Requires successor RFCs. |
+
+## Relation, view, and evaluation invariants
+
+Audio `relations` and video `views` are normative sets encoded as tuples for
+stable JSON. They are non-empty, contain no duplicates, reject unknown values,
+and are normalized to canonical order in serialized output. The canonical audio
+order is `encoded_bytes`, `decoded_samples`, `waveform_numeric`, `spectral`,
+`perceptual`. The canonical video order is `encoded_bytes`,
+`stream_structure`, `decoded_frames`, `frame_numeric`, `perceptual_video`,
+`audio_tracks`. An empty collection, repeated value, or out-of-gate value is an
+invalid spec, not a no-op.
+
+Each selected relation or view produces one evaluation record with its own
+relation/view name, metrics used as facts, threshold/policy decision, verdict,
+fidelity, completeness, transformations, warnings, and optional failure stage.
+Metric records remain measurements only; pass/fail decisions live in evaluation
+records and may reference metrics by name and stable ID. Evaluation records are
+sorted by the canonical relation/view order and never recompute or reinterpret
+metrics.
+
+One completed `DiffResult` has exactly one overall `relation`, `verdict`,
+`fidelity`, and `completeness`. The overall relation is equal only when every
+selected evaluation is equal/pass. It is different/fail when any selected
+evaluation is different/fail. Overall fidelity is the worst selected fidelity;
+the first media gates permit only full fidelity. Overall completeness is
+`truncated` when any selected evaluation is truncated after full counts and
+overall relation are known; otherwise it is `complete`. `partial` remains
+unauthorized for Phase 7 first gates.
+
+Examples are part of the contract:
+
+- If encoded bytes differ but decoded samples are identical, selecting only
+  `decoded_samples` yields overall equal/pass, while selecting both
+  `encoded_bytes` and `decoded_samples` yields one different encoded evaluation
+  and an overall different/fail result.
+- If decoded video frames are identical but a selected audio-track evaluation
+  differs, the `decoded_frames` evaluation passes, the `audio_tracks`
+  evaluation fails, and the overall video result is different/fail.
+- If the selected audio-track backend is unavailable or fails before producing
+  its evaluation, the outer outcome is `unavailable` or `failed` at the
+  recorded lifecycle stage rather than a completed video equality result.
 
 ## Audio comparison contract
 
 ### Public intent
 
-The proposed first public shape is:
+The proposed first public shape is a stable schema family, but P7-A1 exposes
+only the exact relations listed as first-gate values. Later gates may activate
+the retained fields only after their own review.
 
 ```python
 class AudioCompareSpec:
     kind: Literal["audio"] = "audio"
     relations: tuple[
-        Literal[
-            "encoded_bytes",
-            "decoded_samples",
-            "waveform_numeric",
-            "spectral",
-            "perceptual",
-        ],
+        Literal["encoded_bytes", "decoded_samples"],
         ...
     ] = ("decoded_samples",)
     stream: AudioStreamSelection = AudioStreamSelection()
@@ -189,9 +239,22 @@ class AudioCompareSpec:
     waveform: AudioWaveformOptions = AudioWaveformOptions()
     spectral: AudioSpectralOptions = AudioSpectralOptions()
     perceptual: AudioPerceptualOptions = AudioPerceptualOptions()
-    artifact_policy: Literal["none", "record_refs"] = "none"
+    artifact_policy: Literal["none"] = "none"
     limits: AudioResourceLimits = AudioResourceLimits()
 ```
+
+P7-A1 public options are frozen to these JSON names and invariants:
+
+| Field | First-gate invariant |
+| --- | --- |
+| `kind` | Required string, exactly `audio`. |
+| `relations` | Required or defaulted non-empty tuple, canonicalized to the first-gate subset `encoded_bytes` and `decoded_samples`; duplicates and later-gate values are invalid. |
+| `stream.index` | `null` for the default audio stream or a zero-based integer selected explicitly; no backend default may silently pick another stream. |
+| `decode.backend` | Required or defaulted string, exactly `stdlib_wave_pcm` for P7-A1. |
+| `decode.sample_representation` | Required or defaulted string, exactly `native_pcm_integer`; no integer-to-float conversion is part of exact decoded equality. |
+| `alignment.mode` | `sample_index` in P7-A1; `fixed_offset` is defined below but not enabled until P7-A2. |
+| `artifact_policy` | Always `none` before P7-M1; `record_refs` is invalid before the artifact gate. |
+| `limits.*` | Non-negative JSON integers within the safe integer range; `null`, booleans, negative values, and non-finite numbers are invalid. |
 
 `PathSource` and `BytesSource` are the first source kinds. `TextSource` is
 unsupported for audio unless a later gate defines an explicit byte encoding
@@ -203,12 +266,12 @@ Relation meanings are independent:
   signal equivalence;
 - `decoded_samples` compares the selected decoded PCM stream exactly after an
   explicit sample representation is chosen;
-- `waveform_numeric` compares aligned samples using explicit numeric tolerance
-  and reports sample-domain error metrics;
-- `spectral` compares explicitly windowed spectra and cannot imply sample
-  equality;
-- `perceptual` uses a named optional perceptual backend and cannot override
-  exact or spectral differences.
+- `waveform_numeric` is reserved for P7-A2; it compares aligned samples using
+  explicit numeric tolerance and reports sample-domain error metrics;
+- `spectral` is reserved for P7-A2; it compares explicitly windowed spectra and
+  cannot imply sample equality;
+- `perceptual` is reserved for P7-A3; it uses a named optional perceptual
+  backend and cannot override exact or spectral differences.
 
 ### Decode and IR facts
 
@@ -254,17 +317,30 @@ cross-correlation search require explicit spec fields:
 ```python
 class AudioAlignmentOptions:
     mode: Literal["sample_index", "timestamp", "fixed_offset", "correlation"] = "sample_index"
-    max_offset_samples: int = 0
+    fixed_offset_samples: int = 0
+    max_search_offset_samples: int = 0
     max_drift_ppm: float = 0.0
-    ambiguity_margin: float = 0.0
+    ambiguity_margin_samples: int = 0
 ```
 
+`fixed_offset_samples` is signed samples at the selected stream sample rate;
+positive values mean the after stream starts later than before and is shifted
+left for comparison. `max_search_offset_samples` is an absolute sample budget
+for correlation search. `max_drift_ppm` is parts per million of sample-clock
+drift over the compared interval. `ambiguity_margin_samples` is an integer
+sample-distance margin between the best and second-best alignment candidates;
+values within the margin are ambiguous.
+
 Offset and drift compensation are transformations with recorded parameters,
-observed estimates, tie-break order, and confidence or ambiguity facts. If two
-alignments are indistinguishable under the configured margin, if drift exceeds
-policy, or if the search budget is exhausted, the outcome is
-`failed/alignment_failed` or `failed/compare_resource_limit`, not an approximate
-completed equality claim.
+observed estimates, tie-break order, and confidence or ambiguity facts.
+Timeline candidates are ordered by exact timestamp match, lower absolute
+offset, lower absolute drift, lower before coordinate, then lower after
+coordinate. Correlation candidates are ordered by higher deterministic score,
+lower absolute offset, lower absolute drift, lower before coordinate, then lower
+after coordinate. If two alignments are indistinguishable under the configured
+margin, if drift exceeds policy, or if the search budget is exhausted, the
+outcome is `failed/alignment_failed` or `failed/compare_resource_limit`, not an
+approximate completed equality claim.
 
 The proposed built-in audio change is:
 
@@ -289,10 +365,28 @@ class AudioChange:
     after_fact: AudioFact | None
 ```
 
-Audio coordinates use stream index, one-based channel ordinal or stable channel
+Audio coordinates use stream index, zero-based channel index or stable channel
 label, sample interval, timestamp interval, and spectral bin/time cell where
 applicable. Changes are observations, not patches. Detail truncation occurs
 only after the relation, metrics, and total change count are known.
+
+The first-gate `AudioCoordinate` wire shape is fixed to JSON object fields
+`stream_index`, `channel_index`, `channel_label`, `sample_start`,
+`sample_count`, `time_start_seconds`, and `time_duration_seconds`. Stream and
+channel indexes are zero-based integers. `channel_label` is `null` unless the
+selected source has a stable label. Sample intervals are half-open and
+non-negative. Time fields are decimal seconds encoded as finite JSON numbers
+only when timestamp facts are available; otherwise they are `null`.
+
+The first-gate `AudioFact` wire shape is limited to JSON object fields
+`name`, `value`, `unit`, `stream_index`, and `coordinate`. `value` is a string,
+integer, finite number, boolean, or `null`; arrays and nested objects require a
+later schema revision. `AudioChange` records are sorted by relation, operation,
+before coordinate, after coordinate, then digest. `sample_update` requires both
+coordinates and both digests. `sample_insert` requires only an after coordinate;
+`sample_delete` requires only a before coordinate. `metadata_update` requires
+facts and has null coordinates. Digests are lowercase algorithm-prefixed hex
+strings or `null` only when the operation has no byte/sample payload.
 
 ### Audio metrics and policy
 
@@ -310,6 +404,12 @@ The first audio metric registry is proposed as:
 | `audio.spectral_peak_error` | maximum spectral magnitude error | `db` | `lower_is_better` | `maximum` | metric omitted |
 | `audio.spectral_rms_error` | RMS spectral magnitude error | `db` | `lower_is_better` | `rms` | metric omitted |
 | `audio.perceptual_score` | named backend perceptual similarity score | backend-defined stable unit | backend-defined | backend-defined | metric omitted |
+
+Metrics are facts, not verdicts. Each metric record contains only its stable
+name, numeric value, unit, direction, aggregation method, and source evaluation
+ID. Policy evaluations contain thresholds, tolerance formulas, inclusive/
+exclusive boundary rules, and pass/fail verdicts. A renderer must not infer
+pass/fail directly from metric values.
 
 Waveform tolerance is comparison intent and determines relation for
 `waveform_numeric`; it is not merely a verdict threshold. Count metrics are
@@ -337,28 +437,49 @@ class AudioResourceLimits:
     max_sample_rate_hz: int = 384000
     max_channels: int = 64
     max_decoded_samples_per_channel: int = 50_000_000
+    max_total_decoded_bytes: int = 512 * 1024 * 1024
+    max_resident_buffer_bytes: int = 128 * 1024 * 1024
+    max_packets: int = 1_000_000
+    max_metadata_entries: int = 10_000
+    max_metadata_value_bytes: int = 1 * 1024 * 1024
     max_spectral_cells: int = 20_000_000
     max_backend_seconds: int = 30
     max_stdout_stderr_bytes: int = 4 * 1024 * 1024
     max_temp_bytes: int = 512 * 1024 * 1024
+    max_materialized_bytes: int = 512 * 1024 * 1024
     max_compare_work: int = 10_000_000
     max_change_items: int = 10_000
     max_change_payload_bytes: int = 4 * 1024 * 1024
 ```
 
 Defaults are tentative and must be revalidated against selected backends before
-acceptance. Corrupt, truncated, unsupported-codec, hostile-container,
-over-duration, huge-sample-rate, huge-channel-count, decode-bomb, infinite
-stream, backend-hang, backend-crash, and over-output cases are required tests.
-Backend unavailability is `unavailable/backend_unavailable`; unsupported codec
-or profile is `unavailable/capability_unavailable` unless a selected decoder
-starts and then fails, in which case the observed failure is `failed`.
+acceptance. Limit checks happen before allocation, decode, packet expansion,
+metadata materialization, comparison work, or temp-file writes. A limit value of
+`0` means no budget for that resource: zero decoded bytes accepts only inputs
+whose selected relation needs no decoded bytes; zero duration accepts only
+zero-duration decoded streams; zero packets rejects any stream that would read a
+packet; zero change items still computes the overall relation and total count
+but emits a truncated empty change list. `max_resident_buffer_bytes` caps live
+decoded/sample buffers, not just total output bytes. `max_materialized_bytes`
+caps host-owned snapshots and temporary materializations passed to a backend.
+All counters are monotonic and checked at chunk boundaries before reserving the
+next buffer.
+
+Corrupt, truncated, unsupported-codec, hostile-container, over-duration,
+huge-sample-rate, huge-channel-count, decode-bomb, infinite stream,
+packet-storm, metadata-bomb, backend-hang, backend-crash, and over-output cases
+are required tests. Backend unavailability is
+`unavailable/backend_unavailable`; unsupported codec or profile is
+`unavailable/capability_unavailable` unless a selected decoder starts and then
+fails, in which case the observed failure is `failed`.
 
 ## Video comparison contract
 
 ### Public intent
 
-The proposed first public shape is:
+The proposed video shape remains a schema proposal only. P7-S0 narrows the
+candidate first public fields, but P7-V1 is not implementation-authorized until
+the video backend and worker protocol are frozen in a later review.
 
 ```python
 class VideoCompareSpec:
@@ -380,17 +501,34 @@ class VideoCompareSpec:
     spatial: VideoSpatialOptions = VideoSpatialOptions()
     metrics: VideoMetricOptions = VideoMetricOptions()
     audio: AudioCompareSpec | None = None
-    artifact_policy: Literal["none", "record_refs"] = "none"
+    artifact_policy: Literal["none"] = "none"
     limits: VideoResourceLimits = VideoResourceLimits()
 ```
+
+Candidate P7-V1 public options are frozen to these JSON names and invariants if
+a later gate authorizes implementation:
+
+| Field | First-gate invariant |
+| --- | --- |
+| `kind` | Required string, exactly `video`. |
+| `views` | Required or defaulted non-empty tuple, canonicalized to the P7-V1 subset `encoded_bytes`, `stream_structure`, and `decoded_frames` only after a backend is frozen; until then every video view is documentation-only. Duplicates and later-gate values are invalid. |
+| `streams.video_index` | `null` for the explicitly defined default video stream or a zero-based integer. Backend default stream choice is not sufficient. |
+| `streams.audio_indexes` | Tuple of zero-based integers used only when `audio_tracks` is selected; empty means no audio-track comparison, not all tracks. |
+| `decode.backend` | No default backend is authorized by this RFC revision. P7-V1 must name a reviewed backend and version profile before code. |
+| `timeline.mode` | `presentation_timestamp` for exact decoded frames unless a later gate authorizes fixed-offset or fingerprint alignment. |
+| `spatial.mode` | `exact_geometry`; resize, crop, rotate, deinterlace, tone-map, and color conversion are invalid first-gate transforms. |
+| `artifact_policy` | Always `none` before P7-M1; `record_refs` is invalid before the artifact gate. |
+| `limits.*` | Non-negative JSON integers within the safe integer range; `null`, booleans, negative values, and non-finite numbers are invalid. |
 
 `encoded_bytes` reuses exact binary semantics. `stream_structure` compares
 container and stream layout, codec parameters, packet indexes, timebases,
 metadata, edit lists, keyframes, attachments, chapters, and selected side data.
-`decoded_frames` compares the explicit decoded frame sequence and timestamps.
-`frame_numeric` permits explicit pixel tolerances. `perceptual_video` is an
-optional model/backend gate. `audio_tracks` delegates to the audio contract
-with the video timeline association recorded; it never silently drops tracks.
+`decoded_frames` compares the explicit decoded frame sequence and timestamps
+only after a backend is frozen. `frame_numeric` is reserved for P7-V2 and
+permits explicit pixel tolerances. `perceptual_video` is reserved for P7-V3 as
+an optional model/backend gate. `audio_tracks` is reserved for P7-V2; once
+authorized, it delegates to the audio contract with the video timeline
+association recorded and never silently drops tracks.
 
 ### Decode, timeline, color, and IR facts
 
@@ -438,6 +576,15 @@ geometry and pixel coordinate. No crop, resize, rotation, deinterlace,
 tone-map, color conversion, chroma resampling, frame-rate conversion, track
 dropping, or sync shift is implicit.
 
+Video `fixed_offset_ticks` is signed ticks in the selected stream timebase;
+positive values mean the after timeline starts later than before and is shifted
+earlier for comparison. Duration deltas are reported in seconds and original
+timebase ticks. Timeline matching orders candidates by exact presentation
+timestamp, lower absolute offset ticks, lower absolute drift ppm, lower stream
+index, lower before frame ordinal, then lower after frame ordinal. Feature or
+fingerprint matching must define score units and an ambiguity margin in the same
+score units; ties fall back to the timeline order above.
+
 Missing frames, duplicate frames, duplicate timestamps, dropped frames, inserted
 frames, stream additions/removals, and drift are first-class observations or
 failures. Deterministic tie-breaking must be specified for any frame matching
@@ -473,6 +620,25 @@ timebase, pixel rectangle, plane/component, and audio-track coordinate where
 applicable. Region changes are observations, not patch data or rendered
 artifacts.
 
+The candidate `VideoCoordinate` wire shape is fixed to JSON object fields
+`stream_index`, `frame_index`, `pts`, `timebase_num`, `timebase_den`,
+`time_seconds`, `x`, `y`, `width`, `height`, `plane`, and `audio_coordinate`.
+Frame indexes are zero-based. Pixel rectangles are half-open, non-negative, and
+valid only when a decoded-frame or frame-numeric view is selected. `pts` is an
+integer timestamp in the selected stream timebase. `time_seconds` is a finite
+number derived from `pts` and included only as display aid; equality uses ticks.
+`audio_coordinate` is `null` unless the `audio_tracks` view records a delegated
+audio observation.
+
+The candidate `VideoFact` wire shape is limited to JSON object fields `name`,
+`value`, `unit`, `stream_index`, and `coordinate`. `value` is a string, integer,
+finite number, boolean, or `null`; arrays and nested objects require a later
+schema revision. `VideoChange` records are sorted by view, operation, before
+coordinate, after coordinate, then digest. Frame and region updates require both
+coordinates and both digests. Insert/delete operations require only the present
+side coordinate. Stream and metadata updates require facts and may have null
+frame coordinates.
+
 ### Video metrics and policy
 
 The first video metric registry is proposed as:
@@ -490,6 +656,12 @@ The first video metric registry is proposed as:
 | `video.ssim` | explicitly configured SSIM-style score | `ratio` | `higher_is_better` | `minimum` or `mean` as specified | metric omitted |
 | `video.vmaf` | named VMAF model score | `score` | `higher_is_better` | model-defined | metric omitted |
 | `video.audio_tracks_changed` | selected audio tracks with non-pass audio evaluation | `tracks` | `lower_is_better` | `count` | zero |
+
+Metrics are facts and never define policy by themselves. Per-view evaluations
+reference metrics and contain the threshold, tolerance, inclusive boundary,
+verdict, fidelity, and completeness. `video.audio_tracks_changed` counts
+delegated audio evaluations whose verdict is not pass; it does not duplicate or
+reinterpret audio metrics.
 
 PSNR must define peak value, component selection, averaging, bit depth, range,
 and color representation. SSIM-style metrics must define windowing, color plane,
@@ -511,35 +683,72 @@ class VideoResourceLimits:
     max_height: int = 8192
     max_pixels_per_frame: int = 100_000_000
     max_decoded_frame_bytes: int = 512 * 1024 * 1024
+    max_total_decoded_bytes: int = 4 * 1024 * 1024 * 1024
+    max_resident_buffer_bytes: int = 512 * 1024 * 1024
+    max_packets: int = 2_000_000
+    max_metadata_entries: int = 25_000
+    max_metadata_value_bytes: int = 1 * 1024 * 1024
     max_backend_seconds: int = 60
     max_stdout_stderr_bytes: int = 4 * 1024 * 1024
     max_temp_bytes: int = 2 * 1024 * 1024 * 1024
+    max_materialized_bytes: int = 2 * 1024 * 1024 * 1024
     max_compare_work: int = 20_000_000
     max_change_items: int = 10_000
     max_change_payload_bytes: int = 4 * 1024 * 1024
 ```
 
-Defaults are tentative and must be revalidated. Adversarial tests include
-malformed containers, unsupported codecs, resolution bombs, huge frame counts,
-long durations, many streams, packet storms, decompression bombs, infinite or
-non-terminating streams, corrupt frames, timestamp wraparound, backend hangs,
-backend crashes, excessive stdout/stderr, and temp-output explosions.
+Defaults are tentative and must be revalidated. Limit checks happen before
+allocation, decode, packet expansion, metadata materialization, frame buffering,
+comparison work, or temp-file writes. A limit value of `0` means no budget for
+that resource: zero frames rejects any decoded-frame view with a frame, zero
+decoded bytes permits only views that need no decoded frames, zero packets
+rejects packet reads, and zero change items still computes the overall relation
+and total count but emits a truncated empty change list.
+`max_resident_buffer_bytes` caps live decoded frame/audio buffers;
+`max_total_decoded_bytes` caps cumulative decoded media; `max_materialized_bytes`
+caps host-owned snapshots and temporary materializations. Counters are
+monotonic and checked at chunk/frame boundaries before reserving the next
+buffer.
+
+Adversarial tests include malformed containers, unsupported codecs, resolution
+bombs, huge frame counts, long durations, many streams, packet storms, metadata
+bombs, decompression bombs, infinite or non-terminating streams, corrupt frames,
+timestamp wraparound, backend hangs, backend crashes, excessive stdout/stderr,
+and temp-output explosions.
 
 ## Backends and execution boundary
 
-Standard-library capability is limited to exact encoded-byte comparison and any
-future narrowly reviewed uncompressed format support. Optional Python libraries
-may handle metadata or numeric arrays only after dependency, license, size,
-platform, native-code, and security review. External programs such as
-`ffprobe`, `ffmpeg`, or model runners are separate backend roles and require
-their own conformance profile.
+The first audio backend is fixed to Python 3.12 standard-library WAV parsing for
+uncompressed PCM WAV only, exposed as `stdlib_wave_pcm`. It uses host-owned
+snapshot bytes or materialized files, records the `wave` module capability
+profile, and rejects compressed codecs or unsupported WAV variants as
+`unavailable/capability_unavailable`. This RFC selects no video backend. P7-V1
+remains pending and does not authorize video workers until a later review
+freezes the backend, worker isolation, materialization format, and conformance
+profile.
+
+Other standard-library capability is limited to exact encoded-byte comparison.
+Optional Python libraries may handle metadata or numeric arrays only after
+dependency, license, size, platform, native-code, and security review. External
+programs such as `ffprobe`, `ffmpeg`, or model runners are separate backend
+roles and require their own conformance profile.
+
+All backend roles consume only host-owned immutable snapshots or
+materializations. They must not receive the caller's original path when a
+snapshot is available, and they must not dereference URLs, playlists, manifests,
+devices, symlinks that escape the snapshot root, or paths produced by media
+metadata. Protocol allowlists are explicit; the first gates allow only local
+host file descriptors or `file` materializations. Network protocols, remote
+resources, camera/microphone capture, hardware devices, and writeable output
+paths outside the host temp/artifact root are forbidden.
 
 Every external program invocation must use:
 
 - argument arrays with `shell=False`;
 - no interpolation of untrusted input into command strings;
 - close-on-exec descriptors and bounded temporary directories;
-- explicit timeout and process cleanup;
+- explicit timeout, terminate/kill escalation, child-process reaping, and temp
+  cleanup on every exit path;
 - bounded stdout, stderr, decoded frames, packet metadata, and temp-file bytes;
 - exit-code validation and structured stderr redaction;
 - no inherited untrusted environment except an allowlist;
@@ -556,6 +765,26 @@ be skipped before execution. A pinned or only compatible missing backend yields
 comparing, failures are `failed` at the observed stage and do not fall back to
 another backend or relation. Degraded fidelity is forbidden unless a future
 spec explicitly permits it and records the lost information and policy impact.
+
+### Lifecycle stages and failures
+
+| Stage | Responsibility | Failure or unavailable reason |
+| --- | --- | --- |
+| `validate_spec` | Validate schema version, relation/view set, public option names, nullability, ordering, and limit values. | `failed/invalid_spec` |
+| `snapshot_source` | Acquire immutable host-owned source bytes, labels, hashes, and mutation checks. | `failed/source_unreadable`, `failed/source_changed`, `failed/source_type_unsupported` |
+| `resolve_backend` | Select a backend matching the requested relation/view and frozen capability profile. | `unavailable/backend_unavailable`, `unavailable/capability_unavailable` |
+| `materialize` | Create bounded host-owned files or descriptors for the selected backend. | `failed/materialization_limit`, `failed/materialization_error` |
+| `decode` | Parse container packets, metadata, samples, frames, timestamps, and side data within limits. | `failed/decode_error`, `failed/compare_resource_limit` |
+| `normalize_ir` | Build the explicit IR and record every requested representation transform. | `failed/normalization_error`, `failed/unsupported_transform` |
+| `align` | Match samples, timestamps, frames, streams, or delegated audio tracks deterministically. | `failed/alignment_failed`, `failed/compare_resource_limit` |
+| `compare` | Produce metrics and change observations without altering policy semantics. | `failed/comparator_error`, `failed/compare_resource_limit` |
+| `aggregate` | Build per-relation/view evaluations and the single overall result. | `failed/aggregation_error` |
+| `render` | Display validated facts only, without rereading or decoding media. | `failed/render_error` |
+
+A failed or unavailable outcome records the deepest reached stage, backend role
+when known, limit name when applicable, and whether any child process was
+terminated, killed, reaped, or cleaned up. Completed media outcomes cannot hide
+a stage failure inside an empty change list.
 
 ## Dependency, license, patent, export, and fixture analysis
 
@@ -585,7 +814,9 @@ required build, or depends on nonfree features.
 
 ## Artifacts and renderer boundary
 
-First audio/video comparison gates produce no artifacts. Bounded waveform PNGs,
+First audio/video comparison gates produce no artifacts and expose only
+`artifact_policy="none"`. Any other artifact policy value is invalid until
+P7-M1 or a successor artifact gate accepts it. Bounded waveform PNGs,
 spectrograms, thumbnails, frame captures, difference heatmaps, and short clips
 are allowed only after a separate artifact gate accepts:
 
@@ -613,12 +844,14 @@ These gates are proposed plans, not implementation authorization.
 3. `feat(cli): add explicit audio comparison commands`
 4. `docs: document audio exact comparison contracts`
 
-Gate: selected schema migration tests pass; existing v1/v2 and any implemented
-v3 fixtures remain compatible; `encoded_bytes` and `decoded_samples` are
-distinct; WAV/PCM or selected first backend behavior is reviewed; no hidden
-resampling/remixing/gain occurs; empty, single-sample, different, corrupt,
-unsupported, over-limit, endianness, sample-format, channel-layout,
-gapless-delay, timestamp, and deterministic repeated-run tests pass.
+Gate: media schema-successor migration tests pass against the actual v3/v4
+predecessor chain; existing v1/v2/v3/v4 fixtures remain compatible;
+`encoded_bytes` and `decoded_samples` are distinct; the only first backend is
+`stdlib_wave_pcm` for uncompressed PCM WAV; no hidden resampling/remixing/gain
+or integer-to-float conversion occurs; empty, single-sample, different,
+corrupt, unsupported, over-limit, limit-zero, endianness, sample-format,
+channel-layout, gapless-delay, timestamp, host-owned materialization, and
+deterministic repeated-run tests pass.
 
 ### P7-A2: audio waveform and spectral numeric relations
 
@@ -646,17 +879,24 @@ and not implied by P7-A1 or P7-A2.
 
 ### P7-V1: video schema, stream structure, and decoded frames
 
-1. `feat(core): add video schema contracts`
-2. `feat(video): add stream structure comparison`
-3. `feat(video): add explicit decoded-frame comparison`
-4. `feat(cli): add explicit video comparison commands`
-5. `docs: document video stream and frame contracts`
+P7-V1 is intentionally pending after P7-S0. This RFC revision does not freeze a
+video backend or worker profile, so it does not authorize any video
+implementation commits.
+
+1. `docs: freeze video backend and worker conformance profile`
+2. `feat(core): add video schema contracts`
+3. `feat(video): add stream structure comparison`
+4. `feat(video): add explicit decoded-frame comparison`
+5. `feat(cli): add explicit video comparison commands`
+6. `docs: document video stream and frame contracts`
 
 Gate: schema migration is revalidated; stream selection, timebase, timestamps,
 duration, VFR, frame reordering, keyframes, edit lists, multi-stream inventory,
 pixel format, bit depth, color metadata, chroma siting, orientation, alpha,
-interlacing, corrupt inputs, unsupported codecs, over-limits, and deterministic
-repeated runs pass.
+interlacing, corrupt inputs, unsupported codecs, over-limits, limit-zero,
+host-owned materialization, backend timeout kill/reap/cleanup, and
+deterministic repeated runs pass. If the first video backend or worker protocol
+cannot be frozen, P7-V1 remains documentation-only and independently pending.
 
 ### P7-V2: video frame numeric metrics and audio-track association
 
@@ -708,9 +948,10 @@ are not passing evidence.
 | Audio numeric | tolerance boundary, NaN, Inf, signed zero, clipping/out-of-range decode, peak/RMS/error/SNR, spectral window/bin alignment, offset, drift, ambiguity, repeated-run determinism |
 | Video exactness | encoded-byte equality/difference, stream structure changes, decoded-frame equality/difference, empty/no-frame streams, single-frame change, missing/duplicate frames, VFR timestamps, edit lists, keyframes |
 | Video color/pixels | pixel format, bit depth, full/limited range, transfer/primaries/matrix, ICC/HDR metadata, chroma subsampling/siting, alpha, orientation/rotation, interlacing, PSNR/SSIM-style boundaries |
-| Hostile media | corrupt/truncated files, unsupported codecs, malformed containers, decode bombs, huge sample rate/channel count, huge resolution/frame count, long duration, packet storms, hangs, crashes |
-| Backends | missing backend, incompatible version, version mismatch, stderr redaction, timeout, exit-code validation, path redaction, bounded stdout/stderr/temp files, no network/device access |
-| Contracts | schema migration fixtures, spec/change invariant rejection, metric ordering, non-finite JSON values, artifact-reference validation when enabled, unchanged text/binary/auto/plugin/CLI behavior |
+| Hostile media | corrupt/truncated files, unsupported codecs, malformed containers, decode bombs, huge sample rate/channel count, huge resolution/frame count, long duration, packet storms, metadata bombs, limit-zero cases, hangs, crashes |
+| Backends | missing backend, incompatible version, version mismatch, host-owned snapshot/materialization only, protocol/device allowlists, stderr redaction, timeout terminate/kill/reap, temp cleanup, exit-code validation, path redaction, bounded stdout/stderr/temp files, no network/device access |
+| Lifecycle | validate, snapshot, resolve, materialize, decode, normalize, align, compare, aggregate, and render stage failures with stable reason codes and no completed equality on stage failure |
+| Contracts | media schema-successor migration fixtures, inherited v1/v2/v3/v4 fixtures, spec/change invariant rejection, relation/view set ordering, metric/evaluation separation, non-finite JSON values, artifact-reference validation when enabled, unchanged text/binary/auto/plugin/CLI behavior |
 | Corpora | synthetic or explicitly licensed tiny fixtures, source scripts, hashes, provenance notes, no restricted or personal media |
 
 ## Later callbacks

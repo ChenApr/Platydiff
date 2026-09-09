@@ -238,7 +238,7 @@ static 8-bit PNG 的 decoded sample；encoded identity 继续由 binary comparat
 
 ### 6.5 音频
 
-音频先统一采样率、声道与样本格式，通过时间戳或互相关对齐，再比较 PCM 波形、STFT/Mel 频谱、SNR 或感知质量。毫秒级延迟、增益或重采样都会破坏严格样本比较，因此必须区分“信号相同”和“听感接近”。ViSQOL、PESQ/POLQA 等可作为可选后端，而不是核心依赖。
+音频先记录显式采样率、声道与样本格式事实，再应用选中的对齐策略。只有在显式契约下，才可比较 PCM 波形、STFT/Mel 频谱、SNR 或感知质量。毫秒级延迟、增益或重采样都会破坏严格样本比较，因此必须区分“信号相同”和“听感接近”。ViSQOL、PESQ/POLQA 等可作为可选后端，而不是核心依赖。
 
 [RFC 0009](rfcs/0009-audio-and-video-comparison_zh.md) 提议 audio 的显式契约：
 encoded byte、decoded sample、waveform/numeric、spectral 与 perceptual relation。
@@ -246,7 +246,7 @@ encoded byte、decoded sample、waveform/numeric、spectral 与 perceptual relat
 
 ### 6.6 视频
 
-视频比较需要解封装、解码、时间轴对齐、帧率和分辨率统一、颜色空间规范化，再执行逐帧 PSNR、SSIM、VMAF 等指标并沿时间聚合。检测剪辑、插帧和镜头重排时，需要镜头切分、帧指纹或特征序列匹配，不能只依赖视频质量指标。音轨应作为独立模态比较并与视频时间线关联。
+视频比较先记录解封装、解码、时间轴、帧率、分辨率、颜色、HDR、orientation 与 interlacing 事实，再执行选中的逐帧 PSNR、SSIM、VMAF 等指标。Resize、crop、frame-rate conversion、color conversion、tone mapping、deinterlacing 与 synchronization shift 必须是显式 transformation，不能隐藏在 metric setup 中。检测剪辑、插帧和镜头重排时，需要镜头切分、帧指纹或特征序列匹配，不能只依赖视频质量指标。音轨应作为独立模态比较并与视频时间线关联。
 
 [RFC 0009](rfcs/0009-audio-and-video-comparison_zh.md) 也提议 video 的显式契约：
 stream structure、decoded frame、frame metric、perceptual video 与 audio-track
