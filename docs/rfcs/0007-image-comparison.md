@@ -4,6 +4,7 @@
 
 - Status: Proposed
 - Date: 2026-09-10
+- Review revision: 2026-09-10
 - Owners: Platydiff maintainers
 - Implementation owner: unassigned pending acceptance and separate authorization
 
@@ -30,7 +31,7 @@ on an unmerged Phase 4 branch.
 
 ## Evidence ledger
 
-| Evidence reviewed at `main` `cbc7e36` | Phase 5 constraint |
+| Evidence reviewed at `main` `fde2bd4` | Phase 5 constraint |
 | --- | --- |
 | Runtime code accepts only outcome schema v1/v2; RFC 0006 accepts schema v3 but its implementation is not on this revision. | Image implementation is blocked until the merged schema-v3 code and fixtures are revalidated. Image variants then use schema v4 rather than reopening a frozen predecessor. |
 | The public spec/change unions contain only text/binary variants in code. | `ImageCompareSpec` and `ImageChange` require a schema successor and strict reader/writer compatibility tests. |
@@ -176,7 +177,8 @@ class ImageResourceLimits:
     max_height: int = 16_384
     max_pixels: int = 16_777_216
     max_decoded_bytes: int = 64 * 1024 * 1024
-    max_metadata_bytes: int = 1024 * 1024
+    max_metadata_wire_bytes: int = 1024 * 1024
+    max_metadata_decompressed_bytes: int = 4 * 1024 * 1024
     max_icc_profile_bytes: int = 1024 * 1024
     max_compare_work: int = 67_108_864
     max_change_items: int = 10_000
@@ -202,8 +204,8 @@ explicit. Integers reject booleans and use checked arithmetic. Count-like
 public values use the existing exact-integer bound where serialized through the
 current numeric model.
 
-`PathSource` and `BytesSource` are supported. `TextSource` fails validation with
-`source_type_unsupported`; text is not implicitly encoded into an image.
+`PathSource` and `BytesSource` are supported. `TextSource` fails at `sourcing`
+with `source_type_unsupported`; text is not implicitly encoded into an image.
 `compare(before, after, spec)` remains the sole built-in Python entry point.
 Top-level exports add only accepted spec/limits/enums/change types after the
 schema gate; decoder objects, image IR, tile walkers, and Pillow adapters remain
@@ -239,17 +241,69 @@ unsupported in the first slice. PNG `tRNS` transparency that would require
 palette or implicit alpha expansion is rejected. A later profile may add an
 explicit, recorded expansion, but cannot reinterpret this one.
 
-The host validates the PNG signature and passes `formats=("PNG",)` to the
-backend. It verifies the backend-reported format, frame count, animation flag,
-mode, dimensions, and interpretation metadata before and after pixel load. A
-filename extension or MIME string is never authority. No other globally
-registered Pillow decoder is eligible.
+Before Pillow receives bytes, the host runs the bounded source-level scanner
+specified below. It then passes `formats=("PNG",)` to the backend and verifies
+the backend-reported format, frame count, animation flag, mode, dimensions, and
+interpretation metadata before and after pixel load. A filename extension or
+MIME string is never authority. No other globally registered Pillow decoder is
+eligible.
+
+### Normative pre-decode PNG scanner
+
+The host scanner, not Pillow, decides whether a datastream is in the first-slice
+profile. It consumes only the host snapshot, uses checked unsigned arithmetic,
+and completes these checks before `Image.open()`:
+
+1. Verify the eight-byte signature. For every chunk, read the unsigned 32-bit
+   big-endian length, four ASCII-letter type bytes, exactly that many data
+   bytes, and the CRC-32 over type plus data. Reject truncation, overflow, a
+   non-letter type byte, a lowercase reserved third type byte, a bad CRC, data
+   after `IEND`, or a missing `IEND`.
+2. Require exactly one 13-byte `IHDR` first, at least one consecutive run of
+   `IDAT` chunks, and exactly one zero-length `IEND` last. Enforce PNG Third
+   Edition ordering, multiplicity, length, and combination rules for every
+   recognized chunk. An invalid legal value or invalid chunk structure is
+   malformed input, not an unsupported profile.
+3. Validate the `IHDR` width/height and compression/filter/interlace fields.
+   Legal but unsupported color-type/bit-depth pairs—including 1/2/4-bit
+   greyscale, indexed color, and every 16-bit form—are rejected before Pillow.
+   Only `(color type, bit depth)` `(0,8)`, `(4,8)`, `(2,8)`, and `(6,8)` map to
+   `L`, `LA`, `RGB`, and `RGBA`. Invalid PNG pairs are malformed input.
+4. Reject any `tRNS`, `acTL`, `fcTL`, or `fdAT` chunk as an unsupported profile.
+   Reject every unknown critical chunk as unsupported. Unknown ancillary chunks
+   may be ignored semantically only after their framing, CRC, reserved bit, and
+   resource accounting pass.
+5. Validate `PLTE` where PNG permits it: at most once, before `IDAT`, with a
+   positive length divisible by three and no greater than 768 bytes. It is
+   forbidden for color types 0 and 4. Indexed color remains unsupported;
+   optional `PLTE` in color types 2 and 6 is non-interpretive.
+6. Validate at most one each of `cHRM`, `gAMA`, `iCCP`, `sBIT`, `sRGB`, `cICP`,
+   `mDCV`, and `cLLI`, including their normative placement and combinations.
+   Their data lengths are respectively 32, 4, variable, mode-dependent
+   (1/3/2/4 here), 1, 4, 24, and 8 bytes. Validate registered values and field
+   constraints required by PNG Third Edition. `iCCP` profile-name and
+   compression framing is validated and its zlib stream is bounded-inflated by
+   the host before Pillow; trailing or malformed compressed data is rejected.
+7. Bounded-inflate compressed `zTXt` and compressed `iTXt` for accounting and
+   validation, then discard it. Validate uncompressed text chunk framing without
+   retaining its content. No textual, EXIF, or application payload enters a
+   public result.
+
+The scanner classifies bad signature/framing/CRC/order/multiplicity, invalid
+PNG values, and malformed compressed metadata as `decode_error`. A valid PNG
+feature outside the accepted profile—an allowed low/16-bit pair, indexed color,
+`tRNS`, APNG, or unknown critical chunk—is
+`unsupported_image_profile`. Crossing a source, metadata, ICC, dimension,
+pixel, or decoded-byte limit is `resource_limit_exceeded`. These classifications
+are stable and happen at `decoding`; Pillow cannot reclassify or expand the
+accepted profile.
 
 ### Orientation, color, alpha, and metadata
 
 - `orientation="stored"` compares the decoded matrix in stored row/column
-  order. EXIF orientation is not applied. The bounded tag value is recorded in
-  provenance as interpretation metadata, but it is not a pixel transformation.
+  order. EXIF orientation is not applied or parsed in this slice. Only bounded
+  `eXIf` presence and on-wire byte count are recorded in provenance; neither
+  raw bytes nor a tag value is retained. This is not a pixel transformation.
   Inputs requiring display-oriented equality need a future explicit
   `apply_exif` profile and transformation record.
 - `color_profile="require_exact"` performs no color conversion. The bounded
@@ -306,11 +360,51 @@ and maximum absolute sample error. Tiles are ordered by `y`, then `x`, never
 overlap, and stay in bounds. `ChangeSet.total_count` is the full descriptor or
 changed-tile count, not the changed-pixel count.
 
-Digests are SHA-256 evidence over domain-separated, length-framed canonical
-descriptor or tile bytes. The exact framing becomes a schema-v4 compatibility
-fixture before implementation. Digests help detect serialization mistakes; they
-do not establish equality, conceal low-entropy content, or authorize a renderer
-to fetch source pixels. A tile item contains no raw or encoded pixels.
+`before_digest` and `after_digest` are lowercase 64-hex SHA-256 values over the
+corresponding side. The digest input is frozen as:
+
+```text
+RAW_ASCII("platydiff/v4/image/" + domain) || 00 || U64BE(len(payload)) || payload
+```
+
+`RAW_ASCII(s)` is exactly the ASCII bytes of `s`. `U64BE` is an unsigned
+eight-byte big-endian integer; all lengths and counts use it. The field encoding
+`ASCII(s)` is `U64BE(len(s)) || RAW_ASCII(s)`. `U8` is one byte. There is no
+Unicode normalization or terminal NUL. The four domain strings are exactly
+`descriptor/dimensions`, `descriptor/pixel_format`,
+`descriptor/color_description`, and `tile/samples`.
+
+Canonical payloads are:
+
+- dimensions: `U64BE(width) || U64BE(height)`;
+- pixel format: `ASCII(mode) || U8(bit_depth) || U8(channel_count) ||`
+  `ASCII(band)` for each band in sample order, then `ASCII(alpha)` where alpha
+  is exactly `none` or `straight`;
+- color description: for each of `cHRM`, `gAMA`, `iCCP`, `sBIT`, `sRGB`,
+  `cICP`, `mDCV`, and `cLLI` in that order, append its four type bytes and a
+  `U8` presence byte. Absence is `00`. Presence is `01 || U64BE(length) ||`
+  canonical value. The canonical value is the validated raw chunk data except
+  for `iCCP`, where it is only the bounded decompressed ICC profile bytes; the
+  profile name, compression bytes, and chunk CRC are not interpretation facts;
+- tile samples: `U64BE(x) || U64BE(y) || U64BE(width) || U64BE(height) ||`
+  the pixel-format payload through the final band, followed by the sample bytes.
+  Samples are unsigned one-byte values in stored top-to-bottom row order,
+  left-to-right pixel order, and declared band order, with no row padding. Tile
+  width and height are the actual edge dimensions.
+
+The following normative vector uses a 1-by-1 `RGBA`, 8-bit, straight-alpha
+image, no color-description chunks, and tile samples `00 7f ff 80`:
+
+| Domain | Payload hex | SHA-256 |
+| --- | --- | --- |
+| `descriptor/dimensions` | `00000000000000010000000000000001` | `37b783ef79ab757a531e50f76237eb9c870203f7003c5b9dcfc0280ded598a12` |
+| `descriptor/pixel_format` | `000000000000000452474241080400000000000000015200000000000000014700000000000000014200000000000000014100000000000000087374726169676874` | `9e7453f90b6a38c85e068b2aaa31ee0836422caf523192cdd8c39faa9021bf0c` |
+| `descriptor/color_description` | `6348524d0067414d410069434350007342495400735247420063494350006d44435600634c4c4900` | `71d104a33d792f584bb9f5ed92ab1feee8625a59b3012513d08d905fa4a08145` |
+| `tile/samples` | `00000000000000000000000000000000000000000000000100000000000000010000000000000004524742410804000000000000000152000000000000000147000000000000000142000000000000000141007fff80` | `85c3961556e42038b134b2a3864231be5e533aad78c1cb68d95210f5d2b5fa55` |
+
+These digests detect serialization mistakes; they do not establish equality,
+conceal low-entropy content, or authorize a renderer to fetch source pixels. A
+tile item contains no raw or encoded pixels.
 
 The comparator computes every descriptor/tile fact and total before retaining a
 bounded row-major prefix. Truncation uses whole items and the inherited exact
@@ -346,9 +440,41 @@ squared errors over every sample in row-major pixel and declared channel order.
 The peak sample value is 255. PSNR is positive infinity when MSE is zero and
 otherwise `10 * log10(255**2 / MSE)`.
 
-Implementations use checked integer sums where exact and one normative order for
-floating conversion. Threshold evaluation uses the unrounded binary64 result;
-rounding is presentation only. The first slice has no tolerance.
+The metric operation order is normative. For each sample pair in stored
+row-major/band order, let `difference = int(before) - int(after)`, then update
+the checked arbitrary-precision integer accumulators
+`absolute_sum += abs(difference)` and
+`squared_sum += difference * difference`. Pixel-change counting is also integer
+and is completed before any floating operation. After all `sample_count`
+samples, perform these binary64 operations in exactly this order:
+
+```python
+mae = float(absolute_sum) / float(sample_count)
+mse = float(squared_sum) / float(sample_count)
+rmse = math.sqrt(mse)
+psnr = (
+    PositiveInfinityValue()
+    if squared_sum == 0
+    else FiniteValue(10.0 * math.log10((255.0 * 255.0) / mse))
+)
+```
+
+MAE and RMSE are always `FiniteValue`; PSNR is `PositiveInfinityValue` only
+when `squared_sum == 0`. This slice never emits `NaNValue` or
+`NegativeInfinityValue`. It does not use chunk-local floating partials,
+`math.fsum`, decimal arithmetic, fused operations, or presentation-rounded
+values for stored metrics. For sample pairs `[0, 255]` and `[0, 0]`, the
+normative facts are `absolute_sum=255`, `squared_sum=65025`,
+`sample_count=2`, MAE `127.5`, RMSE `180.31222920256963`, and PSNR
+`3.010299956639812` on the reviewed Python binary64 path.
+
+Repeated runs on the same supported runtime must serialize byte-identically.
+Cross-platform golden tests require absolute distance no greater than
+`8 * math.ulp(expected)` for finite `sqrt`/`log10` results; zero and exact rational results compare
+exactly, and infinity compares by its exact tagged representation. This testing
+tolerance is not a comparison policy tolerance. Threshold evaluation, if a
+future schema adds it, uses the stored unrounded binary64 result; rounding is
+presentation only. The first slice has no content tolerance.
 
 `relation="equal"` exactly when `image.changed_items == 0`; otherwise it is
 `different`. The sole evaluation is `image.decoded_sample_equality`, observing
@@ -362,8 +488,8 @@ transformation records in this order:
 
 | Stage | Transformation ID | Required parameters |
 | --- | --- | --- |
-| decoding | `image.png.decode` | backend/version, format profile, mode, dimensions, frame count |
-| normalizing | `image.orientation.stored` | before/after bounded orientation-tag state |
+| decoding | `image.png.decode` | backend/version, profile, mode, dimensions, frame count, IHDR bit depth/color type/interlace, and bounded resource facts per role |
+| normalizing | `image.orientation.stored` | before/after `eXIf` presence and on-wire byte count |
 | normalizing | `image.color.native_exact` | bounded color-description identity/digest per role |
 | normalizing | `image.alpha.straight` | channel layout and unassociated-alpha policy |
 | aligning | `image.coordinates.exact` | origin=`top_left`, x=`right`, y=`down`, dimensions policy |
@@ -371,6 +497,15 @@ transformation records in this order:
 These records make no claim that a conversion occurred. They state the profile
 that actually executed. No record may contain raw ICC/EXIF/text metadata, an
 absolute path, source bytes, local module paths, or backend exception text.
+
+The exact `ResourceUsage.name` values are
+`image.{before|after}.{input_bytes|metadata_wire_bytes|metadata_decompressed_bytes|icc_profile_bytes|pixels|decoded_bytes}`,
+`image.compare.sample_pairs`, `image.changes.items`, and
+`image.changes.payload_bytes`. Each uses its matching normalized-spec limit;
+the six source facts and their limits apply independently to `before` and
+`after`. Only counts, booleans, dimensions, stable enum values, and descriptor
+digests enter public/provenance data. Raw or excerpted chunk payloads, profile
+names, text keywords/values, EXIF values, and palette entries do not.
 
 Comparison provenance records input hashes, comparator
 `image.decoded_samples`, algorithm `image.decoded_samples.tiles.v1`, Platydiff
@@ -408,14 +543,30 @@ factory identity or use an isolated environment before making a support claim.
 
 ## Resources, hostile input, and failures
 
-`max_input_bytes` is enforced by the host snapshot before decode. Width, height,
-pixel product, channel count, and decoded-byte products use checked arithmetic
-before `load()` whenever metadata is available and are rechecked afterward.
-Metadata, ICC profile, decoded bytes, comparisons, changes, and canonical
-payloads have independent counters.
-`max_metadata_bytes` bounds the total retained or parsed metadata represented
-to the host, including ICC bytes; `max_icc_profile_bytes` is an additional bound
-on that single field.
+`max_input_bytes` is enforced while the host creates the immutable snapshot and
+before decode. The PNG scanner increments `metadata_wire_bytes` by each
+ancillary chunk's declared data length before reading or retaining its data;
+`IDAT` and critical `PLTE` are excluded, while color, text, `eXIf`, and unknown
+ancillary chunks are included. Chunk headers and CRC bytes remain covered by
+`max_input_bytes`, not the metadata subtotal.
+
+`metadata_decompressed_bytes` is the sum of decompressed payload bytes from
+`iCCP`, compressed `iTXt`, and `zTXt`. The scanner checks both the aggregate
+`max_metadata_decompressed_bytes` and, for `iCCP`, the independent
+`max_icc_profile_bytes`. ICC bytes count against both limits; they are not
+double-counted within either counter. Each declared on-wire increment is
+checked before reading that chunk. Each inflate increment is checked before
+appending or exposing the next output block; text output is discarded, and an
+ICC buffer never grows beyond its dedicated limit. A truncated stream,
+trailing compressed stream data, or invalid compression method is a decode
+error, while exceeding any counter is a resource-limit failure.
+
+Width, height, pixel product, channel count, and decoded-byte products use
+checked arithmetic as soon as `IHDR` is validated and before Pillow. Backend
+mode/dimensions and the same products are rechecked before and after `load()`.
+Comparison work is checked before each sample pair; change-item and canonical
+payload totals are checked before retaining the next whole item. No check is
+deferred merely because Pillow also exposes a limit or warning.
 
 One comparison work unit is one sample-pair equality/error update. The default
 `67_108_864` units admits the maximum configured pixel count in four-channel
@@ -436,7 +587,7 @@ Stable mappings are:
 | --- | --- | --- |
 | Optional backend missing/incompatible | unavailable/`backend_unavailable` | resolving |
 | No built-in image capability | unavailable/`capability_unavailable` | resolving |
-| Unsupported source kind | failed/`source_type_unsupported` | validating or sourcing, matching host ownership |
+| Unsupported source kind | failed/`source_type_unsupported` | sourcing |
 | Wrong codec/profile, animation, unsupported mode/depth/transparency | failed/`unsupported_image_profile` (415) | decoding |
 | Malformed/truncated PNG or invalid interpretation metadata | failed/`decode_error` | decoding |
 | Source/decode/metadata/pixel limit or decompression-bomb signal | failed/`resource_limit_exceeded` | observed stage |
@@ -486,9 +637,12 @@ The acceptance matrix includes:
 - equal/different/minimal one-pixel content, one pixel/channel change, edge
   tiles, all supported modes, transparent RGB, and descriptor mismatches;
 - palette, low/16-bit, `tRNS`, APNG, wrong codec, corrupt chunks, truncation,
-  oversized dimensions/pixels/metadata/ICC, and decompression bombs;
+  CRC/order/multiplicity faults, unknown critical chunks, oversized
+  dimensions/pixels, exact wire/decompressed/ICC limit boundaries, and
+  decompression bombs; these tests assert pre-Pillow rejection and stable codes;
 - byte-different/pixel-equal pairs proving the binary/image distinction;
-- metric formulas, PSNR infinity, integer/floating order, change invariants,
+- all four digest fixtures byte-for-byte; metric formulas, tagged PSNR infinity,
+  eight-ULP cross-platform goldens, integer/floating order, change invariants,
   item/payload truncation, exact budget boundaries, and repeated determinism;
 - source mutation, no path reopen, backend missing/version mismatch, global
   decoder-registry tampering, and no fallback;
@@ -596,17 +750,6 @@ follow-up gates.
 - [RFC 0003: Detection, resolution, and exact binary comparison](0003-automatic-detection-capability-resolution-and-binary-comparison.md)
 - [RFC 0004: Human review UI and renderer boundary](0004-human-review-ui-and-renderer-boundary.md)
 - [RFC 0005: Third-party plugin SDK and compatibility](0005-third-party-plugin-discovery-sdk-and-compatibility.md)
-- [RFC 0006: Structured data comparison](0006-structured-data-comparison.md)
-- [W3C PNG Specification, Third Edition](https://www.w3.org/TR/png-3/)
-- [Pillow 12.3.0 project metadata](https://pypi.org/project/pillow/)
-- [Pillow image-open contract](https://pillow.readthedocs.io/en/stable/reference/Image.html)
-- [Pillow security guidance](https://pillow.readthedocs.io/en/stable/handbook/security.html)
-- [Pillow image concepts](https://pillow.readthedocs.io/en/stable/handbook/concepts.html)
-- [Pillow image-format documentation](https://pillow.readthedocs.io/en/stable/handbook/image-file-formats.html)
-- [Pillow security advisories](https://github.com/python-pillow/Pillow/security/advisories)
-- [Pillow MIT-CMU license](https://github.com/python-pillow/Pillow/blob/main/LICENSE)
-- [ICC.1:2022 color-management specification](https://www.color.org/specification/ICC.1-2022-05.pdf)
-- [Wang et al., “Image quality assessment: from error visibility to structural similarity”](https://www.colorado.edu/lab/live/publications/zwang_ssim_ieeeip2004.pdf)
 - [RFC 0006: Structured data comparison](0006-structured-data-comparison.md)
 - [W3C PNG Specification, Third Edition](https://www.w3.org/TR/png-3/)
 - [Pillow 12.3.0 project metadata](https://pypi.org/project/pillow/)
