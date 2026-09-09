@@ -91,7 +91,10 @@ feature failure does not discard another plugin. Duplicate capability IDs and
 the reserved `core` capability namespace are omitted from the capability
 catalog with `capability_id_conflict`. Metadata and issues use deterministic
 ordering independent of environment enumeration order; exception text,
-tracebacks, and filesystem paths are never copied into issues.
+tracebacks, and filesystem paths are never copied into issues. Ordinary
+descriptor/property failures while validating executable handle shape quarantine
+only that plugin as `plugin_manifest_invalid`; process-control exceptions and
+`MemoryError` continue to propagate.
 
 `import platydiff` and the existing three-argument `compare()` do not enumerate
 or load installed plugins. Installing a plugin therefore cannot change the
@@ -119,6 +122,28 @@ tracks live run identity without retaining completed runs, records selection
 before detector execution, and rechecks mutable path snapshots after validated
 aggregation before constructing a completed outcome.
 
+An availability result's backend ID/version pair must exactly match the pair in
+its capability declaration, including `None`/`None`; SDK v1.1 does not accept an
+undeclared runtime backend. Known availability failures and invalid return
+values become structured failures at the detecting or resolving boundary with
+one auditable failed attempt. Plugin facts cannot claim the host-reserved
+source-byte resource names; conflicts fail within aggregation before outcome
+construction.
+
+An exact automatic comparator pin is validated before content detection. A
+missing capability, missing executor, wrong capability kind, or unsupported
+modality produces `capability_unavailable` with the specific safe reason on the
+single pinned attempt; it never falls back or masquerades as a detection
+no-match. During aggregation, the host independently reconstructs returned
+facts and enforces the resolved text/binary contract. Current specs reject
+partial or degraded results, require strict `equal`/`pass` and
+`different`/`fail` mapping, reject text/binary built-in change-kind crossover,
+and enforce `max_change_items` plus canonical UTF-8 schema payload bytes.
+Plugins must truncate within the declared `ChangeSet` contract themselves; the
+host rejects excess facts rather than silently changing them. A truncated
+plugin result must name `change_items` or `change_payload_bytes` and copy the
+corresponding effective spec limit exactly.
+
 Comparator run objects must support Python weak references. This SDK-v1.1 run
 requirement lets a long-lived host reject reuse of the same live run without
 retaining every completed run. A structurally valid run that cannot be weakly
@@ -132,7 +157,10 @@ schema v1. Readers accept both versions, and `upgrade_outcome_v1_to_v2()` adds a
 empty host context without changing v1 result meaning. Schema-v1 models and
 encoders reject schema-v2 nested values. Schema-v2 construction and reading
 cross-check provider-backed attempts against the loaded host snapshot and the
-selected comparator/detector provenance.
+selected comparator/detector provenance, require selected comparator versions
+to match result provenance, and apply SDK-grade distribution/version identity
+validation. The built-in terminal and JSON renderers accept both outcome schema
+versions without recomputing result semantics.
 
 There is still no public mutable registration method, process-global third-party
 catalog, renderer hook, plugin CLI option, or published compatibility receipt.

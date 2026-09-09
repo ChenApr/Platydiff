@@ -23,10 +23,12 @@ from platydiff.core._sources import SourceSnapshot, open_source_snapshot
 from platydiff.core.models import (
     AutoCompareSpec,
     BinaryCompareSpec,
+    BinarySpan,
     BytesSource,
     CapabilityAttempt,
     CapabilityAttemptV2,
     CapabilityProblemV2,
+    ChangeCompleteness,
     CompareOutcomeV2,
     CompareSpec,
     ComparisonProvenance,
@@ -41,20 +43,24 @@ from platydiff.core.models import (
     ExecutionRecordV2,
     ExtensionChange,
     FailedOutcomeV2,
+    Fidelity,
     InputProvenance,
     PairDetectionCandidate,
     PathSource,
     PipelineStage,
     PluginHostExecutionRecord,
     ProviderIdentity,
+    Relation,
     ResourceUsage,
     Source,
     SourceDetectionRecord,
     SourceKind,
     StageDisposition,
     TextCompareSpec,
+    TextHunk,
     TextSource,
     UnavailableOutcomeV2,
+    Verdict,
 )
 from platydiff.core.pipeline import StageRunner, _system_clock
 from platydiff.core.problems import (
@@ -68,6 +74,7 @@ from platydiff.core.problems import (
 from platydiff.core.serialization import (
     _result_from_data,
     _result_to_data,
+    serialized_change_size,
     spec_to_data,
     upgrade_outcome_v1_to_v2,
 )
@@ -92,6 +99,11 @@ from platydiff.plugins._discovery import (
 )
 
 type ResolvedPluginSpec = TextCompareSpec | BinaryCompareSpec
+
+_HOST_SOURCE_RESOURCE_NAMES = (
+    "host.plugin_before_source_bytes",
+    "host.plugin_after_source_bytes",
+)
 
 
 class PluginExecutionFailureError(DomainError):
@@ -139,6 +151,7 @@ class _PreparedComparator:
     run: ComparatorRunV1
     before: _HostedSourceService
     after: _HostedSourceService
+    spec: ResolvedPluginSpec
 
 
 class _HostedSourceService:
@@ -292,12 +305,37 @@ class PluginHost:
                     detector_missing = (
                         detector_id is not None and detection_capability is None
                     )
-                    comparator_candidates = self._detection_comparator_candidates(
-                        comparator_id
+                    comparator_capability, comparator_pin_reason = (
+                        self._pinned_comparator_for_detection(comparator_id)
+                    )
+                    comparator_candidates = (
+                        ()
+                        if comparator_pin_reason is not None
+                        else self._detection_comparator_candidates(comparator_id)
                     )
 
                     def run_detection() -> DetectionRecord:
                         nonlocal detector_provider
+                        if comparator_pin_reason is not None:
+                            if comparator_capability is None:
+                                stages.record_attempts(
+                                    (
+                                        CapabilityAttempt(
+                                            comparator_id or "text",
+                                            None,
+                                            "rejected",
+                                            comparator_pin_reason,
+                                        ),
+                                    )
+                                )
+                            else:
+                                stages.record_attempts(
+                                    (_selected_attempt(comparator_capability),)
+                                )
+                            raise PluginCapabilityUnavailableError(
+                                reason_code=comparator_pin_reason,
+                                stage=PipelineStage.DETECTING,
+                            )
                         if detector_id is None:
                             detection = detect_pair(
                                 snapshots[0],
@@ -314,10 +352,16 @@ class PluginHost:
                                 detection_capability.declaration.kind
                                 is CapabilityKind.DETECTOR
                             ):
-                                availability = self._probe(
-                                    detection_capability,
-                                    stage=PipelineStage.DETECTING,
-                                )
+                                try:
+                                    availability = self._probe(
+                                        detection_capability,
+                                        stage=PipelineStage.DETECTING,
+                                    )
+                                except DomainError:
+                                    stages.record_attempts(
+                                        (_selected_attempt(detection_capability),)
+                                    )
+                                    raise
                                 if not availability.available:
                                     stages.record_attempts(
                                         (
@@ -400,7 +444,13 @@ class PluginHost:
                                 )
                             )
                             raise CapabilityUnavailableError()
-                        availability = self._probe(selected_plugin)
+                        try:
+                            availability = self._probe(selected_plugin)
+                        except DomainError:
+                            stages.record_attempts(
+                                (_selected_attempt(selected_plugin),)
+                            )
+                            raise
                         if not availability.available:
                             stages.record_attempts(
                                 (
@@ -472,7 +522,9 @@ class PluginHost:
             except UnavailableError as error:
                 return UnavailableOutcomeV2(
                     execution=_execution_v2(
-                        self, stages.execution(()), terminal_reason=error.code
+                        self,
+                        stages.execution(()),
+                        terminal_reason=_terminal_attempt_reason(error),
                     ),
                     problem=CapabilityProblemV2(
                         error.code,
@@ -486,7 +538,9 @@ class PluginHost:
             except DomainError as error:
                 return FailedOutcomeV2(
                     execution=_execution_v2(
-                        self, stages.execution(()), terminal_reason=error.code
+                        self,
+                        stages.execution(()),
+                        terminal_reason=_terminal_attempt_reason(error),
                     ),
                     problem=ExecutionProblemV2(
                         error.code,
@@ -497,18 +551,25 @@ class PluginHost:
                         error.retryable,
                     ),
                 )
-        return CompletedOutcomeV2(
-            execution=_execution_v2(self, stages.execution(diagnostics)), result=result
-        )
+        execution = _execution_v2(self, stages.execution(diagnostics))
+        provenance = cast(ComparisonProvenanceV2, result.provenance)
+        execution = _with_selected_comparator_version(execution, provenance)
+        return CompletedOutcomeV2(execution=execution, result=result)
 
     def _detection_comparator_candidates(
         self, comparator_id: str | None
     ) -> tuple[tuple[Literal["text", "binary"], int, str, str], ...]:
         if comparator_id is not None and comparator_id not in {"text", "binary"}:
             capability = self.capability(comparator_id)
-            if capability is None or capability.handle is None:
+            if (
+                capability is None
+                or capability.declaration.kind is not CapabilityKind.COMPARATOR
+                or capability.handle is None
+            ):
                 return ()
             handle = cast(ComparatorHandleV1, capability.handle)
+            if getattr(handle, "modality", None) not in ("text", "binary"):
+                return ()
             backend = (
                 capability.declaration.backend_id
                 or capability.declaration.capability_id
@@ -531,10 +592,14 @@ class PluginHost:
     ) -> tuple[CapabilityRecord, ...]:
         if comparator_id is not None and comparator_id not in {"text", "binary"}:
             capability = self.capability(comparator_id)
-            if capability is None or capability.handle is None:
+            if (
+                capability is None
+                or capability.declaration.kind is not CapabilityKind.COMPARATOR
+                or capability.handle is None
+            ):
                 return ()
             handle = cast(ComparatorHandleV1, capability.handle)
-            if handle.modality not in ("text", "binary"):
+            if getattr(handle, "modality", None) not in ("text", "binary"):
                 return ()
             declaration = capability.declaration
             return (
@@ -553,6 +618,22 @@ class PluginHost:
             )
         return _builtin_detection_records(comparator_id)
 
+    def _pinned_comparator_for_detection(
+        self, comparator_id: str | None
+    ) -> tuple[DiscoveredCapabilityV1 | None, str | None]:
+        if comparator_id is None or comparator_id in {"text", "binary"}:
+            return None, None
+        capability = self.capability(comparator_id)
+        if capability is None:
+            return None, "plugin_not_found"
+        if capability.declaration.kind is not CapabilityKind.COMPARATOR:
+            return capability, "capability_kind_mismatch"
+        if capability.handle is None:
+            return capability, "executor_missing"
+        if getattr(capability.handle, "modality", None) not in ("text", "binary"):
+            return capability, "modality_mismatch"
+        return capability, None
+
     def _probe(
         self,
         capability: DiscoveredCapabilityV1,
@@ -566,6 +647,10 @@ class PluginHost:
             availability = handle.availability()
         except (KeyboardInterrupt, SystemExit, MemoryError):
             raise
+        except PluginResourceLimitErrorV1 as error:
+            raise ResourceLimitError(
+                "A plugin exhausted a deterministic resource limit.", stage=stage
+            ) from error
         except PluginUnavailableErrorV1 as error:
             return CapabilityAvailabilityV1(False, reason_code=error.reason_code)
         except PluginExecutionErrorV1 as error:
@@ -573,9 +658,12 @@ class PluginHost:
         if not isinstance(availability, CapabilityAvailabilityV1):
             raise PluginExecutionFailureError(stage=stage)
         declaration = capability.declaration
-        if declaration.backend_id is not None and (
-            availability.backend_id != declaration.backend_id
-            or availability.backend_version != declaration.backend_version
+        if (
+            availability.backend_id,
+            availability.backend_version,
+        ) != (
+            declaration.backend_id,
+            declaration.backend_version,
         ):
             raise PluginExecutionFailureError(stage=stage)
         return availability
@@ -647,7 +735,7 @@ class PluginHost:
                     stage=PipelineStage.RESOLVING
                 ) from error
             self._used_runs[:] = live_runs
-        return _PreparedComparator(capability, run, before, after)
+        return _PreparedComparator(capability, run, before, after, spec)
 
     def _execute_prepared(
         self, prepared: _PreparedComparator, stages: StageRunner
@@ -679,7 +767,7 @@ class PluginHost:
             facts = stages.run(
                 PipelineStage.AGGREGATING,
                 lambda: _aggregate_plugin_and_validate_sources(
-                    run.aggregate, capability, before, after
+                    run.aggregate, capability, before, after, prepared.spec
                 ),
             )
         finally:
@@ -736,6 +824,8 @@ class PluginHost:
             disposition, selected = "ambiguous", None
         else:
             disposition, selected = "selected", pairs[0].modality_id
+        for snapshot in snapshots:
+            snapshot.ensure_unchanged(stage=PipelineStage.DETECTING)
         return DetectionRecord(
             detector_id=capability.declaration.capability_id,
             detector_version=capability.declaration.implementation_version,
@@ -811,8 +901,46 @@ def _aggregate_plugin_and_validate_sources(
     capability: DiscoveredCapabilityV1,
     before: _HostedSourceService,
     after: _HostedSourceService,
+    spec: ResolvedPluginSpec,
 ) -> PluginComparisonV1:
     facts = _aggregate_plugin(operation, capability)
+    if {resource.name for resource in facts.resources}.intersection(
+        _HOST_SOURCE_RESOURCE_NAMES
+    ):
+        raise PluginExecutionFailureError(stage=PipelineStage.AGGREGATING)
+    if facts.changes.returned_count > spec.limits.max_change_items:
+        raise PluginExecutionFailureError(stage=PipelineStage.AGGREGATING)
+    payload_bytes = sum(
+        serialized_change_size(change) for change in facts.changes.items
+    )
+    if payload_bytes > spec.limits.max_change_payload_bytes:
+        raise PluginExecutionFailureError(stage=PipelineStage.AGGREGATING)
+    if facts.changes.completeness is ChangeCompleteness.TRUNCATED:
+        if facts.changes.limit_reason == "change_items":
+            expected_limit: int | None = spec.limits.max_change_items
+        elif facts.changes.limit_reason == "change_payload_bytes":
+            expected_limit = spec.limits.max_change_payload_bytes
+        else:
+            expected_limit = None
+        if expected_limit is None or facts.changes.limit != expected_limit:
+            raise PluginExecutionFailureError(stage=PipelineStage.AGGREGATING)
+    if facts.changes.completeness is ChangeCompleteness.PARTIAL:
+        raise PluginExecutionFailureError(stage=PipelineStage.AGGREGATING)
+    if facts.fidelity is Fidelity.DEGRADED:
+        raise PluginExecutionFailureError(stage=PipelineStage.AGGREGATING)
+    expected_verdict = (
+        Verdict.PASS if facts.relation is Relation.EQUAL else Verdict.FAIL
+    )
+    if facts.verdict is not expected_verdict:
+        raise PluginExecutionFailureError(stage=PipelineStage.AGGREGATING)
+    if spec.kind == "text" and any(
+        isinstance(change, BinarySpan) for change in facts.changes.items
+    ):
+        raise PluginExecutionFailureError(stage=PipelineStage.AGGREGATING)
+    if spec.kind == "binary" and any(
+        isinstance(change, TextHunk) for change in facts.changes.items
+    ):
+        raise PluginExecutionFailureError(stage=PipelineStage.AGGREGATING)
     before.ensure_unchanged(stage=PipelineStage.AGGREGATING)
     after.ensure_unchanged(stage=PipelineStage.AGGREGATING)
     return facts
@@ -824,20 +952,24 @@ def _aggregate_plugin(
     returned = _invoke_plugin(PipelineStage.AGGREGATING, operation)
     if not isinstance(returned, PluginComparisonV1):
         raise PluginExecutionFailureError(stage=PipelineStage.AGGREGATING)
-    if returned.implementation_version != capability.declaration.implementation_version:
-        raise PluginExecutionFailureError(stage=PipelineStage.AGGREGATING)
-    plugin_id = capability.plugin.manifest.plugin_id
-    for change in returned.changes.items:
-        if isinstance(change, ExtensionChange) and (
-            change.plugin_id != plugin_id or not change.kind.startswith(f"{plugin_id}.")
+    try:
+        if (
+            returned.implementation_version
+            != capability.declaration.implementation_version
         ):
             raise PluginExecutionFailureError(stage=PipelineStage.AGGREGATING)
-    for diagnostic in returned.diagnostics:
-        if not _safe_diagnostic_text(diagnostic.message) or not _safe_json_strings(
-            diagnostic.details
-        ):
-            raise PluginExecutionFailureError(stage=PipelineStage.AGGREGATING)
-        try:
+        plugin_id = capability.plugin.manifest.plugin_id
+        for change in returned.changes.items:
+            if isinstance(change, ExtensionChange) and (
+                change.plugin_id != plugin_id
+                or not change.kind.startswith(f"{plugin_id}.")
+            ):
+                raise PluginExecutionFailureError(stage=PipelineStage.AGGREGATING)
+        for diagnostic in returned.diagnostics:
+            if not _safe_diagnostic_text(diagnostic.message) or not _safe_json_strings(
+                diagnostic.details
+            ):
+                raise PluginExecutionFailureError(stage=PipelineStage.AGGREGATING)
             Diagnostic(
                 diagnostic.code,
                 diagnostic.severity,
@@ -845,11 +977,6 @@ def _aggregate_plugin(
                 diagnostic.message,
                 dict(diagnostic.details),
             )
-        except ValueError as error:
-            raise PluginExecutionFailureError(
-                stage=PipelineStage.AGGREGATING
-            ) from error
-    try:
         placeholder_inputs = (
             InputProvenance("before", SourceKind.BYTES, 0, "0" * 64),
             InputProvenance("after", SourceKind.BYTES, 0, "0" * 64),
@@ -875,7 +1002,9 @@ def _aggregate_plugin(
             ),
         )
         _result_from_data(_result_to_data(candidate))
-    except (TypeError, ValueError) as error:
+    except PluginExecutionFailureError:
+        raise
+    except (AttributeError, KeyError, TypeError, ValueError) as error:
         raise PluginExecutionFailureError(stage=PipelineStage.AGGREGATING) from error
     return returned
 
@@ -1220,6 +1349,26 @@ def _execution_v2(
     )
 
 
+def _terminal_attempt_reason(error: DomainError) -> str:
+    reason_code = error.details.get("reason_code")
+    return reason_code if isinstance(reason_code, str) else error.code
+
+
+def _with_selected_comparator_version(
+    execution: ExecutionRecordV2,
+    provenance: ComparisonProvenanceV2,
+) -> ExecutionRecordV2:
+    attempts = tuple(
+        replace(attempt, capability_version=provenance.comparator_version)
+        if isinstance(attempt, CapabilityAttemptV2)
+        and attempt.disposition == "selected"
+        and attempt.capability_id == provenance.comparator_id
+        else attempt
+        for attempt in execution.attempts
+    )
+    return replace(execution, attempts=attempts)
+
+
 def _plugin_result(
     hosted: HostedPluginComparison,
     inputs: tuple[InputProvenance, InputProvenance],
@@ -1228,17 +1377,17 @@ def _plugin_result(
     detector_provider: ProviderIdentity | None,
 ) -> DiffResult:
     facts = hosted.facts
-    usage_names = {resource.name for resource in facts.resources}
-    host_names = ("host.plugin_before_source_bytes", "host.plugin_after_source_bytes")
-    if usage_names.intersection(host_names):
-        raise PluginExecutionFailureError(stage=PipelineStage.AGGREGATING)
     resources = (
         *facts.resources,
         ResourceUsage(
-            host_names[0], spec.limits.max_input_bytes, hosted.source_bytes_used[0]
+            _HOST_SOURCE_RESOURCE_NAMES[0],
+            spec.limits.max_input_bytes,
+            hosted.source_bytes_used[0],
         ),
         ResourceUsage(
-            host_names[1], spec.limits.max_input_bytes, hosted.source_bytes_used[1]
+            _HOST_SOURCE_RESOURCE_NAMES[1],
+            spec.limits.max_input_bytes,
+            hosted.source_bytes_used[1],
         ),
     )
     capability = hosted.capability

@@ -88,13 +88,15 @@ Phase 1、Phase 2 与 P3-A/P3-B 插件门禁已实现：
 - strict 行级文本比较；
 - 确定性、线性辅助空间的 Myers insert/delete 编辑脚本；
 - 具有有界 change 明细的 terminal 与 JSON renderer；
+- 同时读取 schema-v1 与 schema-v2 outcome 的 terminal 与 JSON renderer；
 - 有界、确定性的文本/二进制探测与内部 capability resolution；
 - collision-safe 的精确二进制比较和不携带 payload 的 change span；
 - immutable SDK-v1 manifest 与 capability/dependency/platform inventory；
 - 不执行 capability 的显式 entry-point discovery、精确 allowlist、版本/feature 协商与
   确定性冲突隔离；
 - 显式 pin 的 SDK-v1.1 detector/comparator handle、host 管理的有界 source access 与
-  lifecycle stage，并支持自动比较精确 pin 内建 comparator；
+  lifecycle stage，并支持自动比较精确 pin 内建 comparator 与严格的 declared-backend
+  provenance，以及 host 侧 output-limit/exact-semantics 校验；
 - schema-v2 provider、attempt 与 plugin-host provenance，以及 typed v1-to-v2 upgrader；
   `PluginHost.compare()` 始终返回 schema v2。
 
