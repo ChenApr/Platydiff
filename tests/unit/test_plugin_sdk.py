@@ -159,3 +159,18 @@ def test_manifest_rejects_mutable_collections_and_control_text() -> None:
             (),
             "Apache-2.0",
         )
+
+
+def test_provider_identity_versions_reject_filesystem_paths() -> None:
+    with pytest.raises(ValueError, match="filesystem path"):
+        PluginManifestV1(
+            1,
+            "org.example.scidiff",
+            "/private/plugin.py",
+            1,
+            0,
+            0,
+            (),
+            (),
+            "Apache-2.0",
+        )

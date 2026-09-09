@@ -42,6 +42,13 @@ def _bounded_text(value: object, field_name: str, *, allow_empty: bool = False) 
     return value
 
 
+def _identity_text(value: object, field_name: str) -> str:
+    text = _bounded_text(value, field_name)
+    if "/" in text or "\\" in text:
+        raise ValueError(f"{field_name} must not contain a filesystem path")
+    return text
+
+
 def _stable_identifier(value: object, field_name: str) -> str:
     text = _bounded_text(value, field_name)
     if len(
@@ -140,7 +147,7 @@ class ComponentDeclarationV1:
 
     def __post_init__(self) -> None:
         _stable_identifier(self.component_id, "component_id")
-        _bounded_text(self.component_version, "component_version")
+        _identity_text(self.component_version, "component_version")
         if not isinstance(self.kind, ComponentKind):
             raise ValueError("kind must be a ComponentKind")
         if not isinstance(self.optional, bool):
@@ -166,12 +173,12 @@ class CapabilityDeclarationV1:
         _stable_identifier(self.capability_id, "capability_id")
         if not isinstance(self.kind, CapabilityKind):
             raise ValueError("kind must be a CapabilityKind")
-        _bounded_text(self.implementation_version, "implementation_version")
+        _identity_text(self.implementation_version, "implementation_version")
         if (self.backend_id is None) != (self.backend_version is None):
             raise ValueError("backend_id and backend_version must be provided together")
         if self.backend_id is not None:
             _stable_identifier(self.backend_id, "backend_id")
-            _bounded_text(self.backend_version, "backend_version")
+            _identity_text(self.backend_version, "backend_version")
         _bounded_integer(self.priority, "priority")
         if not isinstance(self.runtime_dependencies, tuple) or not all(
             isinstance(item, RuntimeDependencyV1) for item in self.runtime_dependencies
@@ -240,7 +247,7 @@ class PluginManifestV1:
         if self.manifest_schema_version != PLUGIN_MANIFEST_SCHEMA_VERSION:
             raise ValueError("unsupported plugin manifest schema version")
         plugin_id = _plugin_identifier(self.plugin_id)
-        _bounded_text(self.plugin_version, "plugin_version")
+        _identity_text(self.plugin_version, "plugin_version")
         if self.api_major != PLUGIN_API_MAJOR:
             raise ValueError("unsupported plugin API major")
         minimum = _bounded_integer(self.minimum_api_minor, "minimum_api_minor")
