@@ -10,6 +10,7 @@ from typing import Literal, cast
 from platydiff.core.models import (
     SCHEMA_VERSION,
     SCHEMA_VERSION_V2,
+    SCHEMA_VERSION_V3,
     AnyCompareOutcome,
     ArtifactRef,
     AutoCompareSpec,
@@ -28,11 +29,13 @@ from platydiff.core.models import (
     ChangeSet,
     CompareOutcome,
     CompareOutcomeV2,
-    CompareSpec,
+    CompareOutcomeV3,
+    CompareSpecV3,
     ComparisonProvenance,
     ComparisonProvenanceV2,
     CompletedOutcome,
     CompletedOutcomeV2,
+    CompletedOutcomeV3,
     DetectionCandidate,
     DetectionRecord,
     Diagnostic,
@@ -46,10 +49,13 @@ from platydiff.core.models import (
     ExtensionChange,
     FailedOutcome,
     FailedOutcomeV2,
+    FailedOutcomeV3,
     Fidelity,
     FiniteValue,
     HunkLine,
     InputProvenance,
+    JsonCompareSpec,
+    JsonNumberMode,
     JsonObject,
     JsonValue,
     Metric,
@@ -67,10 +73,16 @@ from platydiff.core.models import (
     Relation,
     ResourceLimits,
     ResourceUsage,
+    ScalarFact,
     SourceDetectionRecord,
     SourceKind,
     StageDisposition,
     StageRecord,
+    StructuredChange,
+    StructuredDetailMode,
+    StructuredResourceLimits,
+    StructuredType,
+    SubtreeFact,
     SummaryCount,
     TextCompareSpec,
     TextEncoding,
@@ -78,6 +90,7 @@ from platydiff.core.models import (
     TransformationRecord,
     UnavailableOutcome,
     UnavailableOutcomeV2,
+    UnavailableOutcomeV3,
     Verdict,
 )
 
@@ -175,8 +188,20 @@ def _enum_value[T](constructor: Callable[[str], T], value: JsonValue, name: str)
         raise SerializationError(f"unknown {name}: {raw}") from error
 
 
-def spec_to_data(spec: CompareSpec) -> JsonObject:
-    """Serialize a normalized schema-v1 specification."""
+def spec_to_data(spec: CompareSpecV3) -> JsonObject:
+    """Serialize a normalized specification."""
+    if isinstance(spec, JsonCompareSpec):
+        json_limits = spec.limits
+        return {
+            "kind": spec.kind,
+            "encoding": spec.encoding.value,
+            "number_mode": spec.number_mode.value,
+            "detail_mode": spec.detail_mode.value,
+            "limits": {
+                name: getattr(json_limits, name)
+                for name in json_limits.__dataclass_fields__
+            },
+        }
     if isinstance(spec, BinaryCompareSpec):
         return {
             "kind": spec.kind,
@@ -225,14 +250,34 @@ def spec_to_data(spec: CompareSpec) -> JsonObject:
     }
 
 
-def spec_from_data(value: JsonValue) -> CompareSpec:
+def spec_from_data(value: JsonValue) -> CompareSpecV3:
     """Validate generic JSON data and construct a specification."""
     data = _object(value, "spec")
     kind = _string(_required(data, "kind"), "spec.kind")
-    if kind not in ("text", "binary", "auto"):
+    if kind not in ("text", "binary", "auto", "json"):
         raise SerializationError(f"unknown spec kind: {kind}")
     limits_data = _object(_required(data, "limits"), "spec.limits")
     try:
+        if kind == "json":
+            return JsonCompareSpec(
+                encoding=_enum_value(
+                    TextEncoding, _required(data, "encoding"), "encoding"
+                ),
+                number_mode=_enum_value(
+                    JsonNumberMode, _required(data, "number_mode"), "number_mode"
+                ),
+                detail_mode=_enum_value(
+                    StructuredDetailMode,
+                    _required(data, "detail_mode"),
+                    "detail_mode",
+                ),
+                limits=StructuredResourceLimits(
+                    **{
+                        name: _integer(_required(limits_data, name), name)
+                        for name in StructuredResourceLimits.__dataclass_fields__
+                    }
+                ),
+            )
         if kind == "binary":
             return BinaryCompareSpec(
                 limits=BinaryResourceLimits(
@@ -691,7 +736,7 @@ def _execution_to_data(record: ExecutionRecord) -> JsonObject:
 
 
 def _execution_from_data(
-    value: JsonValue, *, schema_version: Literal[1, 2] = 1
+    value: JsonValue, *, schema_version: Literal[1, 2, 3] = 1
 ) -> ExecutionRecord:
     data = _object(value, "execution")
     attempts: list[CapabilityAttempt | CapabilityAttemptV2] = []
@@ -700,7 +745,7 @@ def _execution_from_data(
         disposition = _string(_required(item, "disposition"), "disposition")
         allowed_dispositions = (
             ("selected", "rejected", "fallback", "unavailable", "failed")
-            if schema_version == 2
+            if schema_version in (2, 3)
             else ("selected", "rejected", "fallback")
         )
         if disposition not in allowed_dispositions:
@@ -709,7 +754,7 @@ def _execution_from_data(
         backend_id = _optional_string(_required(item, "backend_id"), "backend_id")
         reason_code = _optional_string(_required(item, "reason_code"), "reason_code")
         try:
-            if schema_version == 2:
+            if schema_version in (2, 3):
                 raw_provider = _required(item, "provider")
                 attempts.append(
                     CapabilityAttemptV2(
@@ -784,9 +829,9 @@ def _execution_from_data(
     )
     detection = _detection_from_data(data["detection"]) if "detection" in data else None
     try:
-        record_type = ExecutionRecordV2 if schema_version == 2 else ExecutionRecord
+        record_type = ExecutionRecordV2 if schema_version in (2, 3) else ExecutionRecord
         record_kwargs: dict[str, object] = {}
-        if schema_version == 2:
+        if schema_version in (2, 3):
             raw_plugin_host = _required(data, "plugin_host")
             record_kwargs["plugin_host"] = (
                 None
@@ -828,7 +873,7 @@ def _problem_to_data(
 
 
 def _problem_from_data(
-    value: JsonValue, *, unavailable: bool, schema_version: Literal[1, 2] = 1
+    value: JsonValue, *, unavailable: bool, schema_version: Literal[1, 2, 3] = 1
 ) -> ExecutionProblem | CapabilityProblem | ExecutionProblemV2 | CapabilityProblemV2:
     data = _object(value, "problem")
     code = _string(_required(data, "code"), "problem code")
@@ -839,7 +884,7 @@ def _problem_from_data(
     retryable = _boolean(_required(data, "retryable"), "retryable")
     try:
         if unavailable:
-            if schema_version == 2:
+            if schema_version in (2, 3):
                 return CapabilityProblemV2(
                     code=code,
                     status_code=status_code,
@@ -856,7 +901,9 @@ def _problem_from_data(
                 details=details,
                 retryable=retryable,
             )
-        problem_type = ExecutionProblemV2 if schema_version == 2 else ExecutionProblem
+        problem_type = (
+            ExecutionProblemV2 if schema_version in (2, 3) else ExecutionProblem
+        )
         return problem_type(
             code=code,
             status_code=status_code,
@@ -913,7 +960,7 @@ def _provenance_to_data(value: ComparisonProvenance) -> JsonObject:
 
 
 def _provenance_from_data(
-    value: JsonValue, *, schema_version: Literal[1, 2] = 1
+    value: JsonValue, *, schema_version: Literal[1, 2, 3] = 1
 ) -> ComparisonProvenance:
     data = _object(value, "provenance")
     inputs: list[InputProvenance] = []
@@ -965,10 +1012,10 @@ def _provenance_from_data(
     )
     try:
         provenance_type = (
-            ComparisonProvenanceV2 if schema_version == 2 else ComparisonProvenance
+            ComparisonProvenanceV2 if schema_version in (2, 3) else ComparisonProvenance
         )
         provenance_kwargs: dict[str, object] = {}
-        if schema_version == 2:
+        if schema_version in (2, 3):
             raw_provider = _required(data, "provider")
             raw_detector_provider = _required(data, "detector_provider")
             provenance_kwargs = {
@@ -1032,6 +1079,37 @@ def _change_to_data(change: Change) -> JsonObject:
             "after_offset": change.after_offset,
             "after_length": change.after_length,
         }
+    if isinstance(change, StructuredChange):
+
+        def fact_data(fact: ScalarFact | SubtreeFact | None) -> JsonValue:
+            if fact is None:
+                return None
+            if isinstance(fact, ScalarFact):
+                data: JsonObject = {"kind": fact.kind, "value": fact.value}
+                if fact.lexical is not None:
+                    data["lexical"] = fact.lexical
+                return data
+            return {
+                "kind": fact.kind,
+                "descendant_count": fact.descendant_count,
+                "scalar_count": fact.scalar_count,
+            }
+
+        return {
+            "kind": change.kind,
+            "operation": change.operation,
+            "path": change.path,
+            "before_type": (
+                None if change.before_type is None else change.before_type.value
+            ),
+            "after_type": (
+                None if change.after_type is None else change.after_type.value
+            ),
+            "before_digest": change.before_digest,
+            "after_digest": change.after_digest,
+            "before_fact": fact_data(change.before_fact),
+            "after_fact": fact_data(change.after_fact),
+        }
     return {
         "kind": change.kind,
         "plugin_id": change.plugin_id,
@@ -1054,7 +1132,66 @@ def serialized_change_size(change: Change) -> int:
     )
 
 
-def _change_from_data(value: JsonValue) -> TextHunk | BinarySpan | ExtensionChange:
+def _structured_fact_from_data(value: JsonValue) -> ScalarFact | SubtreeFact | None:
+    if value is None:
+        return None
+    data = _object(value, "structured fact")
+    kind = _string(_required(data, "kind"), "structured fact kind")
+    try:
+        if kind in ("sequence", "mapping"):
+            return SubtreeFact(
+                kind=cast(Literal["sequence", "mapping"], kind),
+                descendant_count=_integer(
+                    _required(data, "descendant_count"), "descendant_count"
+                ),
+                scalar_count=_integer(_required(data, "scalar_count"), "scalar_count"),
+            )
+        allowed = (
+            "null",
+            "boolean",
+            "integer",
+            "decimal",
+            "string",
+            "missing",
+            "float64",
+            "nan",
+            "positive_infinity",
+            "negative_infinity",
+        )
+        if kind not in allowed:
+            raise SerializationError(f"unknown structured fact kind: {kind}")
+        raw_value = _required(data, "value")
+        fact_value: bool | str | None
+        if raw_value is None or isinstance(raw_value, (bool, str)):
+            fact_value = raw_value
+        else:
+            raise SerializationError("structured scalar fact value is invalid")
+        return ScalarFact(
+            kind=cast(
+                Literal[
+                    "null",
+                    "boolean",
+                    "integer",
+                    "decimal",
+                    "string",
+                    "missing",
+                    "float64",
+                    "nan",
+                    "positive_infinity",
+                    "negative_infinity",
+                ],
+                kind,
+            ),
+            value=fact_value,
+            lexical=_optional_string(data.get("lexical"), "lexical"),
+        )
+    except ValueError as error:
+        raise SerializationError(str(error)) from error
+
+
+def _change_from_data(
+    value: JsonValue, *, schema_version: Literal[1, 2, 3] = 1
+) -> TextHunk | BinarySpan | StructuredChange | ExtensionChange:
     data = _object(value, "change")
     kind = _string(_required(data, "kind"), "change kind")
     if kind == "text_hunk":
@@ -1106,6 +1243,39 @@ def _change_from_data(value: JsonValue) -> TextHunk | BinarySpan | ExtensionChan
                 ),
                 after_offset=_integer(_required(data, "after_offset"), "after_offset"),
                 after_length=_integer(_required(data, "after_length"), "after_length"),
+            )
+        except ValueError as error:
+            raise SerializationError(str(error)) from error
+    if kind == "structured_change":
+        if schema_version != 3:
+            raise SerializationError("structured changes require schema version 3")
+        operation = _string(_required(data, "operation"), "operation")
+        if operation not in ("add", "remove", "replace"):
+            raise SerializationError(f"unknown structured operation: {operation}")
+        try:
+            before_raw = _required(data, "before_type")
+            after_raw = _required(data, "after_type")
+            return StructuredChange(
+                operation=cast(Literal["add", "remove", "replace"], operation),
+                path=_string(_required(data, "path"), "path"),
+                before_type=(
+                    None
+                    if before_raw is None
+                    else _enum_value(StructuredType, before_raw, "structured type")
+                ),
+                after_type=(
+                    None
+                    if after_raw is None
+                    else _enum_value(StructuredType, after_raw, "structured type")
+                ),
+                before_digest=_optional_string(
+                    _required(data, "before_digest"), "before_digest"
+                ),
+                after_digest=_optional_string(
+                    _required(data, "after_digest"), "after_digest"
+                ),
+                before_fact=_structured_fact_from_data(_required(data, "before_fact")),
+                after_fact=_structured_fact_from_data(_required(data, "after_fact")),
             )
         except ValueError as error:
             raise SerializationError(str(error)) from error
@@ -1185,7 +1355,7 @@ def _result_to_data(result: DiffResult) -> JsonObject:
 
 
 def _result_from_data(
-    value: JsonValue, *, schema_version: Literal[1, 2] = 1
+    value: JsonValue, *, schema_version: Literal[1, 2, 3] = 1
 ) -> DiffResult:
     data = _object(value, "result")
     summary_data = _object(_required(data, "summary"), "summary")
@@ -1201,7 +1371,7 @@ def _result_from_data(
         )
     changes_data = _object(_required(data, "changes"), "changes")
     changes = tuple(
-        _change_from_data(item)
+        _change_from_data(item, schema_version=schema_version)
         for item in _array(_required(changes_data, "items"), "change items")
     )
     raw_limit_reason = changes_data.get("limit_reason")
@@ -1326,14 +1496,14 @@ def _result_from_data(
 
 
 def outcome_to_data(outcome: AnyCompareOutcome) -> JsonObject:
-    """Convert an outcome to stable JSON-safe schema-v1 or schema-v2 data."""
+    """Convert an outcome to stable JSON-safe schema-v1, v2, or v3 data."""
     _validate_outcome_schema_for_encoding(outcome)
     common: JsonObject = {
         "schema_version": outcome.schema_version,
         "kind": outcome.kind,
         "execution": _execution_to_data(outcome.execution),
     }
-    if isinstance(outcome, (CompletedOutcome, CompletedOutcomeV2)):
+    if isinstance(outcome, (CompletedOutcome, CompletedOutcomeV2, CompletedOutcomeV3)):
         common["result"] = _result_to_data(outcome.result)
     else:
         common["problem"] = _problem_to_data(outcome.problem)
@@ -1377,17 +1547,35 @@ def _validate_outcome_schema_for_encoding(outcome: AnyCompareOutcome) -> None:
             or type(outcome.problem) is not ExecutionProblemV2
         ):
             raise SerializationError("schema-v2 outcome contains schema-v1 values")
+    elif type(outcome) is CompletedOutcomeV3:
+        if (
+            type(outcome.execution) is not ExecutionRecordV2
+            or type(outcome.result.provenance) is not ComparisonProvenanceV2
+        ):
+            raise SerializationError("schema-v3 outcome contains incompatible values")
+    elif type(outcome) is UnavailableOutcomeV3:
+        if (
+            type(outcome.execution) is not ExecutionRecordV2
+            or type(outcome.problem) is not CapabilityProblemV2
+        ):
+            raise SerializationError("schema-v3 outcome contains incompatible values")
+    elif type(outcome) is FailedOutcomeV3:
+        if (
+            type(outcome.execution) is not ExecutionRecordV2
+            or type(outcome.problem) is not ExecutionProblemV2
+        ):
+            raise SerializationError("schema-v3 outcome contains incompatible values")
     else:
         raise SerializationError("unknown outcome type")
 
 
 def outcome_from_data(value: JsonValue) -> AnyCompareOutcome:
-    """Validate generic JSON data and construct a schema-v1 or schema-v2 outcome."""
+    """Validate generic JSON data and construct a schema-v1, v2, or v3 outcome."""
     data = _object(value, "outcome")
     schema_version = _integer(_required(data, "schema_version"), "schema_version")
-    if schema_version not in (SCHEMA_VERSION, SCHEMA_VERSION_V2):
+    if schema_version not in (SCHEMA_VERSION, SCHEMA_VERSION_V2, SCHEMA_VERSION_V3):
         raise SerializationError(f"unknown schema version: {schema_version}")
-    schema: Literal[1, 2] = 1 if schema_version == 1 else 2
+    schema: Literal[1, 2, 3] = schema_version
     kind = _string(_required(data, "kind"), "outcome kind")
     if kind == "completed" and "problem" in data:
         raise SerializationError("completed outcome has an incompatible field: problem")
@@ -1398,6 +1586,15 @@ def outcome_from_data(value: JsonValue) -> AnyCompareOutcome:
     )
     try:
         if kind == "completed":
+            if schema == 3:
+                if not isinstance(execution, ExecutionRecordV2):
+                    raise SerializationError("schema-v3 execution has the wrong type")
+                return CompletedOutcomeV3(
+                    execution=execution,
+                    result=_result_from_data(
+                        _required(data, "result"), schema_version=3
+                    ),
+                )
             if schema == 2:
                 if not isinstance(execution, ExecutionRecordV2):
                     raise SerializationError("schema-v2 execution has the wrong type")
@@ -1417,6 +1614,12 @@ def outcome_from_data(value: JsonValue) -> AnyCompareOutcome:
                 unavailable=True,
                 schema_version=schema,
             )
+            if schema == 3:
+                if not isinstance(execution, ExecutionRecordV2) or not isinstance(
+                    problem, CapabilityProblemV2
+                ):
+                    raise SerializationError("schema-v3 unavailable types are invalid")
+                return UnavailableOutcomeV3(execution=execution, problem=problem)
             if schema == 2:
                 if not isinstance(execution, ExecutionRecordV2) or not isinstance(
                     problem, CapabilityProblemV2
@@ -1432,6 +1635,12 @@ def outcome_from_data(value: JsonValue) -> AnyCompareOutcome:
                 unavailable=False,
                 schema_version=schema,
             )
+            if schema == 3:
+                if not isinstance(execution, ExecutionRecordV2) or not isinstance(
+                    problem, ExecutionProblemV2
+                ):
+                    raise SerializationError("schema-v3 failed types are invalid")
+                return FailedOutcomeV3(execution=execution, problem=problem)
             if schema == 2:
                 if not isinstance(execution, ExecutionRecordV2) or not isinstance(
                     problem, ExecutionProblemV2
@@ -1578,3 +1787,36 @@ def upgrade_outcome_v1_to_v2(outcome: CompareOutcome) -> CompareOutcomeV2:
             failed_problem.retryable,
         ),
     )
+
+
+def upgrade_outcome_v2_to_v3(outcome: CompareOutcomeV2) -> CompareOutcomeV3:
+    """Wrap a validated schema-v2 outcome in the additive schema-v3 envelope."""
+    if isinstance(outcome, CompletedOutcomeV2):
+        return CompletedOutcomeV3(execution=outcome.execution, result=outcome.result)
+    if isinstance(outcome, UnavailableOutcomeV2):
+        return UnavailableOutcomeV3(
+            execution=outcome.execution, problem=outcome.problem
+        )
+    return FailedOutcomeV3(execution=outcome.execution, problem=outcome.problem)
+
+
+def upgrade_outcome_v1_to_v3(outcome: CompareOutcome) -> CompareOutcomeV3:
+    """Preserve schema-v1 meaning while adding neutral v2/v3 fields."""
+    return upgrade_outcome_v2_to_v3(upgrade_outcome_v1_to_v2(outcome))
+
+
+def downgrade_outcome_v3_to_v2(outcome: CompareOutcomeV3) -> CompareOutcomeV2:
+    """Losslessly remove only the envelope version from a legacy-only v3 outcome."""
+    if isinstance(outcome, CompletedOutcomeV3):
+        spec_kind = outcome.result.provenance.spec.get("kind")
+        if spec_kind not in ("auto", "text", "binary") or any(
+            isinstance(change, StructuredChange)
+            for change in outcome.result.changes.items
+        ):
+            raise SerializationError("schema-v3 outcome is not legacy-only")
+        return CompletedOutcomeV2(execution=outcome.execution, result=outcome.result)
+    if isinstance(outcome, UnavailableOutcomeV3):
+        return UnavailableOutcomeV2(
+            execution=outcome.execution, problem=outcome.problem
+        )
+    return FailedOutcomeV2(execution=outcome.execution, problem=outcome.problem)
