@@ -15,6 +15,7 @@ from platydiff.plugin_sdk import (
     PLUGIN_ENTRY_POINT_GROUP,
     PLUGIN_MANIFEST_SCHEMA_VERSION,
     CapabilityDeclarationV1,
+    CapabilityHandleV1,
     ComponentDeclarationV1,
     PluginManifestV1,
     RuntimeDependencyV1,
@@ -188,8 +189,12 @@ class LoadedPluginV1:
         if self.entry_point.plugin_id != self.manifest.plugin_id:
             raise ValueError("entry-point and manifest plugin IDs must match")
         _bounded_integer(self.negotiated_api_minor, "negotiated_api_minor")
-        if self.negotiated_api_minor != PLUGIN_API_MINOR:
-            raise ValueError("catalog must use the current host API minor")
+        if not (
+            self.manifest.minimum_api_minor
+            <= self.negotiated_api_minor
+            <= min(self.manifest.maximum_api_minor, PLUGIN_API_MINOR)
+        ):
+            raise ValueError("catalog must use a mutually supported API minor")
         if self.negotiated_host_features != tuple(
             sorted(self.negotiated_host_features)
         ):
@@ -202,10 +207,15 @@ class DiscoveredCapabilityV1:
 
     plugin: LoadedPluginV1
     declaration: CapabilityDeclarationV1
+    handle: CapabilityHandleV1 | None = None
 
     def __post_init__(self) -> None:
         if self.declaration not in self.plugin.manifest.capabilities:
             raise ValueError("capability must belong to its plugin manifest")
+        if self.handle is not None and self.handle not in (
+            self.plugin.manifest.capability_handles
+        ):
+            raise ValueError("capability handle must belong to its plugin manifest")
 
 
 @dataclass(frozen=True, slots=True)
@@ -486,9 +496,7 @@ def _load(
         if (
             manifest.manifest_schema_version != PLUGIN_MANIFEST_SCHEMA_VERSION
             or manifest.api_major != PLUGIN_API_MAJOR
-            or not manifest.minimum_api_minor
-            <= PLUGIN_API_MINOR
-            <= manifest.maximum_api_minor
+            or manifest.minimum_api_minor > PLUGIN_API_MINOR
         ):
             issues.append(_issue("plugin_api_incompatible", candidate.metadata))
             continue
@@ -499,7 +507,7 @@ def _load(
             LoadedPluginV1(
                 candidate.metadata,
                 manifest,
-                PLUGIN_API_MINOR,
+                min(PLUGIN_API_MINOR, manifest.maximum_api_minor),
                 tuple(
                     sorted(
                         set(manifest.required_host_features).intersection(host_features)
@@ -572,6 +580,7 @@ def _validated_manifest(value: object) -> PluginManifestV1 | None:
             required_host_features=value.required_host_features,
             capabilities=tuple(capabilities),
             license_expression=value.license_expression,
+            capability_handles=value.capability_handles,
         )
     except (KeyboardInterrupt, SystemExit, MemoryError):
         raise
@@ -610,7 +619,13 @@ def _catalog_capabilities(
                     seen_plugins.add(plugin.manifest.plugin_id)
             continue
         plugin, declaration = claimants[0]
-        capabilities.append(DiscoveredCapabilityV1(plugin, declaration))
+        handles = {
+            handle.capability_id: handle
+            for handle in plugin.manifest.capability_handles
+        }
+        capabilities.append(
+            DiscoveredCapabilityV1(plugin, declaration, handles.get(capability_id))
+        )
     return tuple(capabilities), tuple(sorted(issues, key=_issue_key))
 
 

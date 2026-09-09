@@ -3,15 +3,34 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Literal, Protocol
 
+from platydiff.core.models import (
+    ArtifactRef,
+    BinaryCompareSpec,
+    ChangeSet,
+    Diagnostic,
+    DiffSummary,
+    Fidelity,
+    JsonObject,
+    Metric,
+    PolicyEvaluation,
+    Relation,
+    ResourceUsage,
+    SourceKind,
+    TextCompareSpec,
+    TransformationRecord,
+    Verdict,
+)
+
 PLUGIN_ENTRY_POINT_GROUP = "platydiff.plugins.v1"
 PLUGIN_MANIFEST_SCHEMA_VERSION: Literal[1] = 1
 PLUGIN_API_MAJOR: Literal[1] = 1
-PLUGIN_API_MINOR = 0
-HOST_FEATURES_V1: tuple[str, ...] = ()
+PLUGIN_API_MINOR = 1
+HOST_FEATURES_V1: tuple[str, ...] = ("host.execution.v1",)
 
 _MAX_EXACT_INTEGER = 2**53
 _MAX_IDENTIFIER_BYTES = 255
@@ -119,6 +138,190 @@ class ComponentKind(StrEnum):
 
     NATIVE = "native"
     EXTERNAL = "external"
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityAvailabilityV1:
+    """One deterministic, input-independent capability availability result."""
+
+    available: bool
+    backend_id: str | None = None
+    backend_version: str | None = None
+    reason_code: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.available, bool):
+            raise ValueError("available must be a boolean")
+        if (self.backend_id is None) != (self.backend_version is None):
+            raise ValueError("backend_id and backend_version must be provided together")
+        if self.backend_id is not None:
+            _stable_identifier(self.backend_id, "backend_id")
+            _identity_text(self.backend_version, "backend_version")
+        if self.reason_code is not None:
+            _stable_identifier(self.reason_code, "reason_code")
+        if self.available and self.reason_code is not None:
+            raise ValueError("an available capability cannot have a reason code")
+        if not self.available and self.reason_code is None:
+            raise ValueError("an unavailable capability requires a reason code")
+
+
+@dataclass(frozen=True, slots=True)
+class DetectorInputV1:
+    """The complete bounded input visible to an SDK-v1 detector."""
+
+    source_kind: SourceKind
+    prefix: bytes
+    reached_eof: bool
+    effective_limit: int
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.source_kind, SourceKind):
+            raise ValueError("source_kind must be a SourceKind")
+        if not isinstance(self.prefix, bytes):
+            raise ValueError("prefix must be bytes")
+        if not isinstance(self.reached_eof, bool):
+            raise ValueError("reached_eof must be a boolean")
+        limit = _bounded_integer(self.effective_limit, "effective_limit")
+        if len(self.prefix) > limit:
+            raise ValueError("prefix exceeds effective_limit")
+
+
+@dataclass(frozen=True, slots=True)
+class DetectorCandidateV1:
+    """One plugin detector claim for an existing Phase 2 modality."""
+
+    modality_id: Literal["text", "binary"]
+    confidence: int
+    evidence_codes: tuple[str, ...]
+    evidence_counts: JsonObject
+
+    def __post_init__(self) -> None:
+        if self.modality_id not in ("text", "binary"):
+            raise ValueError("unknown detection modality")
+        _bounded_integer(self.confidence, "confidence")
+        if self.confidence > 1000:
+            raise ValueError("confidence must be in 0..1000")
+        object.__setattr__(
+            self,
+            "evidence_codes",
+            _string_tuple(self.evidence_codes, "evidence_codes", identifiers=True),
+        )
+        if not isinstance(self.evidence_counts, dict):
+            raise ValueError("evidence_counts must be a JSON object")
+
+
+class DetectorHandleV1(Protocol):
+    """Executable SDK-v1 detector handle associated with one declaration."""
+
+    capability_id: str
+
+    def availability(self) -> CapabilityAvailabilityV1: ...
+
+    def detect(self, source: DetectorInputV1) -> tuple[DetectorCandidateV1, ...]: ...
+
+
+class SourceServiceV1(Protocol):
+    """Replayable, bounded source access controlled by the host lifecycle."""
+
+    source_kind: SourceKind
+    label: str | None
+    size_bytes: int
+
+    def read(self) -> bytes: ...
+
+    def iter_chunks(self, chunk_bytes: int) -> Iterator[bytes]: ...
+
+
+class ComparatorRunV1(Protocol):
+    """One single-use comparator lifecycle owned and ordered by the host."""
+
+    def decode(self) -> None: ...
+
+    def normalize(self) -> None: ...
+
+    def align(self) -> None: ...
+
+    def compare(self) -> None: ...
+
+    def aggregate(self) -> PluginComparisonV1: ...
+
+
+class ComparatorHandleV1(Protocol):
+    """Executable SDK-v1 comparator handle associated with one declaration."""
+
+    capability_id: str
+    modality: Literal["text", "binary"]
+    source_stage: Literal["decoding", "normalizing", "aligning", "comparing"]
+
+    def availability(self) -> CapabilityAvailabilityV1: ...
+
+    def create_run(
+        self,
+        before: SourceServiceV1,
+        after: SourceServiceV1,
+        spec: TextCompareSpec | BinaryCompareSpec,
+    ) -> ComparatorRunV1: ...
+
+
+type CapabilityHandleV1 = DetectorHandleV1 | ComparatorHandleV1
+
+
+@dataclass(frozen=True, slots=True)
+class PluginComparisonV1:
+    """Validated comparison facts returned before host-owned provenance wrapping."""
+
+    relation: Relation
+    verdict: Verdict
+    fidelity: Fidelity
+    summary: DiffSummary
+    changes: ChangeSet
+    metrics: tuple[Metric, ...]
+    evaluations: tuple[PolicyEvaluation, ...]
+    artifacts: tuple[ArtifactRef, ...]
+    transformations: tuple[TransformationRecord, ...]
+    algorithm_id: str
+    implementation_version: str
+    resources: tuple[ResourceUsage, ...] = ()
+    diagnostics: tuple[Diagnostic, ...] = ()
+
+    def __post_init__(self) -> None:
+        _stable_identifier(self.algorithm_id, "algorithm_id")
+        _identity_text(self.implementation_version, "implementation_version")
+        for field_name, expected_type in (
+            ("metrics", Metric),
+            ("evaluations", PolicyEvaluation),
+            ("artifacts", ArtifactRef),
+            ("transformations", TransformationRecord),
+            ("resources", ResourceUsage),
+            ("diagnostics", Diagnostic),
+        ):
+            values = getattr(self, field_name)
+            if not isinstance(values, tuple) or not all(
+                isinstance(item, expected_type) for item in values
+            ):
+                raise ValueError(f"{field_name} contains invalid values")
+        if self.summary.change_count != self.changes.total_count:
+            raise ValueError("summary and ChangeSet totals must agree")
+
+
+class PluginErrorV1(Exception):
+    """Base class for expected, safely mappable SDK-v1 plugin failures."""
+
+
+class PluginExecutionErrorV1(PluginErrorV1):
+    """A selected plugin could not complete its current lifecycle method."""
+
+
+class PluginResourceLimitErrorV1(PluginErrorV1):
+    """A selected plugin exhausted a deterministic host or plugin budget."""
+
+
+class PluginUnavailableErrorV1(PluginErrorV1):
+    """A deterministic capability probe reported pre-execution unavailability."""
+
+    def __init__(self, reason_code: str) -> None:
+        super().__init__("The plugin capability is unavailable.")
+        self.reason_code = _stable_identifier(reason_code, "reason_code")
 
 
 @dataclass(frozen=True, slots=True)
@@ -252,6 +455,7 @@ class PluginManifestV1:
     required_host_features: tuple[str, ...]
     capabilities: tuple[CapabilityDeclarationV1, ...]
     license_expression: str
+    capability_handles: tuple[CapabilityHandleV1, ...] = ()
 
     def __post_init__(self) -> None:
         _bounded_integer(self.manifest_schema_version, "manifest_schema_version")
@@ -298,6 +502,33 @@ class PluginManifestV1:
             ),
         )
         _identity_text(self.license_expression, "license_expression")
+        if not isinstance(self.capability_handles, tuple):
+            raise ValueError("capability_handles must be a tuple")
+        handle_ids: list[str] = []
+        for handle in self.capability_handles:
+            try:
+                handle_id = _stable_identifier(handle.capability_id, "capability_id")
+            except (AttributeError, TypeError) as error:
+                raise ValueError(
+                    "capability_handles contains an invalid handle"
+                ) from error
+            handle_ids.append(handle_id)
+        if len(handle_ids) != len(set(handle_ids)):
+            raise ValueError("capability handle identifiers must be unique")
+        declaration_ids = {item.capability_id for item in self.capabilities}
+        if not set(handle_ids).issubset(declaration_ids):
+            raise ValueError("each capability handle requires a declaration")
+        object.__setattr__(
+            self,
+            "capability_handles",
+            tuple(
+                handle
+                for _, handle in sorted(
+                    zip(handle_ids, self.capability_handles, strict=True),
+                    key=lambda pair: pair[0],
+                )
+            ),
+        )
 
 
 class PluginManifestFactoryV1(Protocol):

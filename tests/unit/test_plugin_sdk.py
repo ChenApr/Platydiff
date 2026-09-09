@@ -69,7 +69,7 @@ def test_sdk_v1_constants_are_explicit() -> None:
     assert PLUGIN_ENTRY_POINT_GROUP == "platydiff.plugins.v1"
     assert PLUGIN_MANIFEST_SCHEMA_VERSION == 1
     assert PLUGIN_API_MAJOR == 1
-    assert PLUGIN_API_MINOR == 0
+    assert PLUGIN_API_MINOR == 1
 
 
 def test_manifest_is_immutable_and_normalizes_ordered_inventory() -> None:

@@ -180,7 +180,7 @@ def test_duplicate_plugin_ids_quarantine_every_claimant(
         (
             _EntryPoint(
                 "org.example.scidiff",
-                lambda: _manifest(minimum_api_minor=1, maximum_api_minor=1),
+                lambda: _manifest(minimum_api_minor=2, maximum_api_minor=2),
             ),
             "plugin_api_incompatible",
         ),
