@@ -421,8 +421,9 @@ digest、每个 alignment candidate-pair score、每个 visited paired node，�
 truncation 前 emitted 的 insert/delete/move/update change 各计一个 unit。每个 unit 都在动作前
 检查。默认值尽量继承 RFC 0002 与 RFC 0006：16 MiB input 与 4 MiB payload 匹配既有
 text/structured default；1,000,000 token/node ceiling 匹配 structured node ceiling；
-5,000,000 work unit 匹配既有 comparison budget。Acceptance 必须包含 adversarial evidence，
-证明这些默认值在选定 parser backend 上能约束 memory。
+5,000,000 work unit 匹配既有 comparison budget。P6-S1 `lexical_text` 可以依赖 RFC 0002
+text limit，因为它不选择或加载 parser backend。P6-S2 在开始前必须有 adversarial evidence，
+证明 token/node/work default 能在选定 parser backend 上约束 memory。
 
 Adversarial test 必须包含极端 depth、width、token stream、重复 subtree、病态 move
 ambiguity、Unicode identifier/control、混合 newline、巨大 comment、未终止 literal、
@@ -795,7 +796,9 @@ renderer escaping 均有测试。
 
 Gate：backend dependency/license/platform review 完成；grammar version 在 provenance 中 pin；
 parser recovery、comment、formatting、stable node path、alignment、insert/delete/update/move
-语义、work limit、native failure behavior 与 deterministic repeated run 通过。
+语义、work limit、native failure behavior 与 deterministic repeated run 通过。该 gate
+开始前必须提供 adversarial evidence，证明选定 parser backend 能强制 token、node、work、
+input 与 payload default。
 
 ### P6-P1a：PDF schema 与 binary view
 

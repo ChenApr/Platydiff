@@ -466,8 +466,10 @@ truncation. Each unit is checked before the action. Default values are inherited
 from RFC 0002 and RFC 0006 where possible: 16 MiB input and 4 MiB payload match
 existing text/structured defaults, 1,000,000 token/node ceilings match the
 structured node ceiling, and 5,000,000 work units match the existing comparison
-budget. Acceptance must include adversarial evidence that these defaults bound
-memory on the selected parser backend.
+budget. P6-S1 `lexical_text` may rely on the RFC 0002 text limits because it
+does not select or load a parser backend. P6-S2 may not start until adversarial
+evidence proves the token/node/work defaults bound memory on the selected parser
+backend.
 
 Adversarial tests must include extreme depth, width, token streams, repeated
 subtrees, pathological move ambiguity, Unicode identifiers and controls, mixed
@@ -901,7 +903,9 @@ newline, malformed input, and renderer escaping are tested.
 Gate: backend dependency/license/platform review is complete; grammar versions
 are pinned in provenance; parser recovery, comments, formatting, stable node
 paths, alignment, insert/delete/update/move semantics, work limits, native
-failure behavior, and deterministic repeated runs pass.
+failure behavior, and deterministic repeated runs pass. This gate must provide
+adversarial evidence that the selected parser backend enforces token, node,
+work, input, and payload defaults before implementation starts.
 
 ### P6-P1a: PDF schema and binary view
 
