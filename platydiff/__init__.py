@@ -32,6 +32,7 @@ from platydiff.core.models import (
     UnavailableOutcome,
     Verdict,
 )
+from platydiff.plugins import PluginCatalogV1, PluginDiscoveryPolicy, discover_plugins
 
 __all__ = [
     "AutoCompareSpec",
@@ -53,6 +54,8 @@ __all__ = [
     "MetricDirection",
     "NewlinePolicy",
     "PathSource",
+    "PluginCatalogV1",
+    "PluginDiscoveryPolicy",
     "Relation",
     "ResourceLimits",
     "Source",
@@ -64,4 +67,5 @@ __all__ = [
     "Verdict",
     "__version__",
     "compare",
+    "discover_plugins",
 ]

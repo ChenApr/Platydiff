@@ -64,6 +64,12 @@ def test_built_distributions_use_explicit_content_boundaries(tmp_path: Path) -> 
     assert prefix + "pyproject.toml" in sdist_names
     assert prefix + "LICENSE" in sdist_names
     assert prefix + "platydiff/core/models.py" in sdist_names
+    assert prefix + "platydiff/plugin_sdk/_models.py" in sdist_names
+    assert prefix + "platydiff/plugins/_discovery.py" in sdist_names
+    assert prefix + "docs/plugin-sdk.md" in sdist_names
+    assert (
+        prefix + "tests/plugin_compatibility/test_discovery_profile.py" in sdist_names
+    )
     assert prefix + "tests/unit/test_contracts.py" in sdist_names
     assert not any("_to_delete" in name for name in sdist_names)
     assert not any("untracked-root-sentinel" in name for name in sdist_names)
@@ -71,6 +77,8 @@ def test_built_distributions_use_explicit_content_boundaries(tmp_path: Path) -> 
     with zipfile.ZipFile(wheel) as archive:
         wheel_names = set(archive.namelist())
     assert "platydiff/core/models.py" in wheel_names
+    assert "platydiff/plugin_sdk/_models.py" in wheel_names
+    assert "platydiff/plugins/_discovery.py" in wheel_names
     assert "platydiff/py.typed" in wheel_names
     assert any(name.endswith(".dist-info/licenses/LICENSE") for name in wheel_names)
     assert not any("_to_delete" in name for name in wheel_names)

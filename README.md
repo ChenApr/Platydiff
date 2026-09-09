@@ -5,8 +5,10 @@
 `platydiff` is an extensible multimodal diff engine for scientific data,
 experimental regression testing, and competition workflows. Phases 1 and 2
 implement explicit text, exact binary, and opt-in automatic text/binary
-comparison through a typed Python API or CLI. Results use the schema-v1 outcome
-contract. The implementation remains unreleased.
+comparison through a typed Python API or CLI. P3-A also implements immutable
+plugin declarations and explicit allowlisted discovery without capability
+execution. Results use the schema-v1 outcome contract. The implementation
+remains unreleased.
 
 ## Install for development
 
@@ -88,26 +90,31 @@ chunks and compares actual bytes. See the
 
 ## Implemented and planned capabilities
 
-Implemented in Phases 1 and 2:
+Implemented in Phases 1, 2, and the P3-A declaration/discovery gate:
 
 - Python 3.12+ library and `platydiff` CLI;
 - schema-v1 `CompareOutcome` and `DiffResult` JSON serialization;
 - strict line-oriented text comparison;
 - deterministic linear-space Myers insert/delete edit scripts;
-- terminal and JSON renderers with bounded change details.
+- terminal and JSON renderers with bounded change details;
 - bounded deterministic text/binary detection and internal capability resolution;
-- collision-safe exact binary comparison with payload-free change spans.
+- collision-safe exact binary comparison with payload-free change spans;
+- immutable SDK-v1 manifests and capability/dependency/platform inventory;
+- explicit entry-point discovery, exact allowlists, version/feature negotiation,
+  and deterministic conflict quarantine without capability execution.
 
 Planned, not implemented:
 
-- public plugin discovery or SDKs (the contract is accepted in
-  [RFC 0005](docs/rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility.md),
-  but implementation remains separately gated);
+- plugin comparison execution, provider provenance/schema v2, CLI plugin flags,
+  third-party renderer invocation, and published compatibility receipts (the
+  remaining contract is gated by
+  [RFC 0005](docs/rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility.md));
 - JSON/YAML, tables, arrays, images, source code, PDF, audio, and video;
 - stdin, directories, recursive comparison, and configuration files;
 - color, HTML, JUnit, and patch artifacts.
 
 See [the architecture](docs/architecture.md) for the broader design direction.
+See [the plugin SDK guide](docs/plugin-sdk.md) for the implemented P3-A boundary.
 Algorithm provenance and known constraints are recorded in
 [the algorithm references](docs/algorithm-references.md).
 

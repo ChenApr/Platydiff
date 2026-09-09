@@ -4,7 +4,8 @@
 
 `platydiff` 是一个面向科研数据、实验回归测试与竞赛工作流的可扩展多模态
 Diff 引擎。Phase 1 与 Phase 2 已实现显式文本、精确二进制，以及需要显式启用的
-文本/二进制自动探测；Python API 与 CLI 均输出 schema-v1 outcome。当前仍未发布。
+文本/二进制自动探测。P3-A 还实现了 immutable 插件声明和不执行 capability 的显式
+allowlist discovery；Python API 与 CLI 均输出 schema-v1 outcome。当前仍未发布。
 
 ## 开发环境安装
 
@@ -79,26 +80,31 @@ platydiff compare --type auto before.dat after.dat
 
 ## 已实现与计划能力
 
-Phase 1 与 Phase 2 已实现：
+Phase 1、Phase 2 与 P3-A declaration/discovery 门禁已实现：
 
 - Python 3.12+ 库与 `platydiff` CLI；
 - schema-v1 `CompareOutcome` 和 `DiffResult` JSON 序列化；
 - strict 行级文本比较；
 - 确定性、线性辅助空间的 Myers insert/delete 编辑脚本；
-- 具有有界 change 明细的 terminal 与 JSON renderer。
+- 具有有界 change 明细的 terminal 与 JSON renderer；
 - 有界、确定性的文本/二进制探测与内部 capability resolution；
-- collision-safe 的精确二进制比较和不携带 payload 的 change span。
+- collision-safe 的精确二进制比较和不携带 payload 的 change span；
+- immutable SDK-v1 manifest 与 capability/dependency/platform inventory；
+- 不执行 capability 的显式 entry-point discovery、精确 allowlist、版本/feature 协商与
+  确定性冲突隔离。
 
 计划中、尚未实现：
 
-- 公共插件发现或 SDK（契约已由
+- 插件 comparison execution、provider provenance/schema v2、CLI 插件参数、第三方
+  renderer invocation 与发布的 compatibility receipt（剩余契约仍由
   [RFC 0005](docs/rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility_zh.md)
-  接受，但实施仍需单独授权）；
+  门禁控制）；
 - JSON/YAML、表格、数组、图片、源代码、PDF、音频和视频；
 - stdin、目录、递归比较和配置文件；
 - color、HTML、JUnit 和 patch artifact。
 
 更广泛的设计方向见[架构文档](docs/architecture_zh.md)。
+已实现的 P3-A 边界见[插件 SDK 指南](docs/plugin-sdk_zh.md)。
 算法来源与已知限制记录在[算法来源文档](docs/algorithm-references_zh.md)中。
 
 ## 许可证

@@ -7,6 +7,11 @@ import sys
 from pathlib import Path
 
 from platydiff import TextCompareSpec, TextSource, compare
+from platydiff.plugin_sdk import (
+    CapabilityDeclarationV1,
+    CapabilityKind,
+    PluginManifestV1,
+)
 
 
 def test_readme_python_example() -> None:
@@ -42,3 +47,24 @@ def test_readme_cli_examples(tmp_path: Path) -> None:
         )
         assert result.returncode == 0
         assert "equal: pass" in result.stdout
+
+
+def test_plugin_sdk_documentation_example() -> None:
+    manifest = PluginManifestV1(
+        manifest_schema_version=1,
+        plugin_id="org.example.scidiff",
+        plugin_version="1.0",
+        api_major=1,
+        minimum_api_minor=0,
+        maximum_api_minor=0,
+        required_host_features=(),
+        capabilities=(
+            CapabilityDeclarationV1(
+                capability_id="org.example.scidiff.text_exact",
+                kind=CapabilityKind.COMPARATOR,
+                implementation_version="1.0",
+            ),
+        ),
+        license_expression="Apache-2.0",
+    )
+    assert manifest.plugin_id == "org.example.scidiff"

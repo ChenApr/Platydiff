@@ -9,6 +9,9 @@ All notable changes to Platydiff are documented in this file.
 - Implemented the Phase 2 bounded automatic text/binary detector, deterministic
   built-in capability resolution, exact streaming binary comparator, Python
   contracts, and CLI routes.
+- Implemented Phase 3 gate P3-A with immutable SDK-v1 plugin manifests,
+  capability/dependency/platform inventory, and explicit allowlisted entry-point
+  discovery with deterministic validation, negotiation, and conflict quarantine.
 - Recorded the terminal/HTML-first human review UI roadmap without authorizing
   UI implementation or scheduling.
 - Python 3.12 package and `platydiff` console entry point.
@@ -27,10 +30,15 @@ All notable changes to Platydiff are documented in this file.
 - Safe separation of rendered outcomes on stdout from parser and renderer
   failures on stderr.
 
-Later modalities and public plugin discovery remain planned.
+Plugin capability execution, schema-v2 provider provenance, CLI plugin flags,
+third-party renderer invocation, compatibility receipts, and later modalities
+remain planned.
 
 ### Changed
 
+- Aligned plugin and dependency distribution-name validation and normalization
+  with the PyPA name specification, including valid separator runs and strict
+  full-string anchoring.
 - Extended the unreleased schema v1 with `auto` and `binary` specifications,
   `binary_span` changes, and optional detection provenance. Existing explicit
   text payloads remain byte-for-byte compatible; pre-release Phase 1 readers
