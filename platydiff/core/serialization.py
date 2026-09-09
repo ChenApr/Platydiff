@@ -1,4 +1,4 @@
-"""Validated schema-v1 JSON serialization."""
+"""Validated schema-v1 and schema-v2 JSON serialization."""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ from typing import Literal, cast
 
 from platydiff.core.models import (
     SCHEMA_VERSION,
+    SCHEMA_VERSION_V2,
+    AnyCompareOutcome,
     ArtifactRef,
     AutoCompareSpec,
     AutoResourceLimits,
@@ -17,15 +19,20 @@ from platydiff.core.models import (
     BinaryResourceLimits,
     BinarySpan,
     CapabilityAttempt,
+    CapabilityAttemptV2,
     CapabilityProblem,
+    CapabilityProblemV2,
     Change,
     ChangeCompleteness,
     ChangeSelection,
     ChangeSet,
     CompareOutcome,
+    CompareOutcomeV2,
     CompareSpec,
     ComparisonProvenance,
+    ComparisonProvenanceV2,
     CompletedOutcome,
+    CompletedOutcomeV2,
     DetectionCandidate,
     DetectionRecord,
     Diagnostic,
@@ -33,9 +40,12 @@ from platydiff.core.models import (
     DiffResult,
     DiffSummary,
     ExecutionProblem,
+    ExecutionProblemV2,
     ExecutionRecord,
+    ExecutionRecordV2,
     ExtensionChange,
     FailedOutcome,
+    FailedOutcomeV2,
     Fidelity,
     FiniteValue,
     HunkLine,
@@ -50,8 +60,10 @@ from platydiff.core.models import (
     NumericValue,
     PairDetectionCandidate,
     PipelineStage,
+    PluginHostExecutionRecord,
     PolicyEvaluation,
     PositiveInfinityValue,
+    ProviderIdentity,
     Relation,
     ResourceLimits,
     ResourceUsage,
@@ -65,6 +77,7 @@ from platydiff.core.models import (
     TextHunk,
     TransformationRecord,
     UnavailableOutcome,
+    UnavailableOutcomeV2,
     Verdict,
 )
 
@@ -548,6 +561,80 @@ def _detection_from_data(value: JsonValue) -> DetectionRecord:
     return record
 
 
+def _provider_to_data(provider: ProviderIdentity) -> JsonObject:
+    return {
+        "plugin_id": provider.plugin_id,
+        "plugin_version": provider.plugin_version,
+        "distribution_name": provider.distribution_name,
+        "distribution_version": provider.distribution_version,
+        "manifest_schema_version": provider.manifest_schema_version,
+        "api_major": provider.api_major,
+        "negotiated_api_minor": provider.negotiated_api_minor,
+        "negotiated_host_features": list(provider.negotiated_host_features),
+    }
+
+
+def _provider_from_data(value: JsonValue) -> ProviderIdentity:
+    data = _object(value, "provider identity")
+    try:
+        return ProviderIdentity(
+            plugin_id=_string(_required(data, "plugin_id"), "plugin_id"),
+            plugin_version=_string(_required(data, "plugin_version"), "plugin_version"),
+            distribution_name=_string(
+                _required(data, "distribution_name"), "distribution_name"
+            ),
+            distribution_version=_string(
+                _required(data, "distribution_version"), "distribution_version"
+            ),
+            manifest_schema_version=_integer(
+                _required(data, "manifest_schema_version"), "manifest_schema_version"
+            ),
+            api_major=_integer(_required(data, "api_major"), "api_major"),
+            negotiated_api_minor=_integer(
+                _required(data, "negotiated_api_minor"), "negotiated_api_minor"
+            ),
+            negotiated_host_features=tuple(
+                _string(item, "negotiated host feature")
+                for item in _array(
+                    _required(data, "negotiated_host_features"),
+                    "negotiated_host_features",
+                )
+            ),
+        )
+    except ValueError as error:
+        raise SerializationError(str(error)) from error
+
+
+def _plugin_host_to_data(record: PluginHostExecutionRecord) -> JsonObject:
+    return {
+        "enabled_plugin_ids": list(record.enabled_plugin_ids),
+        "loaded_providers": [
+            _provider_to_data(provider) for provider in record.loaded_providers
+        ],
+    }
+
+
+def _plugin_host_from_data(value: JsonValue) -> PluginHostExecutionRecord:
+    data = _object(value, "plugin host")
+    try:
+        return PluginHostExecutionRecord(
+            enabled_plugin_ids=tuple(
+                _string(item, "enabled plugin ID")
+                for item in _array(
+                    _required(data, "enabled_plugin_ids"), "enabled_plugin_ids"
+                )
+            ),
+            loaded_providers=tuple(
+                _provider_from_data(item)
+                for item in _array(
+                    _required(data, "loaded_providers"), "loaded_providers"
+                )
+            ),
+        )
+    except ValueError as error:
+        raise SerializationError(str(error)) from error
+
+
 def _execution_to_data(record: ExecutionRecord) -> JsonObject:
     data: JsonObject = {
         "started_at": record.started_at,
@@ -560,6 +647,19 @@ def _execution_to_data(record: ExecutionRecord) -> JsonObject:
                 "backend_id": attempt.backend_id,
                 "disposition": attempt.disposition,
                 "reason_code": attempt.reason_code,
+                **(
+                    {
+                        "capability_version": attempt.capability_version,
+                        "backend_version": attempt.backend_version,
+                        "provider": (
+                            None
+                            if attempt.provider is None
+                            else _provider_to_data(attempt.provider)
+                        ),
+                    }
+                    if isinstance(attempt, CapabilityAttemptV2)
+                    else {}
+                ),
             }
             for attempt in record.attempts
         ],
@@ -581,33 +681,79 @@ def _execution_to_data(record: ExecutionRecord) -> JsonObject:
     }
     if record.detection is not None:
         data["detection"] = _detection_to_data(record.detection)
+    if isinstance(record, ExecutionRecordV2):
+        data["plugin_host"] = (
+            None
+            if record.plugin_host is None
+            else _plugin_host_to_data(record.plugin_host)
+        )
     return data
 
 
-def _execution_from_data(value: JsonValue) -> ExecutionRecord:
+def _execution_from_data(
+    value: JsonValue, *, schema_version: Literal[1, 2] = 1
+) -> ExecutionRecord:
     data = _object(value, "execution")
-    attempts: list[CapabilityAttempt] = []
+    attempts: list[CapabilityAttempt | CapabilityAttemptV2] = []
     for value_item in _array(_required(data, "attempts"), "attempts"):
         item = _object(value_item, "capability attempt")
         disposition = _string(_required(item, "disposition"), "disposition")
-        if disposition not in ("selected", "rejected", "fallback"):
-            raise SerializationError("unknown capability attempt disposition")
-        attempts.append(
-            CapabilityAttempt(
-                capability_id=_string(
-                    _required(item, "capability_id"), "capability_id"
-                ),
-                backend_id=_optional_string(
-                    _required(item, "backend_id"), "backend_id"
-                ),
-                disposition=cast(
-                    Literal["selected", "rejected", "fallback"], disposition
-                ),
-                reason_code=_optional_string(
-                    _required(item, "reason_code"), "reason_code"
-                ),
-            )
+        allowed_dispositions = (
+            ("selected", "rejected", "fallback", "unavailable", "failed")
+            if schema_version == 2
+            else ("selected", "rejected", "fallback")
         )
+        if disposition not in allowed_dispositions:
+            raise SerializationError("unknown capability attempt disposition")
+        capability_id = _string(_required(item, "capability_id"), "capability_id")
+        backend_id = _optional_string(_required(item, "backend_id"), "backend_id")
+        reason_code = _optional_string(_required(item, "reason_code"), "reason_code")
+        try:
+            if schema_version == 2:
+                raw_provider = _required(item, "provider")
+                attempts.append(
+                    CapabilityAttemptV2(
+                        capability_id=capability_id,
+                        backend_id=backend_id,
+                        disposition=cast(
+                            Literal[
+                                "selected",
+                                "rejected",
+                                "fallback",
+                                "unavailable",
+                                "failed",
+                            ],
+                            disposition,
+                        ),
+                        reason_code=reason_code,
+                        capability_version=_optional_string(
+                            _required(item, "capability_version"),
+                            "capability_version",
+                        ),
+                        backend_version=_optional_string(
+                            _required(item, "backend_version"), "backend_version"
+                        ),
+                        provider=(
+                            None
+                            if raw_provider is None
+                            else _provider_from_data(raw_provider)
+                        ),
+                    )
+                )
+            else:
+                attempts.append(
+                    CapabilityAttempt(
+                        capability_id=capability_id,
+                        backend_id=backend_id,
+                        disposition=cast(
+                            Literal["selected", "rejected", "fallback"],
+                            disposition,
+                        ),
+                        reason_code=reason_code,
+                    )
+                )
+        except ValueError as error:
+            raise SerializationError(str(error)) from error
     diagnostics: list[Diagnostic] = []
     for value_item in _array(_required(data, "diagnostics"), "diagnostics"):
         item = _object(value_item, "diagnostic")
@@ -638,7 +784,16 @@ def _execution_from_data(value: JsonValue) -> ExecutionRecord:
     )
     detection = _detection_from_data(data["detection"]) if "detection" in data else None
     try:
-        return ExecutionRecord(
+        record_type = ExecutionRecordV2 if schema_version == 2 else ExecutionRecord
+        record_kwargs: dict[str, object] = {}
+        if schema_version == 2:
+            raw_plugin_host = _required(data, "plugin_host")
+            record_kwargs["plugin_host"] = (
+                None
+                if raw_plugin_host is None
+                else _plugin_host_from_data(raw_plugin_host)
+            )
+        return record_type(
             started_at=_string(_required(data, "started_at"), "started_at"),
             finished_at=_string(_required(data, "finished_at"), "finished_at"),
             duration_ns=_integer(_required(data, "duration_ns"), "duration_ns"),
@@ -650,12 +805,18 @@ def _execution_from_data(value: JsonValue) -> ExecutionRecord:
             diagnostics=tuple(diagnostics),
             last_completed_stage=last,
             detection=detection,
+            **record_kwargs,
         )
     except ValueError as error:
         raise SerializationError(str(error)) from error
 
 
-def _problem_to_data(problem: ExecutionProblem | CapabilityProblem) -> JsonObject:
+def _problem_to_data(
+    problem: ExecutionProblem
+    | CapabilityProblem
+    | ExecutionProblemV2
+    | CapabilityProblemV2,
+) -> JsonObject:
     return {
         "code": problem.code,
         "status_code": problem.status_code,
@@ -667,8 +828,8 @@ def _problem_to_data(problem: ExecutionProblem | CapabilityProblem) -> JsonObjec
 
 
 def _problem_from_data(
-    value: JsonValue, *, unavailable: bool
-) -> ExecutionProblem | CapabilityProblem:
+    value: JsonValue, *, unavailable: bool, schema_version: Literal[1, 2] = 1
+) -> ExecutionProblem | CapabilityProblem | ExecutionProblemV2 | CapabilityProblemV2:
     data = _object(value, "problem")
     code = _string(_required(data, "code"), "problem code")
     status_code = _integer(_required(data, "status_code"), "status_code")
@@ -678,6 +839,15 @@ def _problem_from_data(
     retryable = _boolean(_required(data, "retryable"), "retryable")
     try:
         if unavailable:
+            if schema_version == 2:
+                return CapabilityProblemV2(
+                    code=code,
+                    status_code=status_code,
+                    stage=stage,
+                    message=message,
+                    details=details,
+                    retryable=retryable,
+                )
             return CapabilityProblem(
                 code=code,
                 status_code=status_code,
@@ -686,7 +856,8 @@ def _problem_from_data(
                 details=details,
                 retryable=retryable,
             )
-        return ExecutionProblem(
+        problem_type = ExecutionProblemV2 if schema_version == 2 else ExecutionProblem
+        return problem_type(
             code=code,
             status_code=status_code,
             stage=stage,
@@ -699,7 +870,7 @@ def _problem_from_data(
 
 
 def _provenance_to_data(value: ComparisonProvenance) -> JsonObject:
-    return {
+    data: JsonObject = {
         "inputs": [
             {
                 "role": item.role,
@@ -729,9 +900,21 @@ def _provenance_to_data(value: ComparisonProvenance) -> JsonObject:
             for item in value.resources
         ],
     }
+    if isinstance(value, ComparisonProvenanceV2):
+        data["provider"] = (
+            None if value.provider is None else _provider_to_data(value.provider)
+        )
+        data["detector_provider"] = (
+            None
+            if value.detector_provider is None
+            else _provider_to_data(value.detector_provider)
+        )
+    return data
 
 
-def _provenance_from_data(value: JsonValue) -> ComparisonProvenance:
+def _provenance_from_data(
+    value: JsonValue, *, schema_version: Literal[1, 2] = 1
+) -> ComparisonProvenance:
     data = _object(value, "provenance")
     inputs: list[InputProvenance] = []
     for raw in _array(_required(data, "inputs"), "inputs"):
@@ -781,7 +964,24 @@ def _provenance_from_data(value: JsonValue) -> ComparisonProvenance:
         _integer(item, "seed") for item in _array(_required(data, "seeds"), "seeds")
     )
     try:
-        return ComparisonProvenance(
+        provenance_type = (
+            ComparisonProvenanceV2 if schema_version == 2 else ComparisonProvenance
+        )
+        provenance_kwargs: dict[str, object] = {}
+        if schema_version == 2:
+            raw_provider = _required(data, "provider")
+            raw_detector_provider = _required(data, "detector_provider")
+            provenance_kwargs = {
+                "provider": (
+                    None if raw_provider is None else _provider_from_data(raw_provider)
+                ),
+                "detector_provider": (
+                    None
+                    if raw_detector_provider is None
+                    else _provider_from_data(raw_detector_provider)
+                ),
+            }
+        return provenance_type(
             inputs=(inputs[0], inputs[1]),
             spec=_object(_required(data, "spec"), "normalized spec"),
             transformations=tuple(transformations),
@@ -795,6 +995,7 @@ def _provenance_from_data(value: JsonValue) -> ComparisonProvenance:
             ),
             seeds=seeds,
             resources=tuple(resources),
+            **provenance_kwargs,
         )
     except ValueError as error:
         raise SerializationError(str(error)) from error
@@ -983,7 +1184,9 @@ def _result_to_data(result: DiffResult) -> JsonObject:
     }
 
 
-def _result_from_data(value: JsonValue) -> DiffResult:
+def _result_from_data(
+    value: JsonValue, *, schema_version: Literal[1, 2] = 1
+) -> DiffResult:
     data = _object(value, "result")
     summary_data = _object(_required(data, "summary"), "summary")
     counts: list[SummaryCount] = []
@@ -1114,51 +1317,127 @@ def _result_from_data(value: JsonValue) -> DiffResult:
             metrics=tuple(metrics),
             evaluations=tuple(evaluations),
             artifacts=tuple(artifacts),
-            provenance=_provenance_from_data(_required(data, "provenance")),
+            provenance=_provenance_from_data(
+                _required(data, "provenance"), schema_version=schema_version
+            ),
         )
     except ValueError as error:
         raise SerializationError(str(error)) from error
 
 
-def outcome_to_data(outcome: CompareOutcome) -> JsonObject:
-    """Convert an outcome to stable JSON-safe schema-v1 data."""
+def outcome_to_data(outcome: AnyCompareOutcome) -> JsonObject:
+    """Convert an outcome to stable JSON-safe schema-v1 or schema-v2 data."""
+    _validate_outcome_schema_for_encoding(outcome)
     common: JsonObject = {
         "schema_version": outcome.schema_version,
         "kind": outcome.kind,
         "execution": _execution_to_data(outcome.execution),
     }
-    if isinstance(outcome, CompletedOutcome):
+    if isinstance(outcome, (CompletedOutcome, CompletedOutcomeV2)):
         common["result"] = _result_to_data(outcome.result)
     else:
         common["problem"] = _problem_to_data(outcome.problem)
     return common
 
 
-def outcome_from_data(value: JsonValue) -> CompareOutcome:
-    """Validate generic JSON data and construct a schema-v1 outcome."""
+def _validate_outcome_schema_for_encoding(outcome: AnyCompareOutcome) -> None:
+    if type(outcome) is CompletedOutcome:
+        if (
+            type(outcome.execution) is not ExecutionRecord
+            or type(outcome.result.provenance) is not ComparisonProvenance
+        ):
+            raise SerializationError("schema-v1 outcome contains schema-v2 values")
+    elif type(outcome) is UnavailableOutcome:
+        if (
+            type(outcome.execution) is not ExecutionRecord
+            or type(outcome.problem) is not CapabilityProblem
+        ):
+            raise SerializationError("schema-v1 outcome contains schema-v2 values")
+    elif type(outcome) is FailedOutcome:
+        if (
+            type(outcome.execution) is not ExecutionRecord
+            or type(outcome.problem) is not ExecutionProblem
+        ):
+            raise SerializationError("schema-v1 outcome contains schema-v2 values")
+    elif type(outcome) is CompletedOutcomeV2:
+        if (
+            type(outcome.execution) is not ExecutionRecordV2
+            or type(outcome.result.provenance) is not ComparisonProvenanceV2
+        ):
+            raise SerializationError("schema-v2 outcome contains schema-v1 values")
+    elif type(outcome) is UnavailableOutcomeV2:
+        if (
+            type(outcome.execution) is not ExecutionRecordV2
+            or type(outcome.problem) is not CapabilityProblemV2
+        ):
+            raise SerializationError("schema-v2 outcome contains schema-v1 values")
+    elif type(outcome) is FailedOutcomeV2:
+        if (
+            type(outcome.execution) is not ExecutionRecordV2
+            or type(outcome.problem) is not ExecutionProblemV2
+        ):
+            raise SerializationError("schema-v2 outcome contains schema-v1 values")
+    else:
+        raise SerializationError("unknown outcome type")
+
+
+def outcome_from_data(value: JsonValue) -> AnyCompareOutcome:
+    """Validate generic JSON data and construct a schema-v1 or schema-v2 outcome."""
     data = _object(value, "outcome")
     schema_version = _integer(_required(data, "schema_version"), "schema_version")
-    if schema_version != SCHEMA_VERSION:
+    if schema_version not in (SCHEMA_VERSION, SCHEMA_VERSION_V2):
         raise SerializationError(f"unknown schema version: {schema_version}")
+    schema: Literal[1, 2] = 1 if schema_version == 1 else 2
     kind = _string(_required(data, "kind"), "outcome kind")
     if kind == "completed" and "problem" in data:
         raise SerializationError("completed outcome has an incompatible field: problem")
     if kind in ("failed", "unavailable") and "result" in data:
         raise SerializationError(f"{kind} outcome has an incompatible field: result")
-    execution = _execution_from_data(_required(data, "execution"))
+    execution = _execution_from_data(
+        _required(data, "execution"), schema_version=schema
+    )
     try:
         if kind == "completed":
+            if schema == 2:
+                if not isinstance(execution, ExecutionRecordV2):
+                    raise SerializationError("schema-v2 execution has the wrong type")
+                return CompletedOutcomeV2(
+                    execution=execution,
+                    result=_result_from_data(
+                        _required(data, "result"), schema_version=2
+                    ),
+                )
             return CompletedOutcome(
                 execution=execution,
                 result=_result_from_data(_required(data, "result")),
             )
         if kind == "unavailable":
-            problem = _problem_from_data(_required(data, "problem"), unavailable=True)
+            problem = _problem_from_data(
+                _required(data, "problem"),
+                unavailable=True,
+                schema_version=schema,
+            )
+            if schema == 2:
+                if not isinstance(execution, ExecutionRecordV2) or not isinstance(
+                    problem, CapabilityProblemV2
+                ):
+                    raise SerializationError("schema-v2 unavailable types are invalid")
+                return UnavailableOutcomeV2(execution=execution, problem=problem)
             if not isinstance(problem, CapabilityProblem):
                 raise SerializationError("unavailable problem has the wrong type")
             return UnavailableOutcome(execution=execution, problem=problem)
         if kind == "failed":
-            problem = _problem_from_data(_required(data, "problem"), unavailable=False)
+            problem = _problem_from_data(
+                _required(data, "problem"),
+                unavailable=False,
+                schema_version=schema,
+            )
+            if schema == 2:
+                if not isinstance(execution, ExecutionRecordV2) or not isinstance(
+                    problem, ExecutionProblemV2
+                ):
+                    raise SerializationError("schema-v2 failed types are invalid")
+                return FailedOutcomeV2(execution=execution, problem=problem)
             if not isinstance(problem, ExecutionProblem):
                 raise SerializationError("failed problem has the wrong type")
             return FailedOutcome(execution=execution, problem=problem)
@@ -1167,7 +1446,7 @@ def outcome_from_data(value: JsonValue) -> CompareOutcome:
     raise SerializationError(f"unknown outcome kind: {kind}")
 
 
-def dumps_outcome(outcome: CompareOutcome, *, pretty: bool = False) -> str:
+def dumps_outcome(outcome: AnyCompareOutcome, *, pretty: bool = False) -> str:
     """Serialize one outcome as strict UTF-8-compatible JSON text."""
     data = _coerce_json(outcome_to_data(outcome))
     return json.dumps(
@@ -1180,10 +1459,122 @@ def dumps_outcome(outcome: CompareOutcome, *, pretty: bool = False) -> str:
     )
 
 
-def loads_outcome(payload: str) -> CompareOutcome:
+def loads_outcome(payload: str) -> AnyCompareOutcome:
     """Parse untrusted JSON and construct a validated outcome."""
     try:
         raw: object = json.loads(payload, parse_constant=_reject_constant)
     except (ValueError, UnicodeError) as error:
         raise SerializationError("invalid JSON") from error
     return outcome_from_data(_coerce_json(raw))
+
+
+def upgrade_outcome_v1_to_v2(outcome: CompareOutcome) -> CompareOutcomeV2:
+    """Preserve schema-v1 meaning while adding an empty schema-v2 host context."""
+    attempts: tuple[CapabilityAttemptV2, ...] = tuple(
+        CapabilityAttemptV2(
+            attempt.capability_id,
+            attempt.backend_id,
+            attempt.disposition,
+            attempt.reason_code,
+        )
+        for attempt in outcome.execution.attempts
+    )
+
+    def execution_with(
+        upgraded_attempts: tuple[CapabilityAttemptV2, ...],
+    ) -> ExecutionRecordV2:
+        return ExecutionRecordV2(
+            started_at=outcome.execution.started_at,
+            finished_at=outcome.execution.finished_at,
+            duration_ns=outcome.execution.duration_ns,
+            stages=outcome.execution.stages,
+            attempts=upgraded_attempts,
+            diagnostics=outcome.execution.diagnostics,
+            last_completed_stage=outcome.execution.last_completed_stage,
+            detection=outcome.execution.detection,
+            plugin_host=PluginHostExecutionRecord((), ()),
+        )
+
+    if isinstance(outcome, CompletedOutcome):
+        provenance = outcome.result.provenance
+        matching = tuple(
+            index
+            for index, attempt in enumerate(attempts)
+            if attempt.disposition == "selected"
+            and attempt.capability_id == provenance.comparator_id
+        )
+        if not matching:
+            attempts = (
+                *attempts,
+                CapabilityAttemptV2(
+                    provenance.comparator_id,
+                    None,
+                    "selected",
+                    capability_version=provenance.comparator_version,
+                ),
+            )
+        elif len(matching) == 1:
+            index = matching[0]
+            existing = attempts[index]
+            attempts = (
+                *attempts[:index],
+                CapabilityAttemptV2(
+                    existing.capability_id,
+                    existing.backend_id,
+                    existing.disposition,
+                    existing.reason_code,
+                    existing.capability_version or provenance.comparator_version,
+                    existing.backend_version,
+                    existing.provider,
+                ),
+                *attempts[index + 1 :],
+            )
+        execution = execution_with(attempts)
+        result = DiffResult(
+            relation=outcome.result.relation,
+            verdict=outcome.result.verdict,
+            fidelity=outcome.result.fidelity,
+            summary=outcome.result.summary,
+            changes=outcome.result.changes,
+            metrics=outcome.result.metrics,
+            evaluations=outcome.result.evaluations,
+            artifacts=outcome.result.artifacts,
+            provenance=ComparisonProvenanceV2(
+                inputs=provenance.inputs,
+                spec=provenance.spec,
+                transformations=provenance.transformations,
+                comparator_id=provenance.comparator_id,
+                comparator_version=provenance.comparator_version,
+                algorithm_id=provenance.algorithm_id,
+                implementation_version=provenance.implementation_version,
+                seeds=provenance.seeds,
+                resources=provenance.resources,
+            ),
+        )
+        return CompletedOutcomeV2(execution=execution, result=result)
+    execution = execution_with(attempts)
+    if isinstance(outcome, UnavailableOutcome):
+        problem = outcome.problem
+        return UnavailableOutcomeV2(
+            execution=execution,
+            problem=CapabilityProblemV2(
+                problem.code,
+                problem.status_code,
+                problem.stage,
+                problem.message,
+                problem.details,
+                problem.retryable,
+            ),
+        )
+    failed_problem = outcome.problem
+    return FailedOutcomeV2(
+        execution=execution,
+        problem=ExecutionProblemV2(
+            failed_problem.code,
+            failed_problem.status_code,
+            failed_problem.stage,
+            failed_problem.message,
+            failed_problem.details,
+            failed_problem.retryable,
+        ),
+    )

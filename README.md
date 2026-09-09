@@ -5,10 +5,10 @@
 `platydiff` is an extensible multimodal diff engine for scientific data,
 experimental regression testing, and competition workflows. Phases 1 and 2
 implement explicit text, exact binary, and opt-in automatic text/binary
-comparison through a typed Python API or CLI. P3-A also implements immutable
-plugin declarations and explicit allowlisted discovery without capability
-execution. Results use the schema-v1 outcome contract. The implementation
-remains unreleased.
+comparison through a typed Python API or CLI. Phase 3 gate P3-B adds immutable
+plugin hosts, explicitly selected text/binary detector and comparator execution,
+and schema-v2 provider provenance. The existing API and CLI remain built-in-only
+and keep their schema-v1 contract. The implementation remains unreleased.
 
 ## Install for development
 
@@ -90,7 +90,7 @@ chunks and compares actual bytes. See the
 
 ## Implemented and planned capabilities
 
-Implemented in Phases 1, 2, and the P3-A declaration/discovery gate:
+Implemented in Phases 1, 2, and the P3-A/P3-B plugin gates:
 
 - Python 3.12+ library and `platydiff` CLI;
 - schema-v1 `CompareOutcome` and `DiffResult` JSON serialization;
@@ -101,20 +101,24 @@ Implemented in Phases 1, 2, and the P3-A declaration/discovery gate:
 - collision-safe exact binary comparison with payload-free change spans;
 - immutable SDK-v1 manifests and capability/dependency/platform inventory;
 - explicit entry-point discovery, exact allowlists, version/feature negotiation,
-  and deterministic conflict quarantine without capability execution.
+  and deterministic conflict quarantine;
+- explicitly pinned SDK-v1.1 detector/comparator handles with host-owned bounded
+  source access and lifecycle stages, including exact built-in comparator pins
+  for automatic comparisons;
+- schema-v2 provider, attempt, and plugin-host provenance plus a typed v1-to-v2
+  upgrader. `PluginHost.compare()` always returns schema v2.
 
 Planned, not implemented:
 
-- plugin comparison execution, provider provenance/schema v2, CLI plugin flags,
-  third-party renderer invocation, and published compatibility receipts (the
-  remaining contract is gated by
+- CLI plugin flags, third-party renderer invocation, and published compatibility
+  receipts (the remaining contract is gated by
   [RFC 0005](docs/rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility.md));
 - JSON/YAML, tables, arrays, images, source code, PDF, audio, and video;
 - stdin, directories, recursive comparison, and configuration files;
 - color, HTML, JUnit, and patch artifacts.
 
 See [the architecture](docs/architecture.md) for the broader design direction.
-See [the plugin SDK guide](docs/plugin-sdk.md) for the implemented P3-A boundary.
+See [the plugin SDK guide](docs/plugin-sdk.md) for the implemented P3-A/P3-B boundary.
 Algorithm provenance and known constraints are recorded in
 [the algorithm references](docs/algorithm-references.md).
 

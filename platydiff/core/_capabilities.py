@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from platydiff.core.models import (
     AutoCompareSpec,
@@ -20,6 +20,22 @@ from platydiff.core.models import (
 )
 
 type Modality = Literal["text", "binary"]
+
+if TYPE_CHECKING:
+    from platydiff.core._sources import SourceSnapshot
+    from platydiff.core.pipeline import ComparisonCompletion, StageRunner
+
+
+class ComparatorCapabilityHandle(Protocol):
+    """Typed execution boundary implemented outside :mod:`platydiff.core`."""
+
+    def run(
+        self,
+        before: SourceSnapshot,
+        after: SourceSnapshot,
+        spec: AutoCompareSpec | BinaryCompareSpec,
+        stages: StageRunner,
+    ) -> ComparisonCompletion: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,7 +107,7 @@ class CapabilityRecord:
     priority: int
     supported_source_kinds: frozenset[SourceKind]
     supported_features: frozenset[str]
-    executor: object
+    handle: ComparatorCapabilityHandle
     backend_available: bool = True
     backend_version_supported: bool = True
 

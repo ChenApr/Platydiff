@@ -4,8 +4,9 @@
 
 `platydiff` 是一个面向科研数据、实验回归测试与竞赛工作流的可扩展多模态
 Diff 引擎。Phase 1 与 Phase 2 已实现显式文本、精确二进制，以及需要显式启用的
-文本/二进制自动探测。P3-A 还实现了 immutable 插件声明和不执行 capability 的显式
-allowlist discovery；Python API 与 CLI 均输出 schema-v1 outcome。当前仍未发布。
+文本/二进制自动探测。Phase 3 门禁 P3-B 还加入 immutable plugin host、显式选择的
+文本/二进制 detector/comparator 执行与 schema-v2 provider provenance。既有 API 与
+CLI 仍只使用内建能力并保持 schema-v1 contract。当前仍未发布。
 
 ## 开发环境安装
 
@@ -80,7 +81,7 @@ platydiff compare --type auto before.dat after.dat
 
 ## 已实现与计划能力
 
-Phase 1、Phase 2 与 P3-A declaration/discovery 门禁已实现：
+Phase 1、Phase 2 与 P3-A/P3-B 插件门禁已实现：
 
 - Python 3.12+ 库与 `platydiff` CLI；
 - schema-v1 `CompareOutcome` 和 `DiffResult` JSON 序列化；
@@ -91,12 +92,15 @@ Phase 1、Phase 2 与 P3-A declaration/discovery 门禁已实现：
 - collision-safe 的精确二进制比较和不携带 payload 的 change span；
 - immutable SDK-v1 manifest 与 capability/dependency/platform inventory；
 - 不执行 capability 的显式 entry-point discovery、精确 allowlist、版本/feature 协商与
-  确定性冲突隔离。
+  确定性冲突隔离；
+- 显式 pin 的 SDK-v1.1 detector/comparator handle、host 管理的有界 source access 与
+  lifecycle stage，并支持自动比较精确 pin 内建 comparator；
+- schema-v2 provider、attempt 与 plugin-host provenance，以及 typed v1-to-v2 upgrader；
+  `PluginHost.compare()` 始终返回 schema v2。
 
 计划中、尚未实现：
 
-- 插件 comparison execution、provider provenance/schema v2、CLI 插件参数、第三方
-  renderer invocation 与发布的 compatibility receipt（剩余契约仍由
+- CLI 插件参数、第三方 renderer invocation 与发布的 compatibility receipt（剩余契约仍由
   [RFC 0005](docs/rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility_zh.md)
   门禁控制）；
 - JSON/YAML、表格、数组、图片、源代码、PDF、音频和视频；
@@ -104,7 +108,7 @@ Phase 1、Phase 2 与 P3-A declaration/discovery 门禁已实现：
 - color、HTML、JUnit 和 patch artifact。
 
 更广泛的设计方向见[架构文档](docs/architecture_zh.md)。
-已实现的 P3-A 边界见[插件 SDK 指南](docs/plugin-sdk_zh.md)。
+已实现的 P3-A/P3-B 边界见[插件 SDK 指南](docs/plugin-sdk_zh.md)。
 算法来源与已知限制记录在[算法来源文档](docs/algorithm-references_zh.md)中。
 
 ## 许可证

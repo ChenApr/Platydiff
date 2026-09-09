@@ -2,11 +2,11 @@
 
 [English documentation](plugin-sdk.md)
 
-Phase 3 门禁 P3-A 实现了
+Phase 3 门禁 P3-A 与 P3-B 实现了
 [RFC 0005](rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility_zh.md)
-中的声明与 discovery 子集，但不执行插件 detector、comparator 或 renderer。
-comparison host、schema-v2 provider provenance、CLI 插件参数和兼容性 receipt 仍由
-P3-B 与 P3-C 门禁控制。
+中的 declaration、discovery、显式选择的 detector/comparator 执行与 provider
+provenance。Renderer 执行、CLI 插件参数和发布的 compatibility receipt 仍由 P3-C
+门禁控制。
 
 ## 声明一个 SDK-v1 manifest
 
@@ -74,8 +74,9 @@ catalog = discover_plugins(
 ```
 
 该调用会快照匹配的 distribution metadata，验证精确 allowlist 与冲突，只加载被选中的
-manifest factory，协商 API minor `0` 与 required host feature，并返回 immutable
-`PluginCatalogV1`。catalog 暴露安全的 entry-point metadata、已加载 manifest、无冲突
+manifest factory，协商 API minor `0` 或 `1` 与 required host feature，并返回 immutable
+`PluginCatalogV1`。minor-0 的 declaration-only manifest 仍可加载；executable handle
+要求协商 minor 1 与 `host.execution.v1`。catalog 暴露安全的 entry-point metadata、已加载 manifest、无冲突
 capability declaration 与稳定 issue。distribution version 与 plugin version 始终是
 两个独立 identity。
 
@@ -89,24 +90,35 @@ capability declaration 与稳定 issue。distribution version 与 plugin version
 不会改变内置比较路径。entry point 仍是受信任的进程内 Python code：显式加载不是
 sandbox，import 或 factory side effect 可使用当前进程的全部权限。
 
-## 当前边界
+## 通过 immutable host 执行
 
-P3-A 只对 declaration 建立 catalog。目前没有 public registration method、全局第三方
-registry、`PluginHost.compare()`、capability invocation、插件 CLI option、renderer
-hook、schema-v2 provider record、v1-to-v2 upgrader 或已发布 compatibility receipt。
-Phase 1/2 的私有 request、registry、execution-limit、source-snapshot 与 stage-runner
-type 继续保持私有，也不会传给插件。
+SDK API `1.1` 增加可选的 typed detector/comparator handle，并用 capability ID 将其与
+保持不变的 declaration object 关联。`PluginHost.discover()` 冻结一份 allowlist catalog
+snapshot。`PluginHost.compare()` 默认使用内建能力；第三方能力必须通过 `detector_id=`
+或 `comparator_id=` 显式 pin，单纯 enable 不会改变 selection。自动比较也接受精确的
+内建 `text` 或 `binary` comparator pin，并将 detection 限定为该 modality，而不会
+fallback 到其他 comparator。
 
-## 版本基线与后续执行
+host 提供有界 source service，拥有全部 lifecycle transition，并对每次 comparison 创建
+fresh comparator run，严格按 `decode`、`normalize`、`align`、`compare`、`aggregate`
+顺序各调用一次。插件返回 `PluginComparisonV1` facts 而不是 outcome。已知插件失败在
+观测到的 stage 映射；process-control exception 与 programming exception 继续从 Python
+API 传播。executable handle 与 run shape 会在 invocation 前验证。host 不会永久保留已
+结束的 run，但仍跟踪 live run identity；detector execution 前先记录 selection；在构造
+completed outcome 前，还会在 validated aggregation 后重新检查 mutable path snapshot。
 
-P3-A 刻意把 SDK API `1.0` 冻结为仅声明的基线。`CapabilityDeclarationV1` 只包含
-inventory data，不含 executor、callback、detector、comparator、renderer、source
-service 或私有 core handle。因此 minor-0 manifest 可用于显式 discovery 与协商，
-但不能运行 comparison。
+Comparator run object 必须支持 Python weak reference。这个 SDK-v1.1 run 要求使长生命周期
+host 能拒绝复用同一个 live run，同时不永久保留所有 completed run。结构完整但无法 weakly
+reference 的 run 会在任何 lifecycle method 调用前，于 resolving stage 安全拒绝。
 
-P3-B 可以通过 additive SDK minor 或 negotiated host feature 增加 executable typed-handle
-protocol 与 host composition。它必须把新 handle 与现有 declaration 关联，而不能重新
-解释 `CapabilityDeclarationV1` 或向其中加入 callable state；现有 API-1.0 manifest
-factory、field、default、validation 与 discovery result 必须继续有效。删除或改变这个
-已冻结 declaration 契约的含义需要新的 major entry-point group，不能作为 P3-B minor
-update 完成。
+每次 host comparison 都返回 schema v2，包括最终选择内建能力的情况。schema v2 记录
+enabled/loaded provider snapshot、带版本的 attempt 与 selected-provider provenance。
+现有三参数 `compare()` 和 CLI 仍返回 schema v1。reader 同时接受两个版本；
+`upgrade_outcome_v1_to_v2()` 在不改变 v1 result 含义的前提下添加空 host context。
+Schema-v1 model 与 encoder 拒绝嵌套 schema-v2 value；schema-v2 构造与读取会将
+provider-backed attempt 与 loaded host snapshot、selected comparator/detector provenance
+进行交叉校验。
+
+当前仍没有 public mutable registration method、全局第三方 catalog、renderer hook、插件
+CLI option 或发布的 compatibility receipt。私有 request、snapshot、descriptor 与
+stage runner 不会传给插件。

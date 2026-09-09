@@ -2,11 +2,11 @@
 
 [Chinese documentation](plugin-sdk_zh.md)
 
-Phase 3 gate P3-A implements the declaration and discovery subset of
+Phase 3 gates P3-A and P3-B implement declaration, discovery, explicitly
+selected detector/comparator execution, and provider provenance from
 [RFC 0005](rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility.md).
-It does not execute plugin detectors, comparators, or renderers. Comparison
-hosting, schema-v2 provider provenance, CLI plugin flags, and compatibility
-receipts remain gated by P3-B and P3-C.
+Renderer execution, CLI plugin flags, and published compatibility receipts
+remain gated by P3-C.
 
 ## Declare one SDK-v1 manifest
 
@@ -78,7 +78,9 @@ catalog = discover_plugins(
 
 The call snapshots matching distribution metadata, validates the exact
 allowlist and conflicts, loads only selected manifest factories, negotiates API
-minor `0` and required host features, and returns an immutable `PluginCatalogV1`.
+minor `0` or `1` and required host features, and returns an immutable
+`PluginCatalogV1`. Minor-0 declaration-only manifests remain loadable; executable
+handles require negotiated minor 1 and `host.execution.v1`.
 The catalog exposes safe entry-point metadata, loaded manifests, conflict-free
 capability declarations, and stable issues. Distribution and plugin versions
 remain separate identities.
@@ -97,27 +99,42 @@ built-in comparison path. Entry points are still trusted in-process Python code:
 explicit loading is not a sandbox and can execute arbitrary import or factory
 side effects with the current process authority.
 
-## Current boundary
+## Execute through an immutable host
 
-P3-A catalogs declarations only. There is no public registration method, global
-third-party registry, `PluginHost.compare()`, capability invocation, plugin CLI
-option, renderer hook, schema-v2 provider record, v1-to-v2 upgrader, or published
-compatibility receipt. The private Phase 1/2 request, registry, execution-limit,
-source-snapshot, and stage-runner types remain private and are never passed to a
-plugin.
+SDK API `1.1` adds optional typed detector and comparator handles associated by
+capability ID with the unchanged declaration objects. `PluginHost.discover()`
+freezes one allowlisted catalog snapshot. `PluginHost.compare()` uses built-ins
+unless a third-party capability ID is explicitly pinned with `detector_id=` or
+`comparator_id=`; enablement alone never changes selection. Automatic comparison
+also accepts an exact `text` or `binary` built-in comparator pin and restricts
+detection to that modality instead of falling back to another comparator.
 
-## Version baseline and later execution
+The host supplies bounded source services, owns every lifecycle transition, and
+invokes a fresh comparator run exactly once in `decode`, `normalize`, `align`,
+`compare`, `aggregate` order. Plugins return `PluginComparisonV1` facts rather
+than outcomes. Known plugin failures are mapped at the observed stage; process
+control and programming exceptions continue to propagate from the Python API.
+Executable handle and run shapes are validated before invocation. The host
+tracks live run identity without retaining completed runs, records selection
+before detector execution, and rechecks mutable path snapshots after validated
+aggregation before constructing a completed outcome.
 
-P3-A deliberately freezes SDK API `1.0` as a declaration-only baseline.
-`CapabilityDeclarationV1` contains inventory data and no executor, callback,
-detector, comparator, renderer, source service, or private core handle. A minor-0
-manifest is therefore useful for explicit discovery and negotiation but cannot
-run a comparison.
+Comparator run objects must support Python weak references. This SDK-v1.1 run
+requirement lets a long-lived host reject reuse of the same live run without
+retaining every completed run. A structurally valid run that cannot be weakly
+referenced is rejected safely during resolution before any lifecycle method is
+called.
 
-P3-B can add executable typed-handle protocols and host composition as an
-additive SDK minor or a negotiated host feature. It must associate those new
-handles with the existing declarations rather than reinterpret or add callable
-state to `CapabilityDeclarationV1`; existing API-1.0 manifest factories, fields,
-defaults, validation, and discovery results remain valid. Removing or changing
-the meaning of this frozen declaration contract requires a new major
-entry-point group, not a P3-B minor update.
+Every host comparison returns schema v2, including built-in selections. Schema
+v2 records the enabled/loaded provider snapshot, versioned attempts, and selected
+provider provenance. The existing three-argument `compare()` and CLI remain
+schema v1. Readers accept both versions, and `upgrade_outcome_v1_to_v2()` adds an
+empty host context without changing v1 result meaning. Schema-v1 models and
+encoders reject schema-v2 nested values. Schema-v2 construction and reading
+cross-check provider-backed attempts against the loaded host snapshot and the
+selected comparator/detector provenance.
+
+There is still no public mutable registration method, process-global third-party
+catalog, renderer hook, plugin CLI option, or published compatibility receipt.
+Private requests, snapshots, descriptors, and stage runners are never passed to
+a plugin.

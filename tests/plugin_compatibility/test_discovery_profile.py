@@ -5,11 +5,14 @@ from __future__ import annotations
 import random
 import subprocess
 import sys
+from typing import cast
 
 import pytest
 
 from platydiff.plugin_sdk import (
+    CapabilityAvailabilityV1,
     CapabilityDeclarationV1,
+    CapabilityHandleV1,
     CapabilityKind,
     PluginManifestV1,
 )
@@ -49,6 +52,25 @@ def _install(
     monkeypatch: pytest.MonkeyPatch, entry_points: tuple[FakeEntryPoint, ...]
 ) -> None:
     monkeypatch.setattr(_discovery, "_installed_entry_points", lambda: entry_points)
+
+
+class _IncompleteComparatorHandle:
+    capability_id = "org.example.executable.text_exact"
+    modality = "text"
+    source_stage = "decoding"
+
+    def availability(self) -> CapabilityAvailabilityV1:
+        return CapabilityAvailabilityV1(True)
+
+
+class _MissingAvailabilityComparatorHandle:
+    capability_id = "org.example.executable.text_exact"
+    modality = "text"
+    source_stage = "decoding"
+
+    def create_run(self, before: object, after: object, spec: object) -> object:
+        del before, after, spec
+        return object()
 
 
 def test_import_and_builtin_compare_do_not_enumerate_entry_points() -> None:
@@ -113,6 +135,95 @@ def test_randomized_enumeration_has_identical_normalized_profile(
         )
         observed.add(canonical_profile_json(catalog_profile_data(catalog)))
     assert len(observed) == 1
+
+
+def test_execution_handles_require_minor_one_and_negotiated_feature(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    declaration = CapabilityDeclarationV1(
+        "org.example.executable.text_exact", CapabilityKind.COMPARATOR, "1"
+    )
+    handle = _IncompleteComparatorHandle()
+
+    def manifest(maximum_minor: int, features: tuple[str, ...]) -> PluginManifestV1:
+        return PluginManifestV1(
+            1,
+            "org.example.executable",
+            "1",
+            1,
+            0,
+            maximum_minor,
+            features,
+            (declaration,),
+            "Apache-2.0",
+            (cast(CapabilityHandleV1, handle),),
+        )
+
+    for maximum_minor, features in ((0, ()), (1, ())):
+        entry = FakeEntryPoint(
+            "org.example.executable",
+            lambda maximum_minor=maximum_minor, features=features: manifest(
+                maximum_minor, features
+            ),
+        )
+        _install(monkeypatch, (entry,))
+        catalog = discover_plugins(PluginDiscoveryPolicy(("org.example.executable",)))
+        assert catalog.plugins == ()
+        assert catalog.issues[0].reason_code == "plugin_api_incompatible"
+
+
+def test_execution_handle_shape_is_validated_before_cataloging(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    declaration = CapabilityDeclarationV1(
+        "org.example.executable.text_exact", CapabilityKind.COMPARATOR, "1"
+    )
+    entry = FakeEntryPoint(
+        "org.example.executable",
+        lambda: PluginManifestV1(
+            1,
+            "org.example.executable",
+            "1",
+            1,
+            1,
+            1,
+            ("host.execution.v1",),
+            (declaration,),
+            "Apache-2.0",
+            (cast(CapabilityHandleV1, _IncompleteComparatorHandle()),),
+        ),
+    )
+    _install(monkeypatch, (entry,))
+    catalog = discover_plugins(PluginDiscoveryPolicy(("org.example.executable",)))
+    assert catalog.plugins == ()
+    assert catalog.issues[0].reason_code == "plugin_manifest_invalid"
+
+
+def test_execution_handle_without_availability_is_quarantined(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    declaration = CapabilityDeclarationV1(
+        "org.example.executable.text_exact", CapabilityKind.COMPARATOR, "1"
+    )
+    entry = FakeEntryPoint(
+        "org.example.executable",
+        lambda: PluginManifestV1(
+            1,
+            "org.example.executable",
+            "1",
+            1,
+            1,
+            1,
+            ("host.execution.v1",),
+            (declaration,),
+            "Apache-2.0",
+            (cast(CapabilityHandleV1, _MissingAvailabilityComparatorHandle()),),
+        ),
+    )
+    _install(monkeypatch, (entry,))
+    catalog = discover_plugins(PluginDiscoveryPolicy(("org.example.executable",)))
+    assert catalog.plugins == ()
+    assert catalog.issues[0].reason_code == "plugin_manifest_invalid"
 
 
 def test_issue_order_uses_normalized_distribution_identity(

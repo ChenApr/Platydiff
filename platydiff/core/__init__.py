@@ -8,6 +8,7 @@ from platydiff.core.serialization import (
     outcome_to_data,
     spec_from_data,
     spec_to_data,
+    upgrade_outcome_v1_to_v2,
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "outcome_to_data",
     "spec_from_data",
     "spec_to_data",
+    "upgrade_outcome_v1_to_v2",
 ]

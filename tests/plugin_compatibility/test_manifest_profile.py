@@ -73,8 +73,8 @@ def test_manifest_profile_has_exact_golden_evidence() -> None:
     )
 
 
-def test_api_minor_zero_is_a_declaration_only_compatibility_baseline() -> None:
-    assert PLUGIN_API_MINOR == 0
+def test_api_minor_one_keeps_declarations_non_executable() -> None:
+    assert PLUGIN_API_MINOR == 1
     field_names = {item.name for item in fields(CapabilityDeclarationV1)}
     assert field_names.isdisjoint(
         {
