@@ -22,5 +22,6 @@ This directory contains accepted and proposed design decisions for Platydiff. En
 | [0003](0003-automatic-detection-capability-resolution-and-binary-comparison.md) | Implemented | Define bounded automatic detection, deterministic internal capability resolution, and exact binary comparison |
 | [0004](0004-human-review-ui-and-renderer-boundary.md) | Proposed | Keep human review surfaces downstream of validated outcomes and stage terminal, HTML, TUI, and desktop work |
 | [0005](0005-third-party-plugin-discovery-sdk-and-compatibility.md) | Implemented | Define explicit third-party discovery, a versioned SDK, deterministic capability execution, and compatibility evidence |
+| [0006](0006-structured-data-comparison.md) | Accepted | Define explicit JSON/YAML, table, and dense-array semantics behind schema-v3 and separately authorized delivery gates |
 
 Planned behavior must remain explicitly marked as planned until implementation and verification are complete.
