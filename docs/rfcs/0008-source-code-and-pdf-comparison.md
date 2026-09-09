@@ -4,6 +4,7 @@
 
 - Status: Proposed
 - Date: 2026-09-10
+- Review revision: 2026-09-10
 - Owners: Platydiff maintainers
 - Implementation owner: unassigned pending separate implementation authorization
 
@@ -27,7 +28,7 @@ successor to RFC 0003 accepts new detection semantics.
 
 ## Evidence ledger
 
-| Current evidence at `origin/main` `cbc7e36` | Phase 6 constraint |
+| Current evidence at `origin/main` `fde2bd4` | Phase 6 constraint |
 | --- | --- |
 | RFC 0001 separates failed/unavailable execution outcomes from completed `DiffResult` facts. | Parser, backend, resource, encryption, sandbox, and rendering failures must not become empty or synthetic differences. |
 | RFC 0002 requires each new modality to define spec, changes, metrics, artifacts, equivalence relation, policy, failures, and gates before implementation. | This RFC records contracts and gates but does not start code. |
@@ -86,6 +87,8 @@ are not accepted until a reviewer explicitly approves them.
 | P6X5 | Keep RFC 0004 artifact/UI work separate; Phase 6 facts may reference artifacts only after an artifact writer gate. | Let PDF rendering implicitly create page images or HTML reports. |
 | P6X6 | Mark every code-dependent assumption as a revalidation gate, including P4-A1 and future Phase 5 work. | Treat concurrent unmerged work as design evidence. |
 | P6X7 | Forbid fallback that changes comparison relation after a parser/backend starts. | On failure, silently fall back to text, binary, another parser, another renderer, or approximate semantics. |
+| P6X8 | Execute multi-view PDF specs as required all-or-nothing invocations: any selected view unavailable or failed terminates the top-level outcome without a `DiffResult`. | Return a partial PDF `DiffResult` containing the views that happened to finish. |
+| P6X9 | Before the artifact gate, `artifact_policy` has exactly one value, `none`. | Reserve `record_refs` before a safe artifact writer exists. |
 | SC1 | Add an explicit `SourceCodeCompareSpec` with required `language` and `relation` fields. | Infer language from suffix/content or reuse `TextCompareSpec`. |
 | SC2 | First source languages are `python` and `javascript`; `typescript`, `c`, `cpp`, `rust`, `go`, `java`, notebooks, templates, and generated-code policies are deferred. | Start with every grammar available from a backend package. |
 | SC3 | Separate `lexical_text`, `syntax_tree`, and future `semantic` relations; Phase 6 first gates do not claim runtime semantic equivalence. | Report all source-code results as one generic code equality relation. |
@@ -98,9 +101,9 @@ are not accepted until a reviewer explicitly approves them.
 | SC10 | Source-code corpora must be synthetic or explicitly licensed and cover malformed, adversarial, Unicode, formatting, comments, moves, and limits. | Copy real project source fixtures without provenance. |
 | PDF1 | Add explicit `PdfCompareSpec` views: `binary`, `extracted_text`, `objects_metadata`, and `rendered_pages`. | Collapse PDF comparison into one PDF equality bit. |
 | PDF2 | Binary, extracted-text, object/metadata, and rendered-page equivalence are independent relations with separate metrics and evaluations. | Let a visually equal render override object/text differences or vice versa. |
-| PDF3 | Encrypted PDFs without an accepted password contract are unsupported; no prompting or password storage occurs in first gates. | Prompt interactively, store passwords in specs, or fall back to binary. |
+| PDF3 | A pure `binary` PDF view accepts encrypted PDFs as bytes; any selected nonbinary view on encrypted input terminates with stable `failed/pdf_encrypted`. | Reject all encrypted PDFs, or prompt for passwords. |
 | PDF4 | Embedded files, JavaScript, launch actions, network actions, and form actions are inert facts or explicit unsupported features; they are never executed or extracted by default. | Execute or dereference active document content during comparison. |
-| PDF5 | PDF parser, text extractor, and page renderer are separate bounded backends with version provenance and failure isolation. | Use one monolithic backend and hide which view failed. |
+| PDF5 | Nonbinary PDF parse, text extraction, object inspection, and rendering run only in supervised bounded workers with version provenance and failure isolation. | Run PDF backends in-process or hide which view failed. |
 | PDF6 | External PDF tools, if selected, run with argument arrays, no shell, bounded temp dirs, timeouts, output limits, and no network. | Let a backend-specific command line manage security implicitly. |
 | PDF7 | Page, object, and text alignment are deterministic and view-specific; unavailable/degraded/failure states remain distinguishable. | Merge alignment failures into content changes. |
 | PDF8 | Rendered-page artifacts, thumbnails, and heatmaps require an RFC 0004-compatible artifact gate before any file is written or linked. | Emit page images as a side effect of comparison. |
@@ -150,14 +153,60 @@ the time of this RFC.
 | --- | --- | --- |
 | Public spec | `SourceCodeCompareSpec(language, relation, parser, normalization, alignment, detail_mode, limits)` | `PdfCompareSpec(views, passwords policy, backend choices, text/render/object options, artifact policy, limits)` |
 | First relations | `lexical_text` and `syntax_tree`; `semantic` reserved and unavailable | `pdf.binary`, `pdf.extracted_text`, `pdf.objects_metadata`, `pdf.rendered_pages` |
-| Default policy | changed items equal zero gives pass; otherwise fail | each selected view has its own zero-change evaluation; aggregate fail if any selected required view fails policy |
+| Default policy | changed items equal zero gives pass; otherwise fail | all selected views are required; any unavailable/failed view terminates the top-level outcome, and completed results aggregate zero-change evaluations only after every view succeeds |
 | Changes | `SourceCodeChange` with node path, operation, language, node kind, relation, digest/fact fields | `PdfChange` tagged by view with page/text/object/render coordinates and digest/fact fields |
 | Metrics | changed nodes/tokens, parser errors, moved nodes, compared nodes, formatting/comment changes | changed bytes, text runs, object entries, metadata entries, rendered pixels/pages, backend warnings |
-| Artifacts | none in first source gates | none until a separate artifact gate; rendered-page facts may include digests but no files |
+| Artifacts | none in first source gates | `artifact_policy="none"` only until a separate artifact gate; rendered-page facts may include digests but no files |
 | Backends | optional parser backend such as Tree-sitter; no default dependency until reviewed | separate parser/text/render backends; external subprocesses require sandbox rules |
 | Fallback | no text fallback after source parsing starts | no fallback between PDF views or to binary unless binary view was explicitly selected |
 | Plugin path | requires SDK v2 for source-code modality | requires SDK v2 for PDF modality |
 | Verification | language fixtures, parser versions, AST paths, move tie-breaks, malformed/adversarial limits | generated PDFs, malformed/xref/stream cases, encryption, fonts, rendering determinism, sandbox limits |
+
+## Canonical facts, digests, and ordering
+
+Source-code and PDF facts use the RFC 0006 evidence-digest framing with new
+domains. The prefix below applies only if Phase 6 extends unreleased schema v3;
+a schema successor must use the corresponding successor prefix:
+
+```text
+UTF8("platydiff/v3/" + domain) || 0x00 || U64BE(payload_length) || payload
+```
+
+Payloads are canonical byte encodings built from tagged fields. Variable-length
+strings are strict UTF-8 with U64BE byte lengths. Counts, ordinals, coordinates,
+byte lengths, page numbers, and work counters are non-boolean integers in
+`0..2**53` unless a narrower spec limit applies. Writers use sorted object
+field order and the stable change ordering defined below; readers reject wrong
+types, out-of-order built-in collections, missing required fields, duplicate
+coordinates where uniqueness is required, noncanonical ordinals, and unknown
+non-extension kinds.
+
+Digest domains are fixed:
+
+| Domain | Payload |
+| --- | --- |
+| `source/decoded_text_line` | RFC 0002 `TextLine` content and terminator for lexical source comparison |
+| `source/token` | language ID, token kind, normalized token bytes, trivia role, and source span |
+| `source/node` | language ID, node kind, child field names, ordered child digest sequence, and retained token/trivia digests |
+| `source/subtree` | language ID, root node kind, descendant count, token count, and root node digest |
+| `pdf/binary/span` | byte offset and length tuple for a binary view span |
+| `pdf/text/run` | page ordinal, run ordinal, Unicode text bytes, extractor flags, and text span |
+| `pdf/object/entry` | object coordinate, canonical key path, primitive type, and canonical value bytes or stream digest |
+| `pdf/metadata/entry` | metadata namespace, key, normalized value bytes, and ignore-policy marker |
+| `pdf/render/page` | page ordinal, page box, raster policy, pixel dimensions, and page raster digest |
+| `pdf/render/region` | page ordinal, raster policy, pixel rectangle, before digest, after digest, and changed pixel count |
+
+Evidence digests are deterministic integrity fingerprints, not redaction or
+encryption. Low-entropy source tokens, PDF metadata values, object keys, and
+text runs may be guessable. `digest_only` omits bounded fact payloads but still
+exposes coordinates, counts, kinds, hashes, and deterministic digests.
+
+Fact fields are bounded and atomic. Each returned change encodes its operation,
+coordinates, digests, and fact payload together for
+`max_change_payload_bytes`. If the next complete item would exceed the item or
+payload limit, that item and every later item in stable order are omitted; no
+fact, coordinate, text run, node, object entry, or rendered region is partially
+serialized.
 
 ## Source-code comparison contract
 
@@ -177,6 +226,26 @@ class SourceCodeCompareSpec:
     limits: SourceCodeResourceLimits = SourceCodeResourceLimits()
 ```
 
+The options are closed and fully serialized:
+
+```python
+class SourceParserOptions:
+    backend: Literal["tree_sitter"] = "tree_sitter"
+    error_recovery: Literal["reject", "recover"] = "reject"
+
+class SourceNormalizationOptions:
+    encoding: Literal["utf-8", "utf-8-sig"] = "utf-8"
+    newline: Literal["preserve", "normalize_lf"] = "preserve"
+    comments: Literal["compare", "ignore"] = "compare"
+    formatting: Literal["compare", "ignore"] = "compare"
+    literal_spelling: Literal["compare", "normalize_language"] = "compare"
+
+class SourceAlignmentOptions:
+    detect_moves: bool = True
+    move_minimum_subtree_tokens: int = 3
+    repeated_anchor_policy: Literal["source_order"] = "source_order"
+```
+
 `language` is required in the first gate. File suffix, shebang, modeline,
 package metadata, content probe, and backend parser guesses are not used for
 language detection. A later source-detection RFC may define bounded language
@@ -184,8 +253,14 @@ probing, ambiguity, and attribution. Until then, a mismatched language produces
 `failed/decode_error` or `unavailable/backend_unavailable` at the observed
 stage; it does not retry with another language or `TextCompareSpec`.
 
-`lexical_text` is line/token text comparison under source-specific tokenization
-rules and must not claim syntax equivalence. `syntax_tree` compares parser tree
+`lexical_text` in P6-S1 reuses RFC 0002 exact decoded-text and line semantics:
+strict UTF-8 or explicit `utf-8-sig`, the same `TextLine` content/terminator
+model, the same newline normalization options, the same Myers algorithm and
+work accounting, and no Unicode, whitespace, tab, case, or locale
+normalization. The source language is recorded as intent and provenance but does
+not authorize parser fallback or syntax claims in P6-S1. P6-S1 does not resolve
+or load a parser backend; parser options are serialized for schema stability and
+become effective only for `syntax_tree`. `syntax_tree` compares parser tree
 structure and selected token/comment facts. `semantic` is reserved for future
 contracts that define runtime, type-system, macro, import, environment, and
 toolchain boundaries; first gates return `unavailable/capability_unavailable`
@@ -227,14 +302,29 @@ results. Each node has a stable path derived from the normalized tree:
 
 ```text
 /root
-/<child-kind>#<ordinal-among-siblings-of-kind>@<ordinal-among-all-siblings>
+/<escaped-node-kind>#<ordinal-among-siblings-of-same-kind>
 ```
 
-The exact wire syntax must be fixed by the implementation gate before release;
-the required invariant is that paths are deterministic across repeated runs,
-independent of backend object identity, and stable when unrelated siblings are
-unchanged. Byte ranges and line/column spans may be recorded as facts, but node
-paths are the primary structural coordinates.
+The wire grammar is:
+
+```text
+path = "/root" *("/" segment)
+segment = escaped_kind "#" ordinal
+escaped_kind = 1*(unreserved / escape)
+unreserved = UTF-8 scalar except "/", "#", "~", NUL, C0, or C1 control
+escape = "~0" / "~1" / "~h"
+ordinal = "0" / (nonzero_digit *digit)
+```
+
+`~`, `/`, and `#` in node-kind identifiers encode as `~0`, `~1`, and `~h`.
+Other characters are UTF-8 strings admitted by the bounded node-kind validator;
+C0/C1 controls, NUL, empty node kinds, and malformed escapes are rejected.
+`ordinal` is zero-based among siblings with the same normalized node kind only;
+there is no all-sibling ordinal. This keeps paths stable when unrelated sibling
+kinds are inserted. Compatibility fixtures must cover escaping, repeated
+siblings, inserted unrelated siblings, root-only files, and malformed paths.
+Byte ranges and line/column spans may be recorded as facts, but node paths are
+the primary structural coordinates.
 
 ```python
 class SourceCodeChange:
@@ -252,6 +342,21 @@ class SourceCodeChange:
     after_fact: SourceNodeFact | None
 ```
 
+```python
+class SourceNodeFact:
+    node_kind: str
+    field_name: str | None
+    start_line: int
+    start_column: int
+    end_line: int
+    end_column: int
+    token_count: int
+    descendant_count: int
+    parser_error: bool
+    trivia_role: Literal["none", "comment", "formatting"]
+    text_excerpt: str | None
+```
+
 Insert has only after coordinates. Delete has only before coordinates. Update
 has both sides at an aligned node and records changed node kind, token, trivia,
 or child-shape facts. Move has both sides and reports a node whose digest and
@@ -259,6 +364,14 @@ selected identity facts match under the move policy but whose path changed.
 Moves are observations, not patch operations, and are emitted only when the
 alignment algorithm can prove them deterministically. Otherwise the same change
 is represented as delete plus insert.
+
+`facts` mode includes bounded `SourceNodeFact` values. `digest_only` omits
+`before_fact` and `after_fact` while retaining operation, paths, node kinds, and
+digests. `text_excerpt` is present only for lexical token/line facts and is
+bounded by `max_fact_text_bytes`; syntax subtree facts use counts, not recursive
+payloads. Model validation rejects illegal side combinations, reversed spans,
+negative counts, digest/fact mismatch with `detail_mode`, move without two
+paths, and update without two aligned sides.
 
 Alignment is deterministic:
 
@@ -270,6 +383,12 @@ Alignment is deterministic:
   inferred;
 - alignment failure caused by ambiguity or resource exhaustion is a failed
   outcome, not an approximate result.
+
+Stable source-code change ordering is delete/update/move by before path, then
+insert by after path at the nearest containing parent, with path lexical order
+using decoded path segments and numeric ordinal order. When one logical
+alignment yields both a parent update and child updates, the parent precedes
+children. Lexical P6-S1 ordering is exactly RFC 0002 hunk source order.
 
 ### Source metrics and policy
 
@@ -296,6 +415,7 @@ spec explicitly permits degraded recovery.
 class SourceCodeResourceLimits:
     max_input_bytes: int = 16 * 1024 * 1024
     max_decoded_chars: int = 16 * 1024 * 1024
+    max_fact_text_bytes: int = 4096
     max_tokens: int = 1_000_000
     max_nodes: int = 1_000_000
     max_depth: int = 256
@@ -312,6 +432,18 @@ exhaustion is `failed/compare_resource_limit`; missing or incompatible parser
 backend is `unavailable/backend_unavailable`; unsupported source kind is
 `failed/source_type_unsupported`; malformed source under `reject` recovery is
 `failed/decode_error`.
+
+Source work accounting is fixed per relation. `lexical_text` uses RFC 0002
+Myers work units exactly. `syntax_tree` charges one unit per decoded token, one
+per parser node accepted into the host tree, one per node digest constructed,
+one per candidate-pair score considered during alignment, one per paired node
+visited, and one per insert/delete/move/update change emitted before detail
+truncation. Each unit is checked before the action. Default values are inherited
+from RFC 0002 and RFC 0006 where possible: 16 MiB input and 4 MiB payload match
+existing text/structured defaults, 1,000,000 token/node ceilings match the
+structured node ceiling, and 5,000,000 work units match the existing comparison
+budget. Acceptance must include adversarial evidence that these defaults bound
+memory on the selected parser backend.
 
 Adversarial tests must include extreme depth, width, token streams, repeated
 subtrees, pathological move ambiguity, Unicode identifiers and controls, mixed
@@ -358,12 +490,39 @@ class PdfCompareSpec:
     text: PdfTextOptions = PdfTextOptions()
     objects: PdfObjectOptions = PdfObjectOptions()
     rendering: PdfRenderOptions = PdfRenderOptions()
-    artifact_policy: Literal["none", "record_refs"] = "none"
+    artifact_policy: Literal["none"] = "none"
     limits: PdfResourceLimits = PdfResourceLimits()
 ```
 
-Each selected view produces separate summary counts, metrics, changes,
-transformations, and evaluations. A combined PDF result may aggregate verdicts,
+The PDF options are closed and fully serialized:
+
+```python
+class PdfTextOptions:
+    order: Literal["extractor_logical"] = "extractor_logical"
+    whitespace: Literal["preserve"] = "preserve"
+    unicode_mapping: Literal["backend_tounicode"] = "backend_tounicode"
+
+class PdfObjectOptions:
+    metadata: Literal["compare", "ignore_document_info_dates"] = "compare"
+    streams: Literal["metadata_and_digest"] = "metadata_and_digest"
+    active_content: Literal["inert_inventory"] = "inert_inventory"
+
+class PdfRenderOptions:
+    page_box: Literal["media", "crop"] = "media"
+    rotation: Literal["apply_page_rotation"] = "apply_page_rotation"
+    resolution_dpi: int = 144
+    color: Literal["srgb_8bit"] = "srgb_8bit"
+    alpha: Literal["composite_white", "preserve"] = "composite_white"
+    antialiasing: Literal["backend_default_recorded"] = "backend_default_recorded"
+```
+
+All selected PDF views are required and execute as one all-or-nothing
+invocation. Each selected view may produce separate summary counts, metrics,
+changes, transformations, and evaluations only if every selected view reaches a
+completed view result. If any selected view is unavailable or failed, the
+top-level outcome is `unavailable` or `failed` with no `DiffResult`; completed
+view work is represented only as bounded execution attempts and diagnostics, not
+as partial result facts. A combined completed PDF result may aggregate verdicts,
 but it must never say that PDF files are simply equal without naming the views
 under which that relation was established. Binary equality, extracted text
 equality, object/metadata equality, and rendered-page equality are independent
@@ -381,11 +540,15 @@ background policies.
 
 ### Hostile and unsupported PDF features
 
-Encrypted PDFs are unsupported in the first gate unless a later decision accepts
-a password API. Without that decision, encrypted input returns a failed or
-unavailable outcome at the stage where encryption is detected, with no prompt,
-no password field, and no fallback to text or rendering. Permission flags are
-recorded only as inert metadata when readable without bypassing encryption.
+A pure `views=("binary",)` PDF comparison accepts encrypted PDFs because it
+compares the original bytes and does not parse the document. Any selected
+nonbinary view requires PDF parsing or rendering. If either input is encrypted
+and no accepted password contract exists, execution terminates with
+`failed/pdf_encrypted` at the first nonbinary worker stage that observes
+encryption. There is no prompt, no password field, no password storage, no
+permission bypass, and no fallback to binary unless the caller selected only the
+binary view. Permission flags are recorded only as inert metadata when readable
+without bypassing encryption.
 
 Embedded files, JavaScript, launch actions, submit actions, remote go-to actions,
 multimedia actions, rich media, and external streams are never executed,
@@ -415,6 +578,40 @@ class PdfChange:
     after_fact: PdfFact | None
 ```
 
+```python
+class PdfTextCoordinate:
+    page: int
+    run: int
+    start_text_offset: int
+    text_length: int
+
+class PdfObjectCoordinate:
+    object_number: int | None
+    generation: int | None
+    role_path: str
+    key_path: str
+
+class PdfRenderCoordinate:
+    page: int
+    page_box: Literal["media", "crop"]
+    x: int
+    y: int
+    width: int
+    height: int
+    raster_policy_id: str
+
+class PdfFact:
+    fact_kind: Literal["text_run", "object_entry", "metadata_entry", "render_region"]
+    type_name: str
+    page: int | None
+    text: str | None
+    value_summary: str | None
+    byte_length: int | None
+    changed_pixels: int | None
+
+PdfCoordinate = PdfTextCoordinate | PdfObjectCoordinate | PdfRenderCoordinate | BinarySpan
+```
+
 Coordinates are view-specific:
 
 - binary uses byte offsets and lengths from `BinarySpan`;
@@ -433,6 +630,18 @@ alignment is page-local pixel coordinate alignment after explicit raster
 normalization. Any unsupported alignment requirement produces
 `failed/alignment_failed` or `unavailable/capability_unavailable` rather than a
 content change.
+
+Change invariants are view-specific. Binary view changes must satisfy
+`BinarySpan` invariants. Text-run changes require page/run coordinates and
+bounded text facts or text-run digests. Object and metadata changes require a
+canonical object coordinate or metadata key and never embed decoded stream
+bytes. Render changes require an in-bounds pixel rectangle with positive width
+and height and changed pixel count greater than zero. Insert has only after
+coordinates, delete has only before coordinates, update has both, and move is
+legal only for text/object facts whose stable digest matches and whose
+coordinate changes. Stable ordering is by view order from the normalized spec,
+then page, then run/object/key/rectangle order. Readers reject interleaved views
+that violate this order.
 
 ### PDF metrics and policy
 
@@ -461,6 +670,9 @@ PDF policy yields `warn`.
 ```python
 class PdfResourceLimits:
     max_input_bytes: int = 64 * 1024 * 1024
+    max_worker_rss_bytes: int = 512 * 1024 * 1024
+    max_fact_text_bytes: int = 4096
+    max_fact_value_bytes: int = 4096
     max_objects: int = 1_000_000
     max_pages: int = 10_000
     max_stream_bytes: int = 256 * 1024 * 1024
@@ -470,25 +682,59 @@ class PdfResourceLimits:
     max_rendered_pages: int = 1_000
     max_backend_seconds: int = 30
     max_temp_bytes: int = 512 * 1024 * 1024
+    max_worker_output_bytes: int = 64 * 1024 * 1024
+    max_worker_processes: int = 1
     max_compare_work: int = 5_000_000
     max_change_items: int = 10_000
     max_change_payload_bytes: int = 4 * 1024 * 1024
 ```
 
+PDF has both whole-invocation and per-view budgets. `max_input_bytes`,
+`max_worker_rss_bytes`, `max_backend_seconds`, `max_temp_bytes`,
+`max_worker_output_bytes`, `max_worker_processes`, `max_compare_work`,
+`max_change_items`, and `max_change_payload_bytes` apply cumulatively across
+the complete PDF invocation. Fact text/value ceilings apply to each retained
+`PdfFact` before the complete change item is charged to the payload budget.
+Page, object, stream, text-run, and pixel limits apply per view and also charge
+the cumulative work budget. The host checks cumulative limits before
+dispatching each worker step and before accepting each bounded result chunk from
+a worker.
+
 The exact defaults are tentative and must be revalidated against backend
-behavior before acceptance. Limits protect original bytes, parsed object count,
-stream decompression, page count, text-run count, raster pixel count, temporary
-disk use, subprocess output, deterministic comparison work, returned items, and
+behavior before acceptance. The evidence basis is conservative: 64 MiB input
+allows larger documents than text while remaining bounded; 512 MiB RSS/temp
+ceilings are hard worker limits, not promises of typical use; 30 seconds is a
+supervision timeout for hostile backends, not a semantic algorithm fallback; 144
+DPI and 100,000,000 pixels per page are initial review values that must be
+benchmarked. Limits protect original bytes, parsed object count, stream
+decompression, page count, text-run count, raster pixel count, temporary disk
+use, subprocess output, deterministic comparison work, returned items, and
 payload bytes. Decompression bombs and recursive object references fail before
-allocating the next object or stream segment. No normal result depends on
-wall-clock time except bounded external backend supervision; timeouts produce a
-failed or unavailable outcome, not a partial equality claim.
+allocating the next object or stream segment. No completed result depends on
+wall-clock time; timeouts produce a failed or unavailable outcome, not a partial
+equality claim.
+
+PDF work accounting is fixed by view:
+
+- whole invocation: one unit per selected view dispatch and one per worker
+  result chunk accepted;
+- binary: RFC 0003 byte-span accounting plus one unit per retained span;
+- extracted text: one unit per page visited, text run accepted, aligned run
+  pair, and text change emitted;
+- objects/metadata: one unit per indirect object visited, dictionary key/value
+  accepted, stream digest accepted, metadata entry accepted, aligned entry, and
+  object change emitted;
+- rendered pages: one unit per page rendered, raster tile accepted, compared
+  tile, changed region emitted, and page-level aggregate.
+
+Every unit is checked before the action. Per-view counters and cumulative
+counters are both recorded in provenance for completed outcomes; for failed or
+unavailable multi-view outcomes they are recorded as execution attempts only.
 
 Failures remain distinguishable:
 
 - missing parser/text/render backend: `unavailable/backend_unavailable`;
-- encrypted unsupported input: `failed/decode_error` or a new stable encryption
-  problem chosen by the implementation gate;
+- encrypted input with selected nonbinary view: `failed/pdf_encrypted`;
 - malformed syntax or unsupported object graph: `failed/decode_error`;
 - decompression or size limit: `failed/resource_limit_exceeded`;
 - comparison work limit: `failed/compare_resource_limit`;
@@ -508,6 +754,35 @@ information, backend attempt, and policy impact.
 PDF parsing, text extraction, and rendering are separate backend roles. A gate
 may choose one backend for more than one role only if provenance still records
 role-specific availability, version, policy, limits, and failures.
+
+Every nonbinary PDF role runs in a supervised bounded worker. In-process parsing
+of nonbinary PDF content is not a conforming first-gate implementation. The
+worker protocol is host-owned:
+
+- cancellation: the host can terminate the worker when the caller cancels or a
+  limit trips; schema has no completed partial result for cancellation;
+- timeout: wall-clock timeout kills the worker process group and records
+  `pdf_worker_timeout`;
+- RSS: the worker has an enforced resident-memory ceiling; exceeding it records
+  `pdf_worker_rss_exceeded`;
+- temp: all temp files live under a host-created bounded temp root and count
+  toward `max_temp_bytes`;
+- output: stdout/stderr/protocol payloads are bounded by
+  `max_worker_output_bytes`, and raw backend stderr is not copied into outcomes;
+- process: the worker cannot spawn more than `max_worker_processes`; unsupported
+  process supervision makes the backend unavailable;
+- network: network access and remote resource loading are disabled by policy;
+  if the platform cannot enforce this for a backend, that backend is
+  unavailable;
+- filesystem: the worker receives only the opened source descriptors or
+  host-owned temp paths required for that view and cannot write outside the temp
+  root or accepted artifact root.
+
+If the platform cannot enforce timeout, RSS, temp, output, process, or network
+isolation, the corresponding nonbinary backend is
+`unavailable/backend_unavailable` before document execution. If a supervised
+worker starts and then violates a bound, the selected view fails and therefore
+the whole required PDF invocation fails.
 
 Every PDF backend review must record:
 
@@ -581,17 +856,32 @@ are pinned in provenance; parser recovery, comments, formatting, stable node
 paths, alignment, insert/delete/update/move semantics, work limits, native
 failure behavior, and deterministic repeated runs pass.
 
-### P6-P1: PDF schema, binary, and extracted-text views
+### P6-P1a: PDF schema and binary view
 
 1. `feat(core): add PDF schema contracts`
-2. `feat(pdf): add explicit PDF binary and extracted-text views`
-3. `feat(cli): add explicit PDF comparison commands`
+2. `feat(pdf): add explicit PDF binary view`
+3. `feat(cli): add explicit PDF binary comparison commands`
+4. `docs: document PDF binary view semantics`
+
+Gate: schema migration is revalidated; `artifact_policy` accepts only `none`;
+pure binary view accepts encrypted PDFs as bytes; binary view reuses exact
+binary semantics while naming the PDF view; malformed PDFs are not parsed;
+resource limits, payload truncation, and no fallback are covered by generated
+fixtures.
+
+### P6-P1b: PDF extracted-text view
+
+1. `feat(pdf): add supervised PDF text extraction worker`
+2. `feat(pdf): add explicit PDF extracted-text view`
+3. `feat(cli): add explicit PDF extracted-text comparison commands`
 4. `docs: document PDF text extraction semantics`
 
-Gate: schema migration is revalidated; encrypted/malformed PDFs fail safely;
-binary and extracted-text views remain distinct; text order, fonts/encodings,
-Unicode mapping, page alignment, resource limits, backend provenance, and no
-fallback are covered by generated fixtures.
+Gate: schema migration remains compatible with P6-P1a; any encrypted input
+returns `failed/pdf_encrypted`; text extraction runs only in a supervised
+bounded worker; multi-view all-or-nothing behavior is tested; text order,
+fonts/encodings, Unicode mapping, page alignment, worker isolation, cumulative
+resources, backend provenance, and no fallback are covered by generated
+fixtures.
 
 ### P6-P2: PDF object/metadata view
 
@@ -657,6 +947,22 @@ contracts.
 Richer presentation returns to RFC 0004. A UI can navigate validated source
 nodes, PDF pages, objects, text runs, and artifact refs, but it cannot compare,
 fetch, render, OCR, extract, or execute source documents itself.
+
+## Lifecycle and failure table
+
+| Scenario | Required terminal behavior |
+| --- | --- |
+| Explicit source `lexical_text`, stable inputs | RFC 0002 text lifecycle and exact decoded-line semantics; completed source-code outcome under selected schema. |
+| Explicit source `syntax_tree`, missing parser backend | `resolving/unavailable/backend_unavailable`; no `DiffResult`. |
+| Explicit source `syntax_tree`, malformed source with `reject` recovery | `decoding/failed/decode_error`; no text fallback and no `DiffResult`. |
+| Explicit source `syntax_tree`, parser/resource bound exceeded | `decoding/failed/resource_limit_exceeded`; no partial result. |
+| Explicit source `syntax_tree`, alignment ambiguity or work bound exceeded | `aligning/failed/alignment_failed` or `comparing/failed/compare_resource_limit`; no approximate result. |
+| PDF `views=("binary",)`, encrypted input | Completed binary-view comparison of original bytes if byte limits are satisfied. |
+| PDF includes any nonbinary view and input is encrypted | `decoding/failed/pdf_encrypted`; no fallback to binary and no `DiffResult`. |
+| PDF nonbinary backend unavailable or platform cannot supervise worker | `resolving/unavailable/backend_unavailable`; no worker starts. |
+| PDF required multi-view run where an early view fails | Top-level failed/unavailable outcome; completed earlier view work appears only in execution attempts. |
+| PDF worker timeout/RSS/temp/output/process/network bound exceeded | Selected view fails at observed stage; required all-or-nothing invocation has no `DiffResult`. |
+| PDF artifact requested before P6-A1 | `validating/failed/invalid_spec`; `artifact_policy` only accepts `none`. |
 
 ## References
 
