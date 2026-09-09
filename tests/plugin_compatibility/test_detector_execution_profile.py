@@ -22,6 +22,7 @@ from platydiff.plugin_sdk import (
     DetectorCandidateV1,
     DetectorInputV1,
     PluginExecutionErrorV1,
+    PluginResourceLimitErrorV1,
 )
 from platydiff.plugins import PluginCatalogV1
 from tests.unit.test_plugin_host_execution import _capability
@@ -165,6 +166,31 @@ def test_pinned_unavailable_detector_is_structured_and_never_invoked() -> None:
     assert attempt.disposition == "unavailable"
     assert attempt.reason_code == "backend_missing"
     assert attempt.capability_version == "1"
+    assert attempt.provider is not None
+
+
+def test_detector_availability_resource_limit_is_auditable() -> None:
+    class ResourceLimitedDetector(_Detector):
+        def availability(self) -> CapabilityAvailabilityV1:
+            raise PluginResourceLimitErrorV1("private detector budget detail")
+
+    detector = ResourceLimitedDetector()
+    host, _ = _capability(detector, CapabilityKind.DETECTOR)
+    outcome = host.compare(
+        BytesSource(b"ascii"),
+        BytesSource(b"ascii"),
+        _spec(),
+        detector_id=detector.capability_id,
+    )
+    assert isinstance(outcome, FailedOutcomeV2)
+    assert detector.calls == []
+    assert outcome.problem.code == "resource_limit_exceeded"
+    assert outcome.problem.stage.value == "detecting"
+    assert "private" not in outcome.problem.message
+    assert len(outcome.execution.attempts) == 1
+    attempt = outcome.execution.attempts[0]
+    assert attempt.disposition == "failed"
+    assert attempt.reason_code == "resource_limit_exceeded"
     assert attempt.provider is not None
 
 

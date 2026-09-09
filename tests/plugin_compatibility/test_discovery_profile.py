@@ -73,6 +73,43 @@ class _MissingAvailabilityComparatorHandle:
         return object()
 
 
+class _ExplodingAvailabilityComparatorHandle:
+    capability_id = "org.example.broken.text_exact"
+    modality = "text"
+    source_stage = "decoding"
+
+    def __init__(self, failure: BaseException) -> None:
+        self._failure = failure
+
+    @property
+    def availability(self) -> object:
+        raise self._failure
+
+    def create_run(self, before: object, after: object, spec: object) -> object:
+        del before, after, spec
+        return object()
+
+
+def _executable_manifest(handle: object) -> PluginManifestV1:
+    declaration = CapabilityDeclarationV1(
+        cast(str, handle.capability_id),  # type: ignore[attr-defined]
+        CapabilityKind.COMPARATOR,
+        "1",
+    )
+    return PluginManifestV1(
+        1,
+        "org.example.broken",
+        "1",
+        1,
+        1,
+        1,
+        ("host.execution.v1",),
+        (declaration,),
+        "Apache-2.0",
+        (cast(CapabilityHandleV1, handle),),
+    )
+
+
 def test_import_and_builtin_compare_do_not_enumerate_entry_points() -> None:
     script = """
 from importlib import metadata
@@ -224,6 +261,52 @@ def test_execution_handle_without_availability_is_quarantined(
     catalog = discover_plugins(PluginDiscoveryPolicy(("org.example.executable",)))
     assert catalog.plugins == ()
     assert catalog.issues[0].reason_code == "plugin_manifest_invalid"
+
+
+def test_availability_descriptor_failure_is_quarantined_without_affecting_peers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    broken = FakeEntryPoint(
+        "org.example.broken",
+        lambda: _executable_manifest(
+            _ExplodingAvailabilityComparatorHandle(
+                RuntimeError("private handle detail /private/path")
+            )
+        ),
+        distribution_name="broken-plugin",
+    )
+    valid = FakeEntryPoint(
+        "org.example.valid",
+        lambda: _manifest("org.example.valid"),
+        distribution_name="valid-plugin",
+    )
+    _install(monkeypatch, (broken, valid))
+    catalog = discover_plugins(
+        PluginDiscoveryPolicy(("org.example.broken", "org.example.valid"))
+    )
+    assert [plugin.manifest.plugin_id for plugin in catalog.plugins] == [
+        "org.example.valid"
+    ]
+    assert len(catalog.issues) == 1
+    issue = catalog.issues[0]
+    assert issue.plugin_id == "org.example.broken"
+    assert issue.reason_code == "plugin_manifest_invalid"
+    assert "private" not in repr(issue)
+    assert "/private/path" not in repr(issue)
+
+
+@pytest.mark.parametrize("failure", [KeyboardInterrupt, SystemExit, MemoryError])
+def test_availability_descriptor_process_control_failures_propagate(
+    monkeypatch: pytest.MonkeyPatch,
+    failure: type[BaseException],
+) -> None:
+    broken = FakeEntryPoint(
+        "org.example.broken",
+        lambda: _executable_manifest(_ExplodingAvailabilityComparatorHandle(failure())),
+    )
+    _install(monkeypatch, (broken,))
+    with pytest.raises(failure):
+        discover_plugins(PluginDiscoveryPolicy(("org.example.broken",)))
 
 
 def test_issue_order_uses_normalized_distribution_identity(
