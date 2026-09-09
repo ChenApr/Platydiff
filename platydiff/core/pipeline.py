@@ -367,10 +367,9 @@ def run_snapshot_comparison(
             )
             if resolution.selected is None:
                 raise RuntimeError("resolution completed without a capability")
-            if resolution.selected.modality == "binary":
-                completion = _run_binary_snapshot(snapshots, spec, stages)
-            else:
-                completion = _run_text_snapshot(snapshots, spec, stages)
+            completion = resolution.selected.handle.run(
+                snapshots[0], snapshots[1], spec, stages
+            )
         except UnavailableError as error:
             return UnavailableOutcome(
                 execution=stages.execution(()),
@@ -448,32 +447,3 @@ def _resolve_or_raise(
     if resolution.selected is None:
         _raise_capability_unavailable(resolution.attempts)
     return resolution
-
-
-def _run_binary_snapshot(
-    snapshots: tuple[SourceSnapshot, SourceSnapshot],
-    spec: AutoCompareSpec | BinaryCompareSpec,
-    stages: StageRunner,
-) -> ComparisonCompletion:
-    from platydiff.comparators.binary.comparator import compare_binary_snapshots
-
-    stages.run(PipelineStage.DECODING, lambda: None)
-    stages.run(PipelineStage.NORMALIZING, lambda: None)
-    stages.run(PipelineStage.ALIGNING, lambda: None)
-    completion = stages.run(
-        PipelineStage.COMPARING,
-        lambda: compare_binary_snapshots(snapshots[0], snapshots[1], spec),
-    )
-    return stages.run(PipelineStage.AGGREGATING, lambda: completion)
-
-
-def _run_text_snapshot(
-    snapshots: tuple[SourceSnapshot, SourceSnapshot],
-    spec: AutoCompareSpec | BinaryCompareSpec,
-    stages: StageRunner,
-) -> ComparisonCompletion:
-    if not isinstance(spec, AutoCompareSpec):
-        raise RuntimeError("binary intent cannot resolve to text")
-    from platydiff.comparators.text.comparator import compare_text_snapshots
-
-    return compare_text_snapshots(snapshots[0], snapshots[1], spec, stages)

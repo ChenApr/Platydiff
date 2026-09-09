@@ -74,7 +74,7 @@ def _capability(
         priority=priority,
         supported_source_kinds=source_kinds,
         supported_features=features,
-        executor=object(),
+        handle=object(),  # type: ignore[arg-type]
         backend_available=available,
         backend_version_supported=version_supported,
     )

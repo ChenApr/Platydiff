@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from platydiff.comparators.binary.comparator import compare_binary_snapshots
+from platydiff.comparators._adapters import (
+    BuiltinBinaryComparatorHandle,
+    BuiltinTextComparatorHandle,
+)
 from platydiff.comparators.text.comparator import compare_text
 from platydiff.core._capabilities import CapabilityCatalog, CapabilityRecord
 from platydiff.core._registry import InternalRegistry
@@ -32,7 +35,7 @@ _CATALOG.register(
         0,
         _SOURCE_KINDS,
         frozenset(),
-        compare_text,
+        BuiltinTextComparatorHandle(),
     )
 )
 _CATALOG.register(
@@ -46,7 +49,7 @@ _CATALOG.register(
         0,
         _SOURCE_KINDS,
         frozenset(),
-        compare_binary_snapshots,
+        BuiltinBinaryComparatorHandle(),
     )
 )
 
