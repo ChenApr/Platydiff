@@ -227,6 +227,10 @@ plugin-SDK contracts or authorize an implementation gate.
 
 Syntactic equality does not imply runtime semantic equality. AST comparison must state its parser version, error-recovery behavior, and macro or preprocessing boundaries.
 
+[RFC 0008](rfcs/0008-source-code-and-pdf-comparison.md) proposes explicit
+source-code comparison contracts and independently authorized Phase 6 gates.
+It remains proposed and does not authorize implementation.
+
 ### 6.4 Images
 
 In exact mode, both images are decoded to an explicitly selected size, orientation, color space, and alpha representation before pixel-level comparison. Outputs can include changed-pixel count, MAE, RMSE, PSNR, and heatmaps. Structural or perceptual modes can use SSIM, MS-SSIM, LPIPS, or perceptual hashes.
@@ -250,6 +254,10 @@ Video comparison requires demuxing, decoding, timeline alignment, explicit frame
 ### 6.7 PDF
 
 A PDF contains text, drawing instructions, fonts, images, and page layout. The system should provide three composable views: extracted-text comparison, PDF object and metadata comparison, and image comparison of rendered pages. Different generators can create radically different internal objects while producing visually identical pages, so binary diff alone is insufficient.
+
+[RFC 0008](rfcs/0008-source-code-and-pdf-comparison.md) proposes explicit PDF
+view contracts for binary, extracted text, objects/metadata, and rendered pages.
+It remains proposed and does not authorize implementation.
 
 ### 6.8 Tables, arrays, and statistical data
 
