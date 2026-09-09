@@ -37,6 +37,10 @@ whitespace. UTF-8 is strict, and only `utf-8-sig` removes a BOM. Comments,
 trailing commas, duplicate decoded keys, NaN, infinities, and unpaired surrogate
 escapes fail with `decode_error`.
 
+The encoding option applies only to byte and path sources. `TextSource` is
+already decoded and is parsed as the exact caller-owned Unicode text; in
+particular, a leading U+FEFF is not silently removed from it and is invalid JSON.
+
 Mappings compare by decoded Unicode key in code-point order; member order and
 escape spelling are ignored. Sequences compare by position. Strings are not
 case-folded, whitespace-normalized, or Unicode-normalized. Changes use canonical

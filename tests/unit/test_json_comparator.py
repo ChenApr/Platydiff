@@ -19,11 +19,14 @@ from platydiff import (
     TextSource,
     compare,
 )
+from platydiff.comparators.json._parser import _Parser, parse_json
+from platydiff.comparators.json.comparator import _Scanner
 from platydiff.core.models import (
     ChangeCompleteness,
     StructuredChange,
     UnavailableOutcomeV3,
 )
+from platydiff.core.problems import ResourceLimitError
 from platydiff.core.serialization import dumps_outcome, loads_outcome
 from platydiff.plugins import PluginCatalogV1, PluginHost
 
@@ -112,6 +115,21 @@ def test_bom_requires_explicit_utf8_sig() -> None:
     assert strict.problem.code == "decode_error"
     assert isinstance(allowed, CompletedOutcomeV3)
     assert allowed.result.relation.value == "equal"
+    assert allowed.result.provenance.transformations[0].transformation_id == (
+        "json.decode.utf8"
+    )
+
+
+def test_text_source_is_parsed_without_encoding_or_bom_transformation() -> None:
+    outcome = compare(
+        TextSource("\ufeffnull"),
+        TextSource("null"),
+        JsonCompareSpec(encoding=TextEncoding.UTF8_SIG),
+    )
+
+    assert isinstance(outcome, FailedOutcomeV3)
+    assert outcome.problem.code == "decode_error"
+    assert outcome.problem.stage.value == "decoding"
 
 
 def test_value_and_lexical_number_modes_have_distinct_truth() -> None:
@@ -250,6 +268,59 @@ def test_change_payload_limit_is_applied_after_full_comparison() -> None:
     assert truncated.result.changes.returned_count == 0
     assert truncated.result.changes.total_count == 1
     assert truncated.result.summary.change_count == 1
+    assert loads_outcome(dumps_outcome(truncated)) == truncated
+
+
+def test_scanner_retains_only_the_bounded_change_prefix() -> None:
+    item_count = 5_000
+    before, _ = parse_json(
+        f"[{','.join('0' for _ in range(item_count))}]",
+        StructuredResourceLimits(),
+    )
+    after, _ = parse_json(
+        f"[{','.join('1' for _ in range(item_count))}]",
+        StructuredResourceLimits(),
+    )
+    spec = JsonCompareSpec(limits=StructuredResourceLimits(max_change_items=1))
+
+    scan = _Scanner(spec).scan(before, after)
+
+    assert scan.changed == scan.compared == item_count
+    assert scan.work == item_count + 1
+    assert len(scan.changes) == 1
+    assert scan.change_limit_reason == "change_items"
+    assert scan.change_limit == 1
+
+
+@pytest.mark.parametrize(
+    ("source", "limits", "cursor", "message"),
+    [
+        (
+            "9" * 100_000,
+            StructuredResourceLimits(max_number_digits=3),
+            3,
+            "digit limit",
+        ),
+        (
+            "1e" + "9" * 100_000,
+            StructuredResourceLimits(max_number_digits=100_001, max_abs_exponent=3),
+            2,
+            "exponent limit",
+        ),
+    ],
+)
+def test_oversized_number_tokens_fail_before_limit_plus_one_is_consumed(
+    source: str,
+    limits: StructuredResourceLimits,
+    cursor: int,
+    message: str,
+) -> None:
+    parser = _Parser(source, limits)
+
+    with pytest.raises(ResourceLimitError, match=message):
+        parser.parse()
+
+    assert parser.cursor == cursor
 
 
 def test_seeded_random_trees_ignore_object_order() -> None:

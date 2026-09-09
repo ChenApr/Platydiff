@@ -10,9 +10,11 @@ from platydiff import (
     CompletedOutcomeV3,
     FailedOutcomeV3,
     JsonCompareSpec,
+    JsonNumberMode,
     ScalarFact,
     StructuredChange,
     StructuredDetailMode,
+    StructuredResourceLimits,
     StructuredType,
     TextCompareSpec,
     TextSource,
@@ -156,4 +158,100 @@ def test_schema_v3_reader_enforces_json_detail_and_transformations() -> None:
     first["transformation_id"] = "json.unknown"
 
     with pytest.raises(SerializationError, match="transformations"):
+        outcome_from_data(data)
+
+
+@pytest.mark.parametrize(
+    ("before", "after", "spec", "field", "tampered"),
+    [
+        ("null", "0", JsonCompareSpec(), "before_digest", "0" * 64),
+        ("true", "false", JsonCompareSpec(), "value", False),
+        ('"a"', '"b"', JsonCompareSpec(), "value", "tampered"),
+        ("1", "2", JsonCompareSpec(), "value", "999"),
+        ("1.5", "2.5", JsonCompareSpec(), "value", "999E-1"),
+        (
+            "-1.0",
+            "2.0",
+            JsonCompareSpec(number_mode=JsonNumberMode.LEXICAL),
+            "lexical",
+            "-1.00",
+        ),
+        (
+            "-1.0",
+            "2.0",
+            JsonCompareSpec(number_mode=JsonNumberMode.LEXICAL),
+            "value",
+            "-999E-1",
+        ),
+    ],
+)
+def test_schema_v3_reader_rejects_forged_scalar_fact_evidence(
+    before: str,
+    after: str,
+    spec: JsonCompareSpec,
+    field: str,
+    tampered: bool | str,
+) -> None:
+    outcome = compare(TextSource(before), TextSource(after), spec)
+    assert isinstance(outcome, CompletedOutcomeV3)
+    data = copy.deepcopy(outcome_to_data(outcome))
+    result = data["result"]
+    assert isinstance(result, dict)
+    changes = result["changes"]
+    assert isinstance(changes, dict)
+    items = changes["items"]
+    assert isinstance(items, list)
+    change = items[0]
+    assert isinstance(change, dict)
+    if field == "before_digest":
+        change[field] = tampered
+    else:
+        fact = change["before_fact"]
+        assert isinstance(fact, dict)
+        fact[field] = tampered
+
+    with pytest.raises(SerializationError, match=r"fact|digest"):
+        outcome_from_data(data)
+
+
+def test_schema_v3_reader_rejects_forged_change_payload_usage() -> None:
+    outcome = compare(
+        TextSource("[0,0]"),
+        TextSource("[1,1]"),
+        JsonCompareSpec(limits=StructuredResourceLimits(max_change_items=1)),
+    )
+    assert isinstance(outcome, CompletedOutcomeV3)
+    data = copy.deepcopy(outcome_to_data(outcome))
+    result = data["result"]
+    assert isinstance(result, dict)
+    provenance = result["provenance"]
+    assert isinstance(provenance, dict)
+    resources = provenance["resources"]
+    assert isinstance(resources, list)
+    payload = next(
+        item
+        for item in resources
+        if isinstance(item, dict) and item.get("name") == "change_payload_bytes"
+    )
+    payload["used"] = 0
+
+    with pytest.raises(SerializationError, match="resource actuals"):
+        outcome_from_data(data)
+
+
+def test_schema_v3_reader_rejects_incoherent_truncation_reason() -> None:
+    outcome = compare(
+        TextSource("[0,0]"),
+        TextSource("[1,1]"),
+        JsonCompareSpec(limits=StructuredResourceLimits(max_change_items=1)),
+    )
+    assert isinstance(outcome, CompletedOutcomeV3)
+    data = copy.deepcopy(outcome_to_data(outcome))
+    result = data["result"]
+    assert isinstance(result, dict)
+    changes = result["changes"]
+    assert isinstance(changes, dict)
+    changes["limit_reason"] = "change_payload_bytes"
+
+    with pytest.raises(SerializationError, match="truncation evidence"):
         outcome_from_data(data)

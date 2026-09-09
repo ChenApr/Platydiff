@@ -32,6 +32,9 @@ parser 只接受一个 strict RFC 8259 value，后面可以有 JSON whitespace�
 只有 `utf-8-sig` 会移除 BOM。comment、trailing comma、重复 decoded key、NaN、infinity
 与不成对 surrogate escape 都以 `decode_error` 失败。
 
+encoding 选项只适用于 byte 与 path source。`TextSource` 已经完成 decoding，会严格按照调用方
+提供的 Unicode 文本解析；尤其不会静默移除开头的 U+FEFF，因此该字符会使 JSON 无效。
+
 mapping 按 decoded Unicode key 的 code-point 顺序比较；member 顺序与 escape 拼写被忽略。
 sequence 按位置比较。string 不做 case fold、whitespace normalization 或 Unicode
 normalization。change 使用 canonical RFC 6901 JSON Pointer 与确定性 depth-first pre-order。

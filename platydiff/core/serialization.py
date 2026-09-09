@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from collections.abc import Callable
@@ -1504,6 +1505,164 @@ def _finite_count(metric: Metric, name: str) -> int:
     return int(metric.value.value)
 
 
+def _structured_u64(value: int) -> bytes:
+    if not 0 <= value <= 2**64 - 1:
+        raise SerializationError("canonical structured length exceeds U64")
+    return value.to_bytes(8, "big")
+
+
+def _structured_signed(value: int) -> bytes:
+    if value == 0:
+        return b""
+    length = max(1, (value.bit_length() + 8) // 8)
+    encoded = value.to_bytes(length, "big", signed=True)
+    while len(encoded) > 1 and (
+        (encoded[0] == 0 and encoded[1] < 0x80)
+        or (encoded[0] == 0xFF and encoded[1] >= 0x80)
+    ):
+        encoded = encoded[1:]
+    return encoded
+
+
+def _structured_magnitude(decimal: str) -> bytes:
+    chunks: list[int] = []
+    for offset in range(0, len(decimal), 9):
+        width = min(9, len(decimal) - offset)
+        factor = 10**width
+        carry = int(decimal[offset : offset + width])
+        for index in range(len(chunks)):
+            value = chunks[index] * factor + carry
+            chunks[index] = value & 0xFFFFFFFF
+            carry = value >> 32
+        while carry:
+            chunks.append(carry & 0xFFFFFFFF)
+            carry >>= 32
+    encoded = b"".join(item.to_bytes(4, "big") for item in reversed(chunks))
+    return encoded.lstrip(b"\x00")
+
+
+def _bounded_exponent(digits: str, limit: int) -> int:
+    value = 0
+    for character in digits:
+        digit = ord(character) - ord("0")
+        if limit < 0 or value > (limit - digit) // 10:
+            raise SerializationError("JSON number fact exceeds its exponent limit")
+        value = value * 10 + digit
+    return value
+
+
+def _validate_lexical_number_fact(fact: ScalarFact, spec: JsonCompareSpec) -> None:
+    if fact.lexical is None or not isinstance(fact.value, str):
+        raise SerializationError("lexical JSON number fact is incomplete")
+    lexical = fact.lexical
+    digit_count = sum(
+        character.isascii() and character.isdigit() for character in lexical
+    )
+    if digit_count > spec.limits.max_number_digits:
+        raise SerializationError("JSON number fact exceeds its digit limit")
+    unsigned = lexical[1:] if lexical.startswith("-") else lexical
+    mantissa, marker, exponent_text = unsigned.lower().partition("e")
+    integer, point, fraction = mantissa.partition(".")
+    explicit_exponent = 0
+    if marker:
+        exponent_negative = exponent_text.startswith("-")
+        exponent_digits = exponent_text.lstrip("+-")
+        exponent_limit = spec.limits.max_abs_exponent + len(fraction)
+        if exponent_negative:
+            exponent_limit = spec.limits.max_abs_exponent - len(fraction)
+        explicit_exponent = _bounded_exponent(exponent_digits, exponent_limit)
+        if exponent_negative:
+            explicit_exponent = -explicit_exponent
+    exponent = explicit_exponent - len(fraction)
+    if abs(exponent) > spec.limits.max_abs_exponent:
+        raise SerializationError("JSON number fact exceeds its exponent limit")
+    coefficient = (integer + fraction).lstrip("0") or "0"
+    negative = lexical.startswith("-")
+    if coefficient == "0":
+        negative = False
+        exponent = 0
+    else:
+        trailing = len(coefficient) - len(coefficient.rstrip("0"))
+        if trailing:
+            coefficient = coefficient[:-trailing]
+            exponent += trailing
+    if point or marker:
+        canonical = f"{'-' if negative else ''}{coefficient}E{exponent}"
+    else:
+        canonical = f"{'-' if negative else ''}{coefficient}{'0' * exponent}"
+    if canonical != fact.value:
+        raise SerializationError("JSON number fact disagrees with its lexical token")
+
+
+def _scalar_fact_digest(fact: ScalarFact, spec: JsonCompareSpec) -> str:
+    if fact.kind in ("integer", "decimal"):
+        if not isinstance(fact.value, str):
+            raise SerializationError("JSON number fact lacks canonical text")
+        if fact.lexical is not None:
+            _validate_lexical_number_fact(fact, spec)
+        if spec.number_mode is JsonNumberMode.LEXICAL:
+            if fact.lexical is None:
+                raise SerializationError("lexical JSON number fact lacks its token")
+            domain = "structured/number/lexical"
+            payload = fact.lexical.encode("utf-8")
+        elif fact.kind == "integer":
+            digits = fact.value[1:] if fact.value.startswith("-") else fact.value
+            if len(digits) > spec.limits.max_number_digits:
+                raise SerializationError("JSON integer fact exceeds its digit limit")
+            magnitude = _structured_magnitude(digits)
+            payload = (
+                b"\x03"
+                + (b"\x01" if fact.value.startswith("-") else b"\x00")
+                + _structured_u64(len(magnitude))
+                + magnitude
+            )
+            domain = "structured/value"
+        else:
+            unsigned = fact.value[1:] if fact.value.startswith("-") else fact.value
+            coefficient, exponent_text = unsigned.split("E", 1)
+            if len(coefficient) > spec.limits.max_number_digits:
+                raise SerializationError("JSON decimal fact exceeds its digit limit")
+            exponent_negative = exponent_text.startswith("-")
+            exponent_limit = spec.limits.max_abs_exponent
+            if not exponent_negative:
+                exponent_limit += spec.limits.max_number_digits
+            exponent_value = _bounded_exponent(
+                exponent_text.removeprefix("-"), exponent_limit
+            )
+            if exponent_negative:
+                exponent_value = -exponent_value
+            coefficient_bytes = coefficient.encode("ascii")
+            exponent_bytes = _structured_signed(exponent_value)
+            payload = (
+                b"\x04"
+                + (b"\x01" if fact.value.startswith("-") else b"\x00")
+                + _structured_u64(len(coefficient_bytes))
+                + coefficient_bytes
+                + _structured_u64(len(exponent_bytes))
+                + exponent_bytes
+            )
+            domain = "structured/value"
+    else:
+        domain = "structured/value"
+        if fact.kind == "null":
+            payload = b"\x00"
+        elif fact.kind == "boolean":
+            payload = b"\x02" if fact.value is True else b"\x01"
+        elif fact.kind == "string" and isinstance(fact.value, str):
+            encoded = fact.value.encode("utf-8")
+            if len(encoded) > spec.limits.max_scalar_bytes:
+                raise SerializationError("JSON string fact exceeds its spec limit")
+            payload = b"\x05" + _structured_u64(len(encoded)) + encoded
+        else:
+            raise SerializationError("JSON change contains a non-JSON scalar fact")
+    digest = hashlib.sha256()
+    digest.update(f"platydiff/v3/{domain}".encode())
+    digest.update(b"\x00")
+    digest.update(_structured_u64(len(payload)))
+    digest.update(payload)
+    return digest.hexdigest()
+
+
 def _validate_v3_result(result: DiffResult) -> None:
     kind = result.provenance.spec.get("kind")
     if kind in ("auto", "text", "binary"):
@@ -1557,7 +1716,10 @@ def _validate_v3_result(result: DiffResult) -> None:
     for change in result.changes.items:
         if not isinstance(change, StructuredChange):
             raise RuntimeError("structured change narrowing failed")
-        for fact in (change.before_fact, change.after_fact):
+        for fact, digest in (
+            (change.before_fact, change.before_digest),
+            (change.after_fact, change.after_digest),
+        ):
             if spec.detail_mode is StructuredDetailMode.DIGEST_ONLY:
                 if fact is not None:
                     raise SerializationError("digest_only JSON changes must omit facts")
@@ -1584,6 +1746,10 @@ def _validate_v3_result(result: DiffResult) -> None:
                     and len(fact.value.encode("utf-8")) > spec.limits.max_scalar_bytes
                 ):
                     raise SerializationError("JSON string fact exceeds its spec limit")
+                if digest is None or _scalar_fact_digest(fact, spec) != digest:
+                    raise SerializationError(
+                        "JSON scalar fact does not match its evidence digest"
+                    )
             elif fact.descendant_count >= spec.limits.max_nodes:
                 raise SerializationError("JSON subtree fact exceeds its node limit")
         if spec.detail_mode is StructuredDetailMode.VALUES:
@@ -1677,8 +1843,27 @@ def _validate_v3_result(result: DiffResult) -> None:
         resources["before_input_bytes"].used != result.provenance.inputs[0].size_bytes
         or resources["after_input_bytes"].used != result.provenance.inputs[1].size_bytes
         or resources["change_items"].used != result.changes.returned_count
+        or resources["change_payload_bytes"].used
+        != sum(serialized_change_size(item) for item in result.changes.items)
     ):
         raise SerializationError("schema-v3 JSON resource actuals are inconsistent")
+    if result.changes.completeness is ChangeCompleteness.TRUNCATED:
+        if result.changes.limit_reason == "change_items":
+            valid_truncation = (
+                result.changes.limit == spec.limits.max_change_items
+                and result.changes.returned_count == spec.limits.max_change_items
+            )
+        elif result.changes.limit_reason == "change_payload_bytes":
+            valid_truncation = (
+                result.changes.limit == spec.limits.max_change_payload_bytes
+                and result.changes.returned_count < spec.limits.max_change_items
+            )
+        else:
+            valid_truncation = False
+        if not valid_truncation:
+            raise SerializationError(
+                "schema-v3 JSON truncation evidence is inconsistent"
+            )
 
 
 def outcome_to_data(outcome: AnyCompareOutcome) -> JsonObject:

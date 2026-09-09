@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from platydiff.core.models import (
     AnyCompareOutcome,
     CompletedOutcome,
@@ -78,7 +80,7 @@ def _render_fact(fact: ScalarFact | SubtreeFact | None) -> str:
     if fact.kind == "string":
         if not isinstance(fact.value, str):
             raise RuntimeError("string fact lacks text")
-        value = f'"{_escape_terminal_text(fact.value)}"'
+        value = json.dumps(fact.value, ensure_ascii=True)
     elif fact.kind == "boolean":
         value = "true" if fact.value is True else "false"
     elif fact.value is None:

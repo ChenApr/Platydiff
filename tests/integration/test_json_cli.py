@@ -144,8 +144,24 @@ def test_json_terminal_escapes_paths_and_typed_values(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "replace /a\\x1b" in result.stdout
-    assert '[string] "old\\x0a"' in result.stdout
+    assert '[string] "old\\n"' in result.stdout
     assert "\x1b" not in result.stdout
+
+
+def test_json_terminal_uses_unambiguous_json_string_boundaries(tmp_path: Path) -> None:
+    unsafe = 'a"b\\c\n\x01\u202e'
+    before, after = pair(
+        tmp_path,
+        json.dumps({"value": unsafe}, ensure_ascii=False),
+        json.dumps({"value": "safe"}),
+    )
+
+    result = run_cli("json", str(before), str(after))
+
+    assert result.returncode == 1
+    assert '[string] "a\\"b\\\\c\\n\\u0001\\u202e"' in result.stdout
+    assert "\x01" not in result.stdout
+    assert "\u202e" not in result.stdout
 
 
 def test_parse_command_constructs_json_spec() -> None:

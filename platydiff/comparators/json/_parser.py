@@ -214,8 +214,10 @@ class _Parser:
     def _number(self) -> JsonNumber:
         start = self.cursor
         negative = self._consume("-")
+        digit_count = 0
         integer_start = self.cursor
-        if self._consume("0"):
+        if self.cursor < len(self.text) and self.text[self.cursor] == "0":
+            digit_count = self._consume_number_digit(digit_count)
             if self.cursor < len(self.text) and self.text[self.cursor].isdigit():
                 self._invalid()
         else:
@@ -224,43 +226,48 @@ class _Parser:
                 or self.text[self.cursor] not in "123456789"
             ):
                 self._invalid()
-            self.cursor += 1
+            digit_count = self._consume_number_digit(digit_count)
             while (
                 self.cursor < len(self.text)
                 and self.text[self.cursor].isascii()
                 and self.text[self.cursor].isdigit()
             ):
-                self.cursor += 1
+                digit_count = self._consume_number_digit(digit_count)
         integer_digits = self.text[integer_start : self.cursor]
         fraction_digits = ""
         if self._consume("."):
             fraction_start = self.cursor
-            self._digits(required=True)
+            if not self._at_ascii_digit():
+                self._invalid()
+            while self._at_ascii_digit():
+                digit_count = self._consume_number_digit(digit_count)
             fraction_digits = self.text[fraction_start : self.cursor]
         explicit_exponent = 0
-        exponent_digits = ""
         exponent_negative = False
         if self.cursor < len(self.text) and self.text[self.cursor] in "eE":
             self.cursor += 1
             exponent_negative = self._consume("-")
             if not exponent_negative:
                 self._consume("+")
-            exponent_start = self.cursor
-            self._digits(required=True)
-            exponent_digits = self.text[exponent_start : self.cursor]
-        digit_count = len(integer_digits) + len(fraction_digits) + len(exponent_digits)
-        if digit_count > self.limits.max_number_digits:
-            self._limit("A JSON number exceeded the configured digit limit.")
-        if exponent_digits:
-            maximum_explicit = self.limits.max_abs_exponent + len(fraction_digits)
-            normalized_exponent = exponent_digits.lstrip("0") or "0"
-            maximum_text = str(maximum_explicit)
-            if len(normalized_exponent) > len(maximum_text) or (
-                len(normalized_exponent) == len(maximum_text)
-                and normalized_exponent > maximum_text
-            ):
-                self._limit("A JSON number exceeded the configured exponent limit.")
-            explicit_exponent = int(normalized_exponent)
+            if not self._at_ascii_digit():
+                self._invalid()
+            exponent_limit = self.limits.max_abs_exponent + len(fraction_digits)
+            if exponent_negative:
+                exponent_limit = self.limits.max_abs_exponent - len(fraction_digits)
+            exponent_value = 0
+            while self._at_ascii_digit():
+                digit = ord(self.text[self.cursor]) - ord("0")
+                if digit_count >= self.limits.max_number_digits:
+                    self._limit("A JSON number exceeded the configured digit limit.")
+                if (
+                    exponent_limit < 0
+                    or exponent_value > (exponent_limit - digit) // 10
+                ):
+                    self._limit("A JSON number exceeded the configured exponent limit.")
+                self.cursor += 1
+                digit_count += 1
+                exponent_value = exponent_value * 10 + digit
+            explicit_exponent = exponent_value
             if exponent_negative:
                 explicit_exponent = -explicit_exponent
         exponent = explicit_exponent - len(fraction_digits)
@@ -287,16 +294,18 @@ class _Parser:
             kind, negative, coefficient, exponent, self.text[start : self.cursor]
         )
 
-    def _digits(self, *, required: bool) -> None:
-        start = self.cursor
-        while (
+    def _at_ascii_digit(self) -> bool:
+        return (
             self.cursor < len(self.text)
             and self.text[self.cursor].isascii()
             and self.text[self.cursor].isdigit()
-        ):
-            self.cursor += 1
-        if required and self.cursor == start:
-            self._invalid()
+        )
+
+    def _consume_number_digit(self, digit_count: int) -> int:
+        if digit_count >= self.limits.max_number_digits:
+            self._limit("A JSON number exceeded the configured digit limit.")
+        self.cursor += 1
+        return digit_count + 1
 
     def _whitespace(self) -> None:
         while self.cursor < len(self.text) and self.text[self.cursor] in " \t\r\n":

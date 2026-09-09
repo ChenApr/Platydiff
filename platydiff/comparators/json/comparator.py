@@ -67,6 +67,9 @@ class _Decoded:
 @dataclass(frozen=True, slots=True)
 class _Scan:
     changes: tuple[StructuredChange, ...]
+    change_payload_bytes: int
+    change_limit: int | None
+    change_limit_reason: Literal["change_items", "change_payload_bytes"] | None
     compared: int
     equal: int
     changed: int
@@ -77,6 +80,11 @@ class _Scanner:
     def __init__(self, spec: JsonCompareSpec) -> None:
         self.spec = spec
         self.changes: list[StructuredChange] = []
+        self.change_payload_bytes = 0
+        self.change_limit: int | None = None
+        self.change_limit_reason: (
+            Literal["change_items", "change_payload_bytes"] | None
+        ) = None
         self.compared = 0
         self.equal = 0
         self.changed = 0
@@ -86,6 +94,9 @@ class _Scanner:
         self._visit(before, after, "")
         return _Scan(
             tuple(self.changes),
+            self.change_payload_bytes,
+            self.change_limit,
+            self.change_limit_reason,
             self.compared,
             self.equal,
             self.changed,
@@ -167,31 +178,38 @@ class _Scanner:
     ) -> None:
         self.compared += 1
         self.changed += 1
+        if self.change_limit_reason is not None:
+            return
+        if len(self.changes) >= self.spec.limits.max_change_items:
+            self.change_limit = self.spec.limits.max_change_items
+            self.change_limit_reason = "change_items"
+            return
         detail = self.spec.detail_mode is StructuredDetailMode.VALUES
-        self.changes.append(
-            StructuredChange(
-                operation=operation,
-                path=path,
-                before_type=None if before is None else _node_type(before),
-                after_type=None if after is None else _node_type(after),
-                before_digest=(
-                    None
-                    if before is None
-                    else evidence_digest(before, self.spec.number_mode)
-                ),
-                after_digest=(
-                    None
-                    if after is None
-                    else evidence_digest(after, self.spec.number_mode)
-                ),
-                before_fact=None
-                if before is None or not detail
-                else _fact(before, self.spec),
-                after_fact=None
-                if after is None or not detail
-                else _fact(after, self.spec),
-            )
+        change = StructuredChange(
+            operation=operation,
+            path=path,
+            before_type=None if before is None else _node_type(before),
+            after_type=None if after is None else _node_type(after),
+            before_digest=(
+                None
+                if before is None
+                else evidence_digest(before, self.spec.number_mode)
+            ),
+            after_digest=(
+                None if after is None else evidence_digest(after, self.spec.number_mode)
+            ),
+            before_fact=None
+            if before is None or not detail
+            else _fact(before, self.spec),
+            after_fact=None if after is None or not detail else _fact(after, self.spec),
         )
+        size = serialized_change_size(change)
+        if self.change_payload_bytes + size > self.spec.limits.max_change_payload_bytes:
+            self.change_limit = self.spec.limits.max_change_payload_bytes
+            self.change_limit_reason = "change_payload_bytes"
+            return
+        self.changes.append(change)
+        self.change_payload_bytes += size
 
 
 def _numbers(before: JsonNode, after: JsonNode) -> bool:
@@ -292,12 +310,14 @@ def _subtree_counts(node: JsonNode) -> tuple[int, int]:
 
 def _decode(snapshot: SourceSnapshot, spec: JsonCompareSpec) -> _Decoded:
     data = b"".join(snapshot.iter_chunks(64 * 1024, stage=PipelineStage.DECODING))
-    try:
-        text = data.decode(spec.encoding.value, errors="strict")
-    except UnicodeDecodeError as error:
-        raise DecodeError(
-            f"A source is not valid strict {spec.encoding.value} text."
-        ) from error
+    text = snapshot.owned_text()
+    if text is None:
+        try:
+            text = data.decode(spec.encoding.value, errors="strict")
+        except UnicodeDecodeError as error:
+            raise DecodeError(
+                f"A source is not valid strict {spec.encoding.value} text."
+            ) from error
     node, stats = parse_json(text, spec.limits)
     return _Decoded(data, node, stats, snapshot.source_kind, snapshot.label)
 
@@ -315,51 +335,37 @@ def _input(decoded: _Decoded, role: Literal["before", "after"]) -> InputProvenan
 def _select_changes(
     scan: _Scan, spec: JsonCompareSpec
 ) -> tuple[ChangeSet, int, tuple[Diagnostic, ...]]:
-    retained: list[StructuredChange] = []
-    payload_bytes = 0
-    limit: int | None = None
-    reason: Literal["change_items", "change_payload_bytes"] | None = None
-    for change in scan.changes:
-        if len(retained) >= spec.limits.max_change_items:
-            limit = spec.limits.max_change_items
-            reason = "change_items"
-            break
-        size = serialized_change_size(change)
-        if payload_bytes + size > spec.limits.max_change_payload_bytes:
-            limit = spec.limits.max_change_payload_bytes
-            reason = "change_payload_bytes"
-            break
-        retained.append(change)
-        payload_bytes += size
-    if len(retained) == scan.changed:
+    if len(scan.changes) == scan.changed:
+        if scan.change_limit is not None or scan.change_limit_reason is not None:
+            raise RuntimeError("complete structured changes must not carry a limit")
         return (
             ChangeSet(
                 ChangeCompleteness.COMPLETE,
-                tuple(retained),
+                scan.changes,
                 scan.changed,
-                len(retained),
+                len(scan.changes),
                 0,
                 ChangeSelection.ALL,
                 None,
             ),
-            payload_bytes,
+            scan.change_payload_bytes,
             (),
         )
-    if limit is None or reason is None:
+    if scan.change_limit is None or scan.change_limit_reason is None:
         raise RuntimeError("truncated structured changes require a limit")
     changes = ChangeSet(
         ChangeCompleteness.TRUNCATED,
-        tuple(retained),
+        scan.changes,
         scan.changed,
-        len(retained),
-        scan.changed - len(retained),
+        len(scan.changes),
+        scan.changed - len(scan.changes),
         ChangeSelection.SOURCE_ORDER_PREFIX,
-        limit,
-        reason,
+        scan.change_limit,
+        scan.change_limit_reason,
     )
     return (
         changes,
-        payload_bytes,
+        scan.change_payload_bytes,
         (
             Diagnostic(
                 "change_details_truncated",
@@ -368,10 +374,10 @@ def _select_changes(
                 "Complete change details were truncated by configured output limits.",
                 {
                     "total_count": scan.changed,
-                    "returned_count": len(retained),
+                    "returned_count": len(scan.changes),
                     "max_change_items": spec.limits.max_change_items,
                     "max_change_payload_bytes": spec.limits.max_change_payload_bytes,
-                    "limit_reason": reason,
+                    "limit_reason": scan.change_limit_reason,
                 },
             ),
         ),
