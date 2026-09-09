@@ -63,6 +63,7 @@ modalities; and HTML, TUI, desktop, or local-web UI implementation.
 | S10 | Phase 4 never emits partial; pre-completion limits fail and only completed detail can be truncated. | Return a relation from incomplete work. |
 | S11 | P4-A1, P4-A2, P4-B1, and P4-B2 are independently authorized. | Deliver Phase 4 as one batch. |
 | S12 | Phase 4 emits no artifacts; renderers present only validated bounded facts. | Add patches, previews, downloadable values, or reports now. |
+| S13 | Default JSON/YAML/table detail to bounded typed values and actual keyed coordinates, while retaining evidence digests; an explicit `digest_only` spec mode omits those facts without changing comparison truth. | Default to digest-only and accept value-blind human review, or let renderers reread sources, which violates the outcome boundary. |
 
 Until accepted decisions are recorded here, this RFC remains `Proposed` and no
 implementation gate is authorized.
@@ -71,8 +72,10 @@ The 2026-09-10 review revision tightens evidence digests, change invariants,
 metrics, provenance vocabulary, privacy claims, and resource accounting. It
 does not change any S1-S12 recommendation. It does change the proposed keyed
 table coordinate from a deterministic `key_digest` to a canonical
-`key_ordinal`, reducing low-entropy key exposure while preserving deterministic
-navigation.
+`key_ordinal`, reducing guessable digest exposure in `digest_only` while
+preserving deterministic navigation. A later review adds S13 because outcome
+content versus permanently
+value-blind human review is a product decision, not a renderer detail.
 
 ## Schema-v3 compatibility contract
 
@@ -146,6 +149,8 @@ class StructuredChange:
     after_type: StructuredType | None
     before_digest: str | None
     after_digest: str | None
+    before_fact: ScalarFact | SubtreeFact | None
+    after_fact: ScalarFact | SubtreeFact | None
 ```
 
 Digests use the domain-separated evidence encoding below. Add lacks before
@@ -199,6 +204,124 @@ renderer labels these fields as evidence digests and does not call them hidden
 or anonymous. Compatibility tests include known low-entropy inputs to document
 guessability and prevent a false secrecy claim.
 
+## Outcome content and human-review contract
+
+S13 recommends human-usable detail by default because existing text changes
+carry bounded line content and renderers are deliberately source-blind. JSON,
+YAML, and table specs therefore add this normalized field:
+
+```python
+detail_mode: Literal["values", "digest_only"] = "values"
+```
+
+`detail_mode` affects only returned change facts and their payload truncation.
+It never changes decoding, alignment, relation, verdict, fidelity, summary
+totals, metrics, evaluations, evidence digests, or provenance other than the
+normalized spec itself. CLI commands expose `--detail values|digest_only` with
+the same default. A renderer option cannot retroactively recover facts omitted
+by the spec.
+
+Typed facts are JSON-safe and immutable:
+
+```python
+class ScalarFact:
+    kind: Literal[
+        "null", "boolean", "integer", "decimal", "string", "missing",
+        "float64", "nan", "positive_infinity", "negative_infinity"
+    ]
+    value: bool | str | None
+    lexical: str | None = None
+
+class SubtreeFact:
+    kind: Literal["sequence", "mapping"]
+    descendant_count: int
+    scalar_count: int
+
+class TableRowFact:
+    cells: tuple[tuple[str, ScalarFact], ...]
+
+class ColumnSchemaFact:
+    name: str
+    dtype: Literal["string", "integer", "float64", "boolean"]
+    missing_token_count: int
+    numeric: NumericPolicy | None
+
+class ColumnOrderFact:
+    names: tuple[str, ...]
+
+type TableFact = ScalarFact | TableRowFact | ColumnSchemaFact | ColumnOrderFact
+```
+
+`null`, `missing`, NaN, and infinity facts require `value=None`. Boolean uses a
+JSON boolean. Integer uses canonical base-10 text; decimal uses canonical
+`[-]coefficientEexponent`; finite float64 uses lowercase C99 hexadecimal form,
+including the zero sign. String contains the decoded Unicode scalar value.
+`lexical` is present only for a JSON number in lexical mode and contains its
+validated token; otherwise it is absent. Kinds not admitted by a modality fail
+validation. Strings, lexical tokens, names, rows, and tuples retain the existing
+scalar/cell/column/count limits.
+
+`SubtreeFact.descendant_count` counts nodes strictly below its container root;
+`scalar_count` counts scalar nodes among those descendants, is never greater
+than `descendant_count`, and both are zero for an empty container. A
+`TableRowFact` contains exactly one `(column_name, fact)` pair per aligned column,
+in aligned column order, with unique names and kinds matching the column schema.
+All counts are non-negative exact integers.
+
+In `values` mode, each present scalar side of a `StructuredChange` has the
+matching `ScalarFact`. A present sequence/mapping side instead has a
+`SubtreeFact`: a wholly added/removed container remains one highest-pointer
+change and carries type plus total descendant/scalar counts, not a recursively
+inlined subtree. A type replacement may therefore have scalar fact on one side
+and subtree fact on the other. In `digest_only`, both fact fields are absent.
+The operation's absent side always has neither digest nor fact.
+
+Table changes use `before_fact` and `after_fact` according to the operation
+mapping below. In `values` mode, keyed row/cell changes also carry the actual
+ordered composite key as `key: tuple[ScalarFact, ...]`; positional changes have
+no key. In `digest_only`, `key` and all facts are absent while `key_ordinal`,
+column coordinate, operation, and evidence digests remain. Key facts must match
+the declared key-column count and string/integer types. These invariants are
+validated with the normalized spec, so a detached change cannot silently claim
+a different detail mode.
+
+| Table operation | Fact type on each present side |
+| --- | --- |
+| `column_add` / `column_remove` | `ColumnSchemaFact` |
+| `column_reorder` | `ColumnOrderFact` |
+| `row_add` / `row_remove` | `TableRowFact`, with cells in aligned column order |
+| `cell_replace` | `ScalarFact` matching the declared column dtype/missing state |
+
+Every returned change is atomic. Its operation, coordinates, digests, and all
+facts are encoded together when charged to `max_change_payload_bytes`. If the
+next complete item would exceed either payload or item limit, that item and all
+later source-order items are omitted; no value, row, key, or subtree fact is
+partially serialized. Full comparison and `total_count` still complete first.
+Consequently `values` and `digest_only` can have different `returned_count` and
+truncation points but identical comparison truth and total count.
+
+Values mode can expose secrets, tokens, identifiers, scientific data, and PII
+in terminal and schema JSON. It is the recommended default for useful human
+review and consistency with text diff, not a confidentiality default. Users
+handling sensitive inputs must select `digest_only` before comparison and still
+treat paths, column names, ordinals, counts, source hashes, and guessable
+evidence digests as pseudonymous metadata. `digest_only` is not called redacted
+or anonymous.
+
+Terminal rendering prints returned typed facts with control-safe escaping,
+visible string boundaries, and explicit type labels; it never emits raw control
+sequences. JSON rendering serializes the exact validated facts. Digest-only
+rendering visibly states that values and keyed coordinates were omitted by the
+comparison spec. Future RFC 0004 surfaces follow the same rules.
+
+Renderers and UI still may not reread original inputs: doing so would bypass the
+snapshot, mutation, byte-limit, provenance, detail-mode, and truncation
+contracts; make rendering depend on source availability; and allow presentation
+to disclose data the comparison intentionally omitted. Schema-v3 readers require
+the detail mode and fact fields described here. Changing the default, field
+meaning, atomic truncation, or fact encoding after release requires a schema
+migration and compatibility fixtures; v1/v2 remain unaffected.
+
 ## JSON contract
 
 ```python
@@ -206,6 +329,7 @@ class JsonCompareSpec:
     kind: Literal["json"] = "json"
     encoding: Literal["utf-8", "utf-8-sig"] = "utf-8"
     number_mode: Literal["value", "lexical"] = "value"
+    detail_mode: Literal["values", "digest_only"] = "values"
     limits: StructuredResourceLimits = StructuredResourceLimits()
 ```
 
@@ -226,6 +350,7 @@ class YamlCompareSpec:
     kind: Literal["yaml"] = "yaml"
     profile: Literal["yaml12_core_safe"] = "yaml12_core_safe"
     encoding: Literal["utf-8", "utf-8-sig"] = "utf-8"
+    detail_mode: Literal["values", "digest_only"] = "values"
     limits: YamlResourceLimits = YamlResourceLimits()
 ```
 
@@ -273,6 +398,7 @@ class TableCompareSpec:
     key_columns: tuple[str, ...] = ()
     column_order: Literal["exact", "by_name"] = "exact"
     columns: tuple[ColumnSpec, ...] = ()
+    detail_mode: Literal["values", "digest_only"] = "values"
     limits: TableResourceLimits = TableResourceLimits()
 
 class ColumnSpec:
@@ -317,22 +443,27 @@ class TableChange:
     ]
     row: int | None
     key_ordinal: int | None
+    key: tuple[ScalarFact, ...] | None
     column: str | None
     before_digest: str | None
     after_digest: str | None
+    before_fact: TableFact | None
+    after_fact: TableFact | None
 ```
 
-For positional alignment, `row` is present and `key_ordinal` is absent on every
-row/cell operation. It is the one-based before index for `row_remove`, the
+For positional alignment, `row` is present and `key_ordinal`/`key` are absent on
+every row/cell operation. It is the one-based before index for `row_remove`, the
 one-based after index for `row_add`, and the shared position for `cell_replace`.
 For keyed alignment, `row` is absent and `key_ordinal` is the one-based rank of
-the key in the canonical sorted union of before/after keys. Physical keyed-row
-order is ignored. Both coordinates are absent on column operations.
+the key in the canonical sorted union of before/after keys. `key` follows S13's
+detail-mode invariant. Physical keyed-row order is ignored. All three
+coordinates are absent on column operations.
 
 `column` is present for column add/remove and cell replace, and absent for
-column reorder and row add/remove. Add operations have only `after_digest`;
-remove operations have only `before_digest`; reorder and replace operations have
-both. The digest domains and payloads are:
+column reorder and row add/remove. Add operations have only after digest/fact;
+remove operations have only before digest/fact; reorder and replace operations
+have both, subject to fact omission in `digest_only`. The digest domains and
+payloads are:
 
 | Operation | Domain | Canonical payload |
 | --- | --- | --- |
@@ -342,11 +473,12 @@ both. The digest domains and payloads are:
 | `cell_replace` | `table/cell` | one typed cell value or missing marker |
 
 `key_ordinal` avoids publishing a deterministic digest of often low-entropy key
-values; it still reveals union cardinality and relative canonical order. Column
-names remain bounded untrusted coordinates. Schema changes precede row changes,
-then cell changes, with deterministic alignment order inside each group. Strict
-model validation rejects every illegal field combination before serialization
-or after parsing.
+values and is the only key coordinate in `digest_only`; it still reveals union
+cardinality and relative canonical order. S13 `values` mode deliberately carries
+the actual typed key facts instead. Column names remain bounded untrusted
+coordinates. Schema changes precede row changes, then cell changes, with
+deterministic alignment order inside each group. Strict model validation rejects
+every illegal field combination before serialization or after parsing.
 
 ## Dense-array contract
 
@@ -681,6 +813,9 @@ truncation, source mutation, CLI aliases/exits, transformation vocabulary, and
 randomized tree oracles. Fixtures prove that lexical `1`, `1.0`, and `1e0`
 produce distinct coherent change digests while value mode remains equal. Known
 low-entropy fixtures document digest guessability rather than claiming secrecy.
+Value/digest-only scalar and subtree facts, atomic whole-item truncation, safe
+terminal rendering, and proof that both modes preserve comparison truth are
+compatibility cases.
 
 ### P4-A2: YAML backend
 
@@ -691,7 +826,8 @@ low-entropy fixtures document digest guessability rather than claiming secrecy.
 
 Tests cover missing backend, pure safe loading, YAML 1.1 ambiguity tokens, tags,
 merges, duplicates, aliases, cycles, multi-doc input, parser recreation, hostile
-depth/expansion, dependency inventory, and unchanged existing auto fixtures.
+depth/expansion, value/digest-only scalar and subtree facts, atomic payload
+truncation, dependency inventory, and unchanged existing auto fixtures.
 
 ### P4-B1: delimited tables
 
@@ -704,7 +840,8 @@ Tests cover malformed quoting, embedded newlines, empty/header-only and ragged
 input, duplicate headers/keys, every dtype/missing token, alignments, column
 order, tolerance boundaries, NaN/Inf/signed zero, per-operation change
 invariants and digest domains, metric/evaluation fixtures, limit/work formulas,
-deterministic round trips, and exits.
+value/digest-only facts and key coordinates, atomic payload truncation,
+control-safe rendering, deterministic round trips, and exits.
 
 ### P4-B2: dense arrays
 

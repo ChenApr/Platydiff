@@ -59,13 +59,15 @@ local-web UI 实现。
 | S10 | Phase 4 不产出 partial；完成前触限失败，只有完成后的明细可 truncated。 | 从未完成工作返回 relation。 |
 | S11 | P4-A1、P4-A2、P4-B1、P4-B2 分别授权。 | 把 Phase 4 作为单一批次交付。 |
 | S12 | Phase 4 不产出 artifact；renderer 只展示 validated bounded facts。 | 现在加入 patch、preview、downloadable value 或 report。 |
+| S13 | JSON/YAML/table 默认携带 bounded typed value 与实际 keyed coordinate，同时保留 evidence digest；显式 `digest_only` spec mode 可省略这些 fact，但不改变比较事实。 | 默认 digest-only 并接受 value-blind 人类评审，或允许 renderer 重读 source，从而破坏 outcome boundary。 |
 
 在接受的决策写回本文前，本 RFC 保持 `Proposed`，且不授权任何实现门禁。
 
 2026-09-10 review revision 收紧 evidence digest、change invariant、metric、provenance vocabulary、
 privacy claim 与 resource accounting，不改变任何 S1-S12 推荐方向。它确实把提议的 keyed table
-coordinate 从 deterministic `key_digest` 改为 canonical `key_ordinal`，以减少低熵 key 暴露，
-同时保留 deterministic navigation。
+coordinate 从 deterministic `key_digest` 改为 canonical `key_ordinal`，以减少 `digest_only` 中
+可猜测 digest 的暴露，同时保留 deterministic navigation。后续 review 新增 S13，因为 outcome content 与永久 value-blind
+的人类评审之间是产品决策，不是 renderer detail。
 
 ## Schema v3 兼容性契约
 
@@ -135,6 +137,8 @@ class StructuredChange:
     after_type: StructuredType | None
     before_digest: str | None
     after_digest: str | None
+    before_fact: ScalarFact | SubtreeFact | None
+    after_fact: ScalarFact | SubtreeFact | None
 ```
 
 digest 使用下文 domain-separated evidence encoding。add 没有 before facts，remove 没有
@@ -177,6 +181,105 @@ change。caller 应按 pseudonymous source-derived metadata 保护 outcome；ren
 evidence digest，不能称为 hidden/anonymous。compatibility test 使用已知低熵输入记录其可猜测性，
 防止产生虚假保密声明。
 
+## Outcome content 与人类评审契约
+
+S13 推荐默认提供可供人类使用的 detail，因为既有 text change 携带 bounded line content，
+renderer 又刻意保持 source-blind。因此 JSON、YAML、table spec 增加 normalized field：
+
+```python
+detail_mode: Literal["values", "digest_only"] = "values"
+```
+
+`detail_mode` 只影响 returned change fact 及其 payload truncation。它不改变 decoding、alignment、
+relation、verdict、fidelity、summary total、metric、evaluation、evidence digest 或 provenance，
+只有 normalized spec 本身会记录此选择。CLI 提供 `--detail values|digest_only`，默认值相同。
+renderer option 无法事后恢复 spec 已省略的 fact。
+
+typed fact 是 JSON-safe 且 immutable：
+
+```python
+class ScalarFact:
+    kind: Literal[
+        "null", "boolean", "integer", "decimal", "string", "missing",
+        "float64", "nan", "positive_infinity", "negative_infinity"
+    ]
+    value: bool | str | None
+    lexical: str | None = None
+
+class SubtreeFact:
+    kind: Literal["sequence", "mapping"]
+    descendant_count: int
+    scalar_count: int
+
+class TableRowFact:
+    cells: tuple[tuple[str, ScalarFact], ...]
+
+class ColumnSchemaFact:
+    name: str
+    dtype: Literal["string", "integer", "float64", "boolean"]
+    missing_token_count: int
+    numeric: NumericPolicy | None
+
+class ColumnOrderFact:
+    names: tuple[str, ...]
+
+type TableFact = ScalarFact | TableRowFact | ColumnSchemaFact | ColumnOrderFact
+```
+
+`null`、`missing`、NaN 与 infinity fact 要求 `value=None`。boolean 使用 JSON boolean。integer
+使用 canonical base-10 text；decimal 使用 canonical `[-]coefficientEexponent`；finite float64
+使用 lowercase C99 hexadecimal form，包括 zero sign。string 保存 decoded Unicode scalar value。
+只有 JSON number lexical mode 存在 `lexical`，内容为 validated token；其他情况不存在。
+modality 不允许的 kind 验证失败。string、lexical token、name、row 与 tuple 继续受既有
+scalar/cell/column/count limit 约束。
+
+`SubtreeFact.descendant_count` 计算严格位于 container root 下方的 node；`scalar_count` 计算
+这些 descendant 中的 scalar node，绝不大于 `descendant_count`；empty container 两者均为 zero。
+`TableRowFact` 按 aligned column order 对每个 aligned column 恰好包含一个 `(column_name, fact)`
+pair；name 唯一，kind 匹配 column schema。所有 count 都是 non-negative exact integer。
+
+`values` mode 下，`StructuredChange` 每个存在的 scalar side 都有匹配 `ScalarFact`；存在的
+sequence/mapping side 改用 `SubtreeFact`。完整 added/removed container 仍是一个 highest-pointer
+change，只携带 type、total descendant/scalar count，不递归内嵌 subtree。type replacement 因此
+可以一侧为 scalar fact，另一侧为 subtree fact。`digest_only` 下两个 fact field 都不存在。
+operation 不存在的一侧永远同时没有 digest 与 fact。
+
+table change 按下表使用 `before_fact`/`after_fact`。`values` mode 下，keyed row/cell change
+还携带实际 ordered composite key：`key: tuple[ScalarFact, ...]`；positional change 没有 key。
+`digest_only` 下，`key` 与所有 fact 都不存在，但保留 `key_ordinal`、column coordinate、operation
+和 evidence digest。key fact 必须匹配 declared key-column count 与 string/integer type。这些
+invariant 结合 normalized spec 验证，因此 detached change 不能静默声称另一种 detail mode。
+
+| table operation | 每个存在 side 的 fact type |
+| --- | --- |
+| `column_add` / `column_remove` | `ColumnSchemaFact` |
+| `column_reorder` | `ColumnOrderFact` |
+| `row_add` / `row_remove` | `TableRowFact`，cell 使用 aligned column order |
+| `cell_replace` | 匹配 declared column dtype/missing state 的 `ScalarFact` |
+
+每个 returned change 都是 atomic。operation、coordinate、digest 与全部 fact 共同编码并计入
+`max_change_payload_bytes`。若下一个 complete item 会超出 payload/item limit，该 item 与后续
+所有 source-order item 都省略；value、row、key、subtree fact 不得部分 serialization。完整
+comparison 与 `total_count` 仍先完成。因此 `values` 与 `digest_only` 的 `returned_count` 和
+truncation point 可以不同，但 comparison truth 与 total count 相同。
+
+values mode 可能在 terminal 与 schema JSON 中暴露 secret、token、identifier、scientific data
+和 PII。它是为了可用人类评审并与 text diff 一致的推荐默认值，不是 confidentiality default。
+处理敏感输入的用户必须在 comparison 前选择 `digest_only`，且仍要把 path、column name、ordinal、
+count、source hash 与可猜测 evidence digest 视为 pseudonymous metadata。`digest_only` 不能称为
+redacted 或 anonymous。
+
+terminal renderer 使用 control-safe escaping、可见 string boundary 与显式 type label 打印 returned
+typed fact，绝不输出 raw control sequence。JSON renderer 序列化精确 validated fact。digest-only
+rendering 必须明确说明 value 与 keyed coordinate 已由 comparison spec 省略。未来 RFC 0004 surface
+遵循相同规则。
+
+renderer/UI 仍不得重读原始 input：否则会绕过 snapshot、mutation、byte-limit、provenance、
+detail-mode 与 truncation 契约；使 rendering 依赖 source availability；还可能泄露 comparison
+刻意省略的数据。schema-v3 reader 要求本文的 detail mode 与 fact field。release 后修改 default、
+field meaning、atomic truncation 或 fact encoding，需要 schema migration 与 compatibility fixture；
+v1/v2 不受影响。
+
 ## JSON 契约
 
 ```python
@@ -184,6 +287,7 @@ class JsonCompareSpec:
     kind: Literal["json"] = "json"
     encoding: Literal["utf-8", "utf-8-sig"] = "utf-8"
     number_mode: Literal["value", "lexical"] = "value"
+    detail_mode: Literal["values", "digest_only"] = "values"
     limits: StructuredResourceLimits = StructuredResourceLimits()
 ```
 
@@ -203,6 +307,7 @@ class YamlCompareSpec:
     kind: Literal["yaml"] = "yaml"
     profile: Literal["yaml12_core_safe"] = "yaml12_core_safe"
     encoding: Literal["utf-8", "utf-8-sig"] = "utf-8"
+    detail_mode: Literal["values", "digest_only"] = "values"
     limits: YamlResourceLimits = YamlResourceLimits()
 ```
 
@@ -242,6 +347,7 @@ class TableCompareSpec:
     key_columns: tuple[str, ...] = ()
     column_order: Literal["exact", "by_name"] = "exact"
     columns: tuple[ColumnSpec, ...] = ()
+    detail_mode: Literal["values", "digest_only"] = "values"
     limits: TableResourceLimits = TableResourceLimits()
 
 class ColumnSpec:
@@ -281,19 +387,23 @@ class TableChange:
     ]
     row: int | None
     key_ordinal: int | None
+    key: tuple[ScalarFact, ...] | None
     column: str | None
     before_digest: str | None
     after_digest: str | None
+    before_fact: TableFact | None
+    after_fact: TableFact | None
 ```
 
-positional alignment 下，每个 row/cell operation 都存在 `row` 且不存在 `key_ordinal`。
+positional alignment 下，每个 row/cell operation 都存在 `row`，且不存在 `key_ordinal`/`key`。
 `row_remove` 使用一基 before index，`row_add` 使用一基 after index，`cell_replace` 使用两侧
 共享位置。keyed alignment 下，`row` 不存在；`key_ordinal` 是 key 在 before/after canonical
-sorted union 中的一基 rank。忽略 keyed row 的物理顺序。column operation 两种坐标都不存在。
+sorted union 中的一基 rank；`key` 遵循 S13 detail-mode invariant。忽略 keyed row 的物理顺序。
+column operation 三种坐标都不存在。
 
 column add/remove 与 cell replace 存在 `column`；column reorder 与 row add/remove 不存在。
-add operation 只有 `after_digest`，remove 只有 `before_digest`，reorder/replace 两者都有。
-digest domain 与 payload 为：
+add operation 只有 after digest/fact，remove 只有 before digest/fact，reorder/replace 两者都有，
+但 `digest_only` 会省略 fact。digest domain 与 payload 为：
 
 | operation | domain | canonical payload |
 | --- | --- | --- |
@@ -302,8 +412,9 @@ digest domain 与 payload 为：
 | `row_add` / `row_remove` | `table/row` | aligned column order 下的完整 row，含 typed missing marker |
 | `cell_replace` | `table/cell` | 一个 typed cell value 或 missing marker |
 
-`key_ordinal` 避免发布通常低熵 key value 的 deterministic digest；它仍会暴露 union cardinality
-与相对 canonical order。column name 是有界 untrusted coordinate。schema change 先于 row
+`key_ordinal` 避免发布通常低熵 key value 的 deterministic digest，并且是 `digest_only` 中唯一
+key coordinate；它仍会暴露 union cardinality 与相对 canonical order。S13 `values` mode 则刻意
+携带实际 typed key fact。column name 是有界 untrusted coordinate。schema change 先于 row
 change，随后是 cell change；组内使用确定性 alignment order。strict model validation 在
 serialization 前与 parsing 后拒绝每种非法 field combination。
 
@@ -604,7 +715,8 @@ signature 不变。
 number mode、pointer、ordering、所有 limit、truncation、source mutation、CLI alias/exit、
 transformation vocabulary 与 randomized tree oracle。fixture 证明 lexical `1`、`1.0`、`1e0`
 产生不同且一致的 change digest，而 value mode 保持 equal。已知低熵 fixture 记录 digest 可猜测性，
-而不是声称保密。
+而不是声称保密。value/digest-only scalar/subtree fact、atomic whole-item truncation、safe terminal
+rendering，以及两种 mode 保持 comparison truth 的证明都是 compatibility case。
 
 ### P4-A2：YAML backend
 
@@ -614,8 +726,8 @@ transformation vocabulary 与 randomized tree oracle。fixture 证明 lexical `1
 4. `docs: document YAML semantics and dependency provenance`
 
 测试覆盖 missing backend、pure safe loading、YAML 1.1 ambiguity token、tag、merge、duplicate、
-alias、cycle、multi-doc、parser recreation、hostile depth/expansion、dependency inventory，以及
-既有 auto fixture 不变。
+alias、cycle、multi-doc、parser recreation、hostile depth/expansion、value/digest-only scalar 与
+subtree fact、atomic payload truncation、dependency inventory，以及既有 auto fixture 不变。
 
 ### P4-B1：分隔符表格
 
@@ -627,6 +739,7 @@ alias、cycle、multi-doc、parser recreation、hostile depth/expansion、depend
 测试覆盖 malformed quoting、embedded newline、empty/header-only/ragged input、duplicate header/key、
 每种 dtype/missing token、alignment、column order、tolerance boundary、NaN/Inf/signed zero、limit、
 每个 operation 的 change invariant/digest domain、metric/evaluation fixture、limit/work formula、
+value/digest-only fact 与 key coordinate、atomic payload truncation、control-safe rendering、
 deterministic round trip 与 exit。
 
 ### P4-B2：稠密数组
