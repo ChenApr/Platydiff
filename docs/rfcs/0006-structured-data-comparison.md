@@ -2,20 +2,27 @@
 
 [Chinese documentation](0006-structured-data-comparison_zh.md)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-10
+- Accepted: 2026-09-10
 - Review revision: 2026-09-10
+- Approved decisions: S1-S13
 - Owners: Platydiff maintainers
 - Implementation owner: unassigned pending acceptance and separate authorization
 
 ## Summary and authorization boundary
 
-This RFC proposes Phase 4 contracts for JSON, a constrained YAML 1.2 profile,
+This RFC defines the accepted Phase 4 contracts for JSON, a constrained YAML 1.2 profile,
 delimited tables, and dense arrays. It defines schema evolution, equality,
 paths, alignment, limits, failures, and delivery gates. It does not authorize
 implementation, dependency changes, a new plugin SDK, structured-data automatic
 detection, or UI work. Each implementation gate requires a separate dispatch
 from updated `main`; later gates do not start automatically.
+
+Human approval on 2026-09-10 accepts decisions S1-S13 and authorizes this RFC
+documentation PR only. P4-A1, P4-A2, P4-B1, and P4-B2 remain unimplemented and
+independently gated. Acceptance does not authorize starting, delegating, or
+implying any Phase 4 implementation.
 
 ## Evidence ledger
 
@@ -47,9 +54,9 @@ Arrow, Parquet, spreadsheets, compressed containers, URLs, directories, or
 stdin; statistical equivalence, ULP policies, patches, artifacts; new plugin
 modalities; and HTML, TUI, desktop, or local-web UI implementation.
 
-## Decisions requiring human approval
+## Approved decisions
 
-| ID | Proposed decision | Alternative requiring revision |
+| ID | Accepted decision | Alternative that was not selected |
 | --- | --- | --- |
 | S1 | Every Phase 4 outcome uses schema v3; v1/v2 readers and writers remain. | Extend v2 in place, making old v2 readers misinterpret a changed closed union. |
 | S2 | Existing auto remains text/binary-only until a successor detection RFC; Phase 4 types are explicit. | First define structured ambiguity, precedence, probing, and attribution. |
@@ -65,8 +72,9 @@ modalities; and HTML, TUI, desktop, or local-web UI implementation.
 | S12 | Phase 4 emits no artifacts; renderers present only validated bounded facts. | Add patches, previews, downloadable values, or reports now. |
 | S13 | Default JSON/YAML/table detail to bounded typed values and actual keyed coordinates, while retaining evidence digests; an explicit `digest_only` spec mode omits those facts without changing comparison truth. | Default to digest-only and accept value-blind human review, or let renderers reread sources, which violates the outcome boundary. |
 
-Until accepted decisions are recorded here, this RFC remains `Proposed` and no
-implementation gate is authorized.
+Decisions S1-S13 were approved on 2026-09-10. Their acceptance establishes the
+design contract and permits this documentation PR; it does not authorize any
+implementation gate.
 
 The 2026-09-10 review revision tightens evidence digests, change invariants,
 metrics, provenance vocabulary, privacy claims, and resource accounting. It
@@ -112,8 +120,8 @@ P4-A1 implementation is merged.
 | --- | --- | --- | --- | --- |
 | Existing `compare()` and default CLI | v1 | text, binary, auto to either | none | Existing byte-stable fixtures remain valid. |
 | Existing explicit `PluginHost` | v2 | text, binary, auto to either | SDK v1.1 | Existing v2 fixtures and receipts remain valid. |
-| Proposed Phase 4 built-in path | v3 | explicit json/yaml/table/array | none | v3 validates new variants and all inherited invariants. |
-| Proposed `PluginHost` with Phase 4 spec | none | unsupported | rejected before execution | Python returns resolving-stage unavailable; CLI plugin flags plus a Phase 4 type are usage exit 2. |
+| Accepted, unimplemented Phase 4 built-in path | v3 | explicit json/yaml/table/array | none | v3 validates new variants and all inherited invariants. |
+| Accepted, unimplemented `PluginHost` behavior with Phase 4 spec | none | unsupported | rejected before execution | Python returns resolving-stage unavailable; CLI plugin flags plus a Phase 4 type are usage exit 2. |
 | Existing auto on structured-looking bytes | v1 | text or binary only | existing rules | Result and detection evidence do not change. |
 | Future SDK v2 or structured auto | unspecified | unspecified | unspecified | Requires a successor RFC. |
 

@@ -220,10 +220,10 @@ Text processing first applies explicit encoding and line-ending policies, then t
 
 Source code can be parsed into syntax trees and matched by node, reducing the weight of formatting-only changes while expressing node insertion, deletion, update, and movement. JSON, YAML, TOML, and XML should be parsed into typed trees or mappings and compared by field path. Key ordering, numeric representation, and irrelevant metadata belong to the configurable normalization stage.
 
-The explicit JSON and constrained YAML 1.2 comparison contracts are proposed
-in [RFC 0006](rfcs/0006-structured-data-comparison.md). They remain unimplemented
-and do not expand the existing text/binary automatic-detection or plugin-SDK
-contracts.
+The explicit JSON and constrained YAML 1.2 comparison contracts are accepted in
+[RFC 0006](rfcs/0006-structured-data-comparison.md) but remain unimplemented.
+Acceptance does not expand the existing text/binary automatic-detection or
+plugin-SDK contracts or authorize an implementation gate.
 
 Syntactic equality does not imply runtime semantic equality. AST comparison must state its parser version, error-recovery behavior, and macro or preprocessing boundaries.
 
@@ -249,10 +249,11 @@ A PDF contains text, drawing instructions, fonts, images, and page layout. The s
 
 The comparison order is schema, dimensions, coordinate or primary-key alignment, element tolerances, aggregate errors, and distribution differences. Policies must define dtype, units, missing values, NaN/Inf handling, absolute and relative error, and floating-point ULP behavior.
 
-[RFC 0006](rfcs/0006-structured-data-comparison.md) proposes the narrower first
-table/array slice: explicit delimited tables and immutable dense arrays with
-deterministic alignment and numeric semantics. Ecosystem adapters, coordinate
-alignment, units, and statistical equivalence remain later contract callbacks.
+[RFC 0006](rfcs/0006-structured-data-comparison.md) accepts the contract for the
+narrower first table/array slice: explicit delimited tables and immutable dense
+arrays with deterministic alignment and numeric semantics. It remains
+unimplemented and independently gated. Ecosystem adapters, coordinate alignment,
+units, and statistical equivalence remain later contract callbacks.
 
 Statistical comparison can include KS tests, Wasserstein distance, chi-squared tests, confidence intervals, and effect sizes. A p-value alone must not determine whether a practically meaningful difference exists. Results should also report effect size, sample size, multiple-comparison correction, and the practical tolerance defined by the scientific task.
 
@@ -263,9 +264,10 @@ The staged delivery plan and its implementation gates are defined by [RFC 0002](
 Phases 1 through 3 contain the Python package, schema-v1/v2 contracts, explicit
 text, bounded text/binary detection, exact binary comparison, CLI,
 terminal/JSON renderers, and the explicit plugin boundary. They remain
-unreleased. Phase 4 structured-data contracts are only proposed in
-[RFC 0006](rfcs/0006-structured-data-comparison.md). Every other modality and
-renderer below is planned.
+unreleased. Phase 4 structured-data contracts are accepted in
+[RFC 0006](rfcs/0006-structured-data-comparison.md) but remain unimplemented and
+require separate gate authorization. Every other modality and renderer below is
+planned.
 
 ### v0.1: Core loop
 

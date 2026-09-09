@@ -2,18 +2,24 @@
 
 [English documentation](0006-structured-data-comparison.md)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-10
+- Accepted: 2026-09-10
 - Review revision: 2026-09-10
+- Approved decisions: S1-S13
 - Owners: Platydiff maintainers
 - Implementation owner: 尚未指派，等待接受 RFC 并另行授权
 
 ## 摘要与授权边界
 
-本 RFC 提议 Phase 4 的 JSON、受约束 YAML 1.2 profile、分隔符表格与稠密数组
+本 RFC 定义已接受的 Phase 4 JSON、受约束 YAML 1.2 profile、分隔符表格与稠密数组
 契约，并定义 schema 演进、相等性、路径、对齐、限制、失败与交付门禁。它不授权
 实现、依赖变更、新 plugin SDK、结构化数据自动探测或 UI 工作。每个实现门禁都要
 基于更新后的 `main` 单独派发；后续门禁不会自动开始。
+
+人类于 2026-09-10 批准 S1-S13；该批准只接受设计契约并授权本 RFC 文档 PR。
+P4-A1、P4-A2、P4-B1、P4-B2 仍未实现且分别设置门禁。接受 RFC 不授权启动、委派或
+暗示任何 Phase 4 实现。
 
 ## 证据账本
 
@@ -43,9 +49,9 @@ xarray、Arrow、Parquet、spreadsheet、压缩容器、URL、directory、stdin�
 equivalence、ULP policy、patch、artifact、新 plugin modality，以及 HTML/TUI/desktop/
 local-web UI 实现。
 
-## 需要人类批准的决策
+## 已批准决策
 
-| ID | 提议决策 | 需要修订的替代方案 |
+| ID | 已接受决策 | 未选择的替代方案 |
 | --- | --- | --- |
 | S1 | 每个 Phase 4 outcome 使用 schema v3；保留 v1/v2 reader 与 writer。 | 原地扩展 v2，使旧 v2 reader 错误解释变化后的封闭联合。 |
 | S2 | 既有 auto 保持 text/binary-only，直至后继 detection RFC；Phase 4 type 必须显式选择。 | 先定义 structured ambiguity、precedence、probing 与 attribution。 |
@@ -61,7 +67,8 @@ local-web UI 实现。
 | S12 | Phase 4 不产出 artifact；renderer 只展示 validated bounded facts。 | 现在加入 patch、preview、downloadable value 或 report。 |
 | S13 | JSON/YAML/table 默认携带 bounded typed value 与实际 keyed coordinate，同时保留 evidence digest；显式 `digest_only` spec mode 可省略这些 fact，但不改变比较事实。 | 默认 digest-only 并接受 value-blind 人类评审，或允许 renderer 重读 source，从而破坏 outcome boundary。 |
 
-在接受的决策写回本文前，本 RFC 保持 `Proposed`，且不授权任何实现门禁。
+S1-S13 已于 2026-09-10 获批。该接受建立设计契约并允许提交本 documentation PR，
+但不授权任何 implementation gate。
 
 2026-09-10 review revision 收紧 evidence digest、change invariant、metric、provenance vocabulary、
 privacy claim 与 resource accounting，不改变任何 S1-S12 推荐方向。它确实把提议的 keyed table
@@ -102,8 +109,8 @@ ChangeV3 = (
 | --- | --- | --- | --- | --- |
 | 既有 `compare()` 与默认 CLI | v1 | text、binary、解析到二者的 auto | 无 | 既有 byte-stable fixture 继续有效。 |
 | 既有显式 `PluginHost` | v2 | text、binary、解析到二者的 auto | SDK v1.1 | 既有 v2 fixture 与 receipt 继续有效。 |
-| 提议的 Phase 4 built-in path | v3 | 显式 json/yaml/table/array | 无 | v3 验证新 variant 与全部继承 invariant。 |
-| 提议的 `PluginHost` + Phase 4 spec | 无 | 不支持 | 执行前拒绝 | Python 返回 resolving-stage unavailable；CLI 的 plugin flag + Phase 4 type 为 usage exit 2。 |
+| 已接受但未实现的 Phase 4 built-in path | v3 | 显式 json/yaml/table/array | 无 | v3 验证新 variant 与全部继承 invariant。 |
+| 已接受但未实现的 `PluginHost` + Phase 4 spec 行为 | 无 | 不支持 | 执行前拒绝 | Python 返回 resolving-stage unavailable；CLI 的 plugin flag + Phase 4 type 为 usage exit 2。 |
 | 对 structured-looking bytes 使用既有 auto | v1 | 仅 text/binary | 仅既有规则 | result 与 detection evidence 不变。 |
 | 未来 SDK v2 或 structured auto | 未指定 | 未指定 | 未指定 | 需要后继 RFC。 |
 
