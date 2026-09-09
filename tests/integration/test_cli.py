@@ -334,8 +334,11 @@ def test_plugin_internal_error_remains_schema_v2_with_enabled_context(
 ) -> None:
     before, after = write_pair(tmp_path, b"same", b"same")
     module = importlib.import_module("platydiff.cli.main")
+    discovered = _renderer_host(_Renderer())
 
     class ExplodingHost:
+        catalog = discovered.catalog
+
         def compare(self, *_arguments: object, **_options: object) -> object:
             raise RuntimeError(f"private path: {tmp_path}")
 
@@ -351,7 +354,7 @@ def test_plugin_internal_error_remains_schema_v2_with_enabled_context(
             "--format",
             "json",
             "--plugin",
-            "org.example.absent",
+            "org.example.scidiff",
             str(before),
             str(after),
         ]
@@ -366,8 +369,25 @@ def test_plugin_internal_error_remains_schema_v2_with_enabled_context(
     assert status == 3
     assert payload["schema_version"] == 2
     assert payload["kind"] == "failed"
-    assert plugin_host["enabled_plugin_ids"] == ["org.example.absent"]
-    assert plugin_host["loaded_providers"] == []
+    assert plugin_host["enabled_plugin_ids"] == ["org.example.scidiff"]
+    loaded = plugin_host["loaded_providers"]
+    assert isinstance(loaded, list)
+    if failure_boundary == "discover":
+        assert loaded == []
+    else:
+        assert len(loaded) == 1
+        provider = loaded[0]
+        assert isinstance(provider, dict)
+        assert provider == {
+            "api_major": 1,
+            "distribution_name": "example-plugin",
+            "distribution_version": "1",
+            "manifest_schema_version": 1,
+            "negotiated_api_minor": 1,
+            "negotiated_host_features": ["host.execution.v1"],
+            "plugin_id": "org.example.scidiff",
+            "plugin_version": "1",
+        }
     assert str(tmp_path) not in captured.out
     assert captured.err == ""
 

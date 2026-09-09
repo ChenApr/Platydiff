@@ -262,6 +262,8 @@ def test_receipt_digest_changes_with_normalized_profile_evidence() -> None:
         {"source_path": "/private/input.txt"},
         {"ratio": 0.5},
         {"message": "/private/input.txt"},
+        {"message": "failed at /Users/alice/private.txt"},
+        {"message": r"failed at C:\\Users\\alice\\private.txt"},
     ],
 )
 def test_profile_result_requires_non_sensitive_normalized_evidence(
@@ -272,6 +274,57 @@ def test_profile_result_requires_non_sensitive_normalized_evidence(
             MANIFEST_PROFILE_ID,
             True,
             cast(JsonObject, summary),
+        )
+
+
+def test_profile_result_deeply_snapshots_mutable_evidence() -> None:
+    original: JsonObject = {
+        "assertions": 1,
+        "nested": {"status": "passed"},
+    }
+    result = CompatibilityProfileResultV1(MANIFEST_PROFILE_ID, True, original)
+    nested = original["nested"]
+    assert isinstance(nested, dict)
+    nested["status"] = "failed at /Users/alice/private.txt"
+    exposed = result.summary
+    exposed_nested = exposed["nested"]
+    assert isinstance(exposed_nested, dict)
+    exposed_nested["status"] = "failed at C:\\Users\\alice\\private.txt"
+
+    receipt = compatibility_receipt_data(
+        _loaded_plugin(),
+        profile_results=(result,),
+        python_implementation="cpython",
+        python_version="3.12.10",
+        operating_system="darwin",
+        architecture="arm64",
+    )
+    profile_results = receipt["profile_results"]
+    assert isinstance(profile_results, list)
+    receipt_result = profile_results[0]
+    assert isinstance(receipt_result, dict)
+    assert receipt_result["summary"] == {
+        "assertions": 1,
+        "nested": {"status": "passed"},
+    }
+
+
+def test_receipt_revalidates_profile_evidence_before_emission() -> None:
+    result = CompatibilityProfileResultV1(MANIFEST_PROFILE_ID, True, {"assertions": 1})
+    object.__setattr__(
+        result,
+        "_summary_json",
+        '{"message":"failed at /Users/alice/private.txt"}',
+    )
+
+    with pytest.raises(ValueError, match="path-free"):
+        compatibility_receipt_data(
+            _loaded_plugin(),
+            profile_results=(result,),
+            python_implementation="cpython",
+            python_version="3.12.10",
+            operating_system="darwin",
+            architecture="arm64",
         )
 
 

@@ -153,7 +153,10 @@ Every host comparison returns schema v2, including built-in selections. Schema
 v2 records the enabled/loaded provider snapshot, versioned attempts, and selected
 provider provenance. The existing three-argument `compare()` and a CLI command
 without plugin/capability flags remain schema v1. A CLI command that enables or
-pins a plugin capability uses the host and schema v2. Readers accept both
+pins a plugin capability uses the host and schema v2. If an unexpected CLI
+failure occurs after discovery, the failure outcome preserves the exact loaded
+provider snapshot; a discovery failure records the enabled IDs with no loaded
+providers. Readers accept both
 versions, and `upgrade_outcome_v1_to_v2()` adds an empty host context without
 changing v1 result meaning. Schema-v1 models and
 encoders reject schema-v2 nested values. Schema-v2 construction and reading
@@ -301,7 +304,9 @@ contains a pass/fail value and a non-empty normalized evidence summary. Canonica
 JSON records those results together with the exact suite and host versions,
 plugin/distribution identity, negotiated SDK and outcome schema versions, and
 backend/platform inventory. The SHA-256 digest covers the normalized per-profile
-results. Overall `conforms` and the permitted
+results. Evidence is recursively snapshotted at result construction and
+revalidated when the receipt is emitted; strings containing `/` or `\` are
+rejected so embedded local paths cannot enter a receipt. Overall `conforms` and the permitted
 `conforms to Platydiff plugin profile X under suite version Y.` claims appear
 only when every included profile passed; a failed or mixed receipt contains no
 conformance claim.

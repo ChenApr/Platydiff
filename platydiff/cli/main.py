@@ -21,6 +21,7 @@ from platydiff.core.models import (
     PathSource,
     PipelineStage,
     PluginHostExecutionRecord,
+    ProviderIdentity,
     StageDisposition,
     StageRecord,
     Verdict,
@@ -32,7 +33,7 @@ from platydiff.renderers.terminal import _terminal_text_is_safe, render_terminal
 
 
 def _internal_error_outcome(
-    enabled_plugin_ids: tuple[str, ...] | None = None,
+    plugin_host: PluginHostExecutionRecord | None = None,
 ) -> FailedOutcome | FailedOutcomeV2:
     stamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     stage = StageRecord(
@@ -43,14 +44,14 @@ def _internal_error_outcome(
         StageDisposition.FAILED,
     )
     message = "An unexpected internal error prevented comparison."
-    if enabled_plugin_ids is not None:
+    if plugin_host is not None:
         return FailedOutcomeV2(
             execution=ExecutionRecordV2(
                 stamp,
                 stamp,
                 0,
                 (stage,),
-                plugin_host=PluginHostExecutionRecord(enabled_plugin_ids, ()),
+                plugin_host=plugin_host,
             ),
             problem=ExecutionProblemV2(
                 "internal_error", 500, PipelineStage.VALIDATING, message
@@ -62,6 +63,23 @@ def _internal_error_outcome(
             "internal_error", 500, PipelineStage.VALIDATING, message
         ),
     )
+
+
+def _plugin_host_snapshot(host: PluginHost) -> PluginHostExecutionRecord:
+    providers = tuple(
+        ProviderIdentity(
+            plugin_id=plugin.manifest.plugin_id,
+            plugin_version=plugin.manifest.plugin_version,
+            distribution_name=plugin.entry_point.distribution_name,
+            distribution_version=plugin.entry_point.distribution_version,
+            manifest_schema_version=plugin.manifest.manifest_schema_version,
+            api_major=plugin.manifest.api_major,
+            negotiated_api_minor=plugin.negotiated_api_minor,
+            negotiated_host_features=plugin.negotiated_host_features,
+        )
+        for plugin in host.catalog.plugins
+    )
+    return PluginHostExecutionRecord(host.catalog.enabled_plugin_ids, providers)
 
 
 def exit_code(outcome: AnyCompareOutcome) -> int:
@@ -96,7 +114,13 @@ def main(argv: list[str] | None = None) -> int:
         raise
     except Exception:
         outcome = _internal_error_outcome(
-            command.enabled_plugin_ids if command.uses_plugin_host else None
+            (
+                _plugin_host_snapshot(host)
+                if host is not None
+                else PluginHostExecutionRecord(command.enabled_plugin_ids, ())
+            )
+            if command.uses_plugin_host
+            else None
         )
 
     try:

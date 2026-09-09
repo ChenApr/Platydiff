@@ -132,7 +132,9 @@ reference 的 run 会在任何 lifecycle method 调用前，于 resolving stage 
 每次 host comparison 都返回 schema v2，包括最终选择内建能力的情况。schema v2 记录
 enabled/loaded provider snapshot、带版本的 attempt 与 selected-provider provenance。
 现有三参数 `compare()` 和不含 plugin/capability 参数的 CLI 命令仍返回 schema v1；
-启用或 pin 插件 capability 的 CLI 命令经 host 返回 schema v2。reader 同时接受两个版本；
+启用或 pin 插件 capability 的 CLI 命令经 host 返回 schema v2。若 CLI 在 discovery 后出现
+非预期失败，failure outcome 会保留精确的 loaded provider snapshot；若 discovery 本身失败，
+则只记录 enabled ID，loaded provider 为空。reader 同时接受两个版本；
 `upgrade_outcome_v1_to_v2()` 在不改变 v1 result 含义的前提下添加空 host context。
 Schema-v1 model 与 encoder 拒绝嵌套 schema-v2 value；schema-v2 构造与读取会将
 provider-backed attempt 与 loaded host snapshot、selected comparator/detector provenance
@@ -268,7 +270,9 @@ inventory、确定性顺序、redaction，以及 discovery 到 CLI 的 failure-i
 提供一个 `CompatibilityProfileResultV1`；每项都包含 pass/fail 与非空的 normalized
 evidence summary。Canonical JSON 会把这些结果与精确 suite/host version、plugin/
 distribution identity、协商后的 SDK 与 outcome schema version，以及 backend/platform
-inventory 一起记录；SHA-256 digest 覆盖 normalized per-profile result。只有全部 profile
+inventory 一起记录；SHA-256 digest 覆盖 normalized per-profile result。Evidence 在 result
+构造时会被递归快照，并在 receipt 输出时再次校验；任何包含 `/` 或 `\` 的字符串都会被拒绝，
+防止嵌入式本地路径进入 receipt。只有全部 profile
 都 passed 时，整体 result 才是 `conforms` 并出现唯一允许的
 `conforms to Platydiff plugin profile X under suite version Y.` 声明；failed 或 mixed
 receipt 不包含 conformance claim。

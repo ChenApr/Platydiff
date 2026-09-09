@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hashlib import sha256
 
 from platydiff import __version__
@@ -71,8 +71,8 @@ def _normalized_evidence(value: object, *, key: str | None = None) -> JsonValue:
                 ord(character) < 0x20 or 0x7F <= ord(character) <= 0x9F
                 for character in value
             )
-            or value.startswith("/")
-            or re.search(r"(?:^|\s)[A-Za-z]:\\", value) is not None
+            or "/" in value
+            or "\\" in value
         ):
             raise ValueError("profile evidence must be bounded and path-free")
         return value
@@ -87,25 +87,34 @@ def _normalized_evidence(value: object, *, key: str | None = None) -> JsonValue:
     raise ValueError("profile evidence must contain only JSON values")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class CompatibilityProfileResultV1:
     """One actually executed profile result and its normalized evidence summary."""
 
     profile_id: str
     passed: bool
-    summary: JsonObject
+    _summary_json: str = field(repr=False)
 
-    def __post_init__(self) -> None:
-        if not isinstance(self.profile_id, str) or not _PROFILE_ID.fullmatch(
-            self.profile_id
-        ):
+    def __init__(self, profile_id: str, passed: bool, summary: JsonObject) -> None:
+        if not isinstance(profile_id, str) or not _PROFILE_ID.fullmatch(profile_id):
             raise ValueError("profile_id must be a stable lowercase ASCII identifier")
-        if type(self.passed) is not bool:
+        if type(passed) is not bool:
             raise ValueError("passed must be a boolean")
-        normalized = _normalized_evidence(self.summary)
+        normalized = _normalized_evidence(summary)
         if not isinstance(normalized, dict) or not normalized:
             raise ValueError("summary must be a non-empty JSON object")
-        object.__setattr__(self, "summary", normalized)
+        object.__setattr__(self, "profile_id", profile_id)
+        object.__setattr__(self, "passed", passed)
+        object.__setattr__(self, "_summary_json", canonical_profile_json(normalized))
+
+    @property
+    def summary(self) -> JsonObject:
+        """Return a fresh, revalidated copy of the normalized evidence."""
+        decoded: object = json.loads(self._summary_json)
+        normalized = _normalized_evidence(decoded)
+        if not isinstance(normalized, dict) or not normalized:
+            raise ValueError("summary must be a non-empty JSON object")
+        return normalized
 
 
 def _receipt_environment_text(value: str) -> str:
@@ -321,14 +330,18 @@ def compatibility_receipt_data(
     )
     negotiated_host_features: list[JsonValue] = list(plugin.negotiated_host_features)
     normalized_profile_values: list[JsonValue] = list(normalized_profiles)
-    receipt_profile_results: list[JsonValue] = [
-        {
-            "profile_id": item.profile_id,
-            "result": "passed" if item.passed else "failed",
-            "summary": item.summary,
-        }
-        for item in normalized_results
-    ]
+    receipt_profile_results: list[JsonValue] = []
+    for item in normalized_results:
+        summary = _normalized_evidence(item.summary)
+        if not isinstance(summary, dict) or not summary:
+            raise ValueError("summary must be a non-empty JSON object")
+        receipt_profile_results.append(
+            {
+                "profile_id": item.profile_id,
+                "result": "passed" if item.passed else "failed",
+                "summary": summary,
+            }
+        )
     receipt: JsonObject = {
         "claims": (
             [

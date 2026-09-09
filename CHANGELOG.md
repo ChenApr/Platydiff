@@ -32,6 +32,10 @@ All notable changes to Platydiff are documented in this file.
 
 ### Fixed
 
+- Preserved the exact loaded-provider snapshot in schema-v2 CLI failures after
+  discovery, and made compatibility-receipt evidence deeply immutable,
+  path-free, and revalidated at emission.
+
 - Preserved schema v2 and exact enabled-plugin context at every plugin-enabled
   CLI exception boundary, rejected unsafe third-party terminal controls before
   stdout, validated public rendered-output identities and backend versions, and
