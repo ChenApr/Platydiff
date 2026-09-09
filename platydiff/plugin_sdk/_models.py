@@ -9,6 +9,7 @@ from enum import StrEnum
 from typing import Literal, Protocol
 
 from platydiff.core.models import (
+    AnyCompareOutcome,
     ArtifactRef,
     BinaryCompareSpec,
     ChangeSet,
@@ -39,6 +40,10 @@ _PLUGIN_ID = re.compile(r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$")
 _STABLE_IDENTIFIER = re.compile(r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$")
 _DISTRIBUTION_NAME = re.compile(
     r"^(?:[A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9])\Z"
+)
+_MEDIA_TYPE = re.compile(
+    r"^[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*"
+    r"(?:;[ ]*[a-z0-9!#$&^_.+-]+=[a-z0-9!#$&^_.+:-]+)*$"
 )
 
 
@@ -92,6 +97,13 @@ def _plugin_scoped_identifier(value: object, field_name: str, plugin_id: str) ->
     text = _stable_identifier(value, field_name)
     if not text.startswith(f"{plugin_id}."):
         raise ValueError(f"{field_name} must use the plugin_id prefix")
+    return text
+
+
+def _media_type(value: object, field_name: str = "media_type") -> str:
+    text = _bounded_text(value, field_name)
+    if not _MEDIA_TYPE.fullmatch(text):
+        raise ValueError(f"{field_name} must be a normalized media type")
     return text
 
 
@@ -263,7 +275,49 @@ class ComparatorHandleV1(Protocol):
     ) -> ComparatorRunV1: ...
 
 
-type CapabilityHandleV1 = DetectorHandleV1 | ComparatorHandleV1
+@dataclass(frozen=True, slots=True)
+class RendererPresentationOptionsV1:
+    """Host-validated presentation intent and deterministic output budget."""
+
+    media_type: str = "text/plain; charset=utf-8"
+    max_output_bytes: int = 1024 * 1024
+
+    def __post_init__(self) -> None:
+        _media_type(self.media_type)
+        _bounded_integer(self.max_output_bytes, "max_output_bytes")
+
+
+class RendererSinkV1(Protocol):
+    """Write-only host sink; it exposes no path or arbitrary file authority."""
+
+    @property
+    def media_type(self) -> str: ...
+
+    @property
+    def remaining_bytes(self) -> int: ...
+
+    def write_text(self, value: str) -> None: ...
+
+    def write_bytes(self, value: bytes) -> None: ...
+
+
+class RendererHandleV1(Protocol):
+    """Executable SDK-v1 renderer for validated outcome presentation only."""
+
+    capability_id: str
+    media_types: tuple[str, ...]
+
+    def availability(self) -> CapabilityAvailabilityV1: ...
+
+    def render(
+        self,
+        outcome: AnyCompareOutcome,
+        options: RendererPresentationOptionsV1,
+        sink: RendererSinkV1,
+    ) -> None: ...
+
+
+type CapabilityHandleV1 = DetectorHandleV1 | ComparatorHandleV1 | RendererHandleV1
 
 
 @dataclass(frozen=True, slots=True)

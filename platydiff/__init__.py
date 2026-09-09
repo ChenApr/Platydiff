@@ -43,6 +43,11 @@ from platydiff.plugins import (
     PluginCatalogV1,
     PluginDiscoveryPolicy,
     PluginHost,
+    RenderedOutputV1,
+    RendererError,
+    RendererExecutionError,
+    RendererOutputLimitError,
+    RendererUnavailableError,
     discover_plugins,
 )
 
@@ -75,6 +80,11 @@ __all__ = [
     "PluginHostExecutionRecord",
     "ProviderIdentity",
     "Relation",
+    "RenderedOutputV1",
+    "RendererError",
+    "RendererExecutionError",
+    "RendererOutputLimitError",
+    "RendererUnavailableError",
     "ResourceLimits",
     "Source",
     "SourceKind",

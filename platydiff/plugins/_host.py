@@ -21,6 +21,7 @@ from platydiff.core._capabilities import (
 from platydiff.core._detection import detect_pair
 from platydiff.core._sources import SourceSnapshot, open_source_snapshot
 from platydiff.core.models import (
+    AnyCompareOutcome,
     AutoCompareSpec,
     BinaryCompareSpec,
     BinarySpan,
@@ -90,6 +91,7 @@ from platydiff.plugin_sdk import (
     PluginExecutionErrorV1,
     PluginResourceLimitErrorV1,
     PluginUnavailableErrorV1,
+    RendererPresentationOptionsV1,
 )
 from platydiff.plugins._discovery import (
     DiscoveredCapabilityV1,
@@ -97,6 +99,7 @@ from platydiff.plugins._discovery import (
     PluginDiscoveryPolicy,
     discover_plugins,
 )
+from platydiff.plugins._rendering import RenderedOutputV1, render_plugin
 
 type ResolvedPluginSpec = TextCompareSpec | BinaryCompareSpec
 
@@ -230,6 +233,21 @@ class PluginHost:
                 if capability.declaration.capability_id == capability_id
             ),
             None,
+        )
+
+    def render(
+        self,
+        outcome: AnyCompareOutcome,
+        *,
+        renderer_id: str,
+        options: RendererPresentationOptionsV1 | None = None,
+    ) -> RenderedOutputV1:
+        """Render one validated outcome through an exact bounded capability."""
+        return render_plugin(
+            self.catalog,
+            outcome,
+            renderer_id=renderer_id,
+            options=options,
         )
 
     def compare(

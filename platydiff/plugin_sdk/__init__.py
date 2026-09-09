@@ -27,6 +27,9 @@ from platydiff.plugin_sdk._models import (
     PluginManifestV1,
     PluginResourceLimitErrorV1,
     PluginUnavailableErrorV1,
+    RendererHandleV1,
+    RendererPresentationOptionsV1,
+    RendererSinkV1,
     RuntimeDependencyV1,
     SourceServiceV1,
 )
@@ -55,6 +58,9 @@ __all__ = [
     "PluginManifestV1",
     "PluginResourceLimitErrorV1",
     "PluginUnavailableErrorV1",
+    "RendererHandleV1",
+    "RendererPresentationOptionsV1",
+    "RendererSinkV1",
     "RuntimeDependencyV1",
     "SourceServiceV1",
 ]

@@ -24,6 +24,7 @@ from platydiff.plugin_sdk import (
 from platydiff.plugin_sdk._models import (
     _bounded_integer,
     _bounded_text,
+    _media_type,
     _plugin_identifier,
     _stable_identifier,
 )
@@ -623,8 +624,18 @@ def _handles_are_valid(manifest: PluginManifestV1) -> bool:
                     return False
                 if not callable(handle.create_run):  # type: ignore[union-attr]
                     return False
-            else:
-                return False
+            elif declaration.kind is CapabilityKind.RENDERER:
+                media_types = handle.media_types  # type: ignore[union-attr]
+                if (
+                    not isinstance(media_types, tuple)
+                    or not media_types
+                    or media_types != tuple(sorted(set(media_types)))
+                ):
+                    return False
+                for media_type in media_types:
+                    _media_type(media_type)
+                if not callable(handle.render):  # type: ignore[union-attr]
+                    return False
     except (KeyboardInterrupt, SystemExit, MemoryError):
         raise
     except Exception:
