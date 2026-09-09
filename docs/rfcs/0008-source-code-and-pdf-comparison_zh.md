@@ -472,6 +472,20 @@ class PdfCompareSpec:
 因此 `PdfCompareSpec()` 可构造，含义是显式 PDF binary comparison。Dataclass 实现必须对嵌套
 model default 使用 `default_factory`。Nonbinary backend limit 只在对应 view 被选中时验证。
 
+Schema-v5 wire validation 是闭合的：
+
+- `views` 是非空 JSON array，不允许重复值，也不允许 unknown value；
+- writer 将 `views` 规范化为 canonical order：`binary`、`extracted_text`、
+  `objects_metadata`、`rendered_pages`；wire form 不保留输入顺序；
+- writer 总是发出 `limits`，且只包含这些 key：`base`、`worker_invocation`、
+  `extracted_text`、`objects_metadata` 与 `rendered_pages`；
+- 没有选择 nonbinary view 时，`worker_invocation` 为 `null`；选择任一 nonbinary view 时，
+  它必须是 finite object；
+- 每个 per-view limit key 在该 view 未选中时为 `null`，在该 view 选中时为 finite object；
+- reader 只接受该闭合形式：缺失 limit key、unknown limit key、空 `views`、重复 `views`、
+  unknown view name、selected nonbinary view 搭配 `null` limit，或 unselected view 搭配
+  non-null limit，都在 backend resolution 前产生 `failed/invalid_spec`。
+
 PDF option 是封闭集合并完整序列化：
 
 ```python
@@ -637,40 +651,60 @@ class PdfBaseResourceLimits:
     max_change_items: int = 10_000
     max_change_payload_bytes: int = 4 * 1024 * 1024
 
+class PdfWorkerInvocationLimits:
+    max_total_backend_seconds: int
+    max_total_stdout_stderr_bytes: int
+    max_total_temp_bytes: int
+    max_total_decoded_bytes: int
+    max_total_worker_output_bytes: int
+    max_peak_worker_rss_bytes: int
+    max_peak_concurrent_worker_processes: int
+    max_total_worker_processes_spawned: int
+
 class PdfTextResourceLimits:
-    max_worker_rss_bytes: int
     max_pages: int
     max_stream_bytes: int
     max_decoded_stream_bytes: int
     max_text_runs: int
-    max_backend_seconds: int
-    max_temp_bytes: int
-    max_worker_output_bytes: int
-    max_worker_processes: int
+    max_view_backend_seconds: int
+    max_view_stdout_stderr_bytes: int
+    max_view_temp_bytes: int
+    max_view_decoded_bytes: int
+    max_view_worker_output_bytes: int
+    max_view_peak_worker_rss_bytes: int
+    max_view_peak_concurrent_worker_processes: int
+    max_view_total_worker_processes_spawned: int
 
 class PdfObjectResourceLimits:
-    max_worker_rss_bytes: int
     max_objects: int
     max_pages: int
     max_stream_bytes: int
     max_decoded_stream_bytes: int
-    max_backend_seconds: int
-    max_temp_bytes: int
-    max_worker_output_bytes: int
-    max_worker_processes: int
+    max_view_backend_seconds: int
+    max_view_stdout_stderr_bytes: int
+    max_view_temp_bytes: int
+    max_view_decoded_bytes: int
+    max_view_worker_output_bytes: int
+    max_view_peak_worker_rss_bytes: int
+    max_view_peak_concurrent_worker_processes: int
+    max_view_total_worker_processes_spawned: int
 
 class PdfRenderResourceLimits:
-    max_worker_rss_bytes: int
     max_pages: int
     max_render_pixels_per_page: int
     max_rendered_pages: int
-    max_backend_seconds: int
-    max_temp_bytes: int
-    max_worker_output_bytes: int
-    max_worker_processes: int
+    max_view_backend_seconds: int
+    max_view_stdout_stderr_bytes: int
+    max_view_temp_bytes: int
+    max_view_decoded_bytes: int
+    max_view_worker_output_bytes: int
+    max_view_peak_worker_rss_bytes: int
+    max_view_peak_concurrent_worker_processes: int
+    max_view_total_worker_processes_spawned: int
 
 class PdfResourceLimits:
     base: PdfBaseResourceLimits = field(default_factory=PdfBaseResourceLimits)
+    worker_invocation: PdfWorkerInvocationLimits | None = None
     extracted_text: PdfTextResourceLimits | None = None
     objects_metadata: PdfObjectResourceLimits | None = None
     rendered_pages: PdfRenderResourceLimits | None = None
@@ -679,12 +713,28 @@ class PdfResourceLimits:
 PDF 同时具有 whole-invocation budget 与 per-view budget。`base.max_input_bytes`、
 `base.max_compare_work`、`base.max_change_items` 与 `base.max_change_payload_bytes` 对完整
 PDF invocation 累计适用。Fact text/value ceiling 先应用到每个保留的 `PdfFact`，然后完整
-change item 才计入 payload budget。Selected nonbinary view 还要求匹配的 per-view limit
+change item 才计入 payload budget。`worker_invocation` 是 whole-invocation worker budget，
+选择任一 nonbinary view 时必填。Selected nonbinary view 还要求匹配的 per-view limit
 object：`limits.extracted_text`、`limits.objects_metadata` 或 `limits.rendered_pages`。
-Worker RSS、backend seconds、temporary bytes、worker output 与 worker process count 是
-per-view field，但其消耗也计入累计 invocation budget。Page、object、stream、text-run 与
-pixel limit 只适用于定义它们的 view。Host 在派发每个 worker step 前、以及接受 worker 的
-每个有界 result chunk 前检查累计 limit。
+
+Worker accounting 的算法冻结，即使数值默认值仍由 gate 提供：
+
+- `backend_seconds`、`stdout_stderr_bytes`、`temp_bytes`、`decoded_bytes` 与
+  `worker_output_bytes` 作为每个 step 的 delta 计量，先累计到 per-view counter，再累计到
+  whole-invocation counter；
+- `worker_rss_bytes` 作为 current value 采样，记录 per-view peak，并以所有 worker 的 peak
+  作为 whole-invocation peak；
+- `concurrent_worker_processes` 作为 current value 采样，并聚合为 per-view 与
+  whole-invocation peak；
+- `worker_processes_spawned` 作为每个 step 的 delta 计量，并累计为 per-view 与
+  whole-invocation total；
+- page、object、stream、text-run 与 pixel counter 只适用于定义它们的 view，同时每个
+  accepted unit 也消耗 `base.max_compare_work`。
+
+Host 在派发 worker step、创建 temp file、接受 stdout/stderr 或 protocol output、接受
+decoded/object/text/raster chunk、派生 process，以及每次 RSS/process sample 后，都检查相关
+per-view remaining budget 与 `worker_invocation` remaining budget。Nullable per-view limit
+object 本身不会自动形成 global cap；global worker limit 只存在于 `worker_invocation`。
 
 本 RFC 现在接受的 RFC-wide 默认值正是 `PdfBaseResourceLimits()`。这些字段对 binary 安全：
 input bytes、retained fact text/value bytes、comparison work、returned change count 与
@@ -695,36 +745,112 @@ temporary-storage、worker-output 或 worker-process 的默认值。
 P6-P1b、P6-P2 与 P6-P3 各自必须在自己的 evidence gate 中提供 backend-specific numeric
 default，之后才能开始实现。Gate evidence 必须命名 backend/version/platform，解释每个默认值
 为何可强制执行，包含针对该 limit 的 adversarial fixture，并证明 check-before-allocate 行为。
-在该 evidence 存在前，省略 nonbinary limit object 只有在其对应 view 未选中时才合法；选择
-nonbinary view 但缺少对应 finite limit object，会在 backend resolution 前得到
-`failed/invalid_spec`。Decompression bomb 与 recursive object reference 必须在分配下一个
-object 或 stream segment 前失败。Completed result 不依赖 wall-clock time；timeout 产生
-failed 或 unavailable outcome，不产生 partial equality claim。
+在该 evidence 存在前，`worker_invocation` 与省略的 nonbinary limit object 只有在没有选择
+对应 nonbinary view 时才合法；选择 nonbinary view 但缺少 `worker_invocation` 和对应 finite
+per-view limit object，会在 backend resolution 前得到 `failed/invalid_spec`。Decompression
+bomb 与 recursive object reference 必须在分配下一个 object 或 stream segment 前失败。
+Completed result 不依赖 wall-clock time；timeout 产生 failed 或 unavailable outcome，不产生
+partial equality claim。
 
 Validation example 是契约的一部分：
 
 - `PdfCompareSpec()` 合法，并规范化为 `views=("binary",)` 与
-  `PdfResourceLimits(base=PdfBaseResourceLimits())`；
+  `PdfResourceLimits(base=PdfBaseResourceLimits(), worker_invocation=None,
+  extracted_text=None, objects_metadata=None, rendered_pages=None)`；
 - `PdfCompareSpec(views=("binary",), limits=PdfResourceLimits())` 合法，不需要 nonbinary
   backend limit；
 - `PdfCompareSpec(views=("extracted_text",), limits=PdfResourceLimits())` 在 backend
-  resolution 前非法，因为缺少 `limits.extracted_text`；
+  resolution 前非法，因为缺少 `limits.worker_invocation` 与 `limits.extracted_text`；
 - `views=("binary", "rendered_pages")` 的 multi-view spec 在 backend resolution 前非法，
-  除非 `limits.rendered_pages` 存在且有限；
-- 当 `objects_metadata` 未选中时提供 `limits.objects_metadata` 只允许作为 inert serialized
-  configuration，不授权 object parsing。
+  除非 `limits.worker_invocation` 与 `limits.rendered_pages` 存在且有限；
+- 当 `objects_metadata` 未选中时提供 `limits.objects_metadata` 是非法的；未选中的 per-view
+  limit key 序列化为 `null`。
+
+Binary-only canonical JSON shape：
+
+```json
+{
+  "kind": "pdf",
+  "views": ["binary"],
+  "artifact_policy": "none",
+  "limits": {
+    "base": {
+      "max_input_bytes": 67108864,
+      "max_fact_text_bytes": 4096,
+      "max_fact_value_bytes": 4096,
+      "max_compare_work": 5000000,
+      "max_change_items": 10000,
+      "max_change_payload_bytes": 4194304
+    },
+    "worker_invocation": null,
+    "extracted_text": null,
+    "objects_metadata": null,
+    "rendered_pages": null
+  }
+}
+```
+
+Selected-nonbinary canonical JSON shape。下面数值是用于展示 shape 的显式 gate 或 caller
+supplied finite value；它们不是 RFC-wide default：
+
+```json
+{
+  "kind": "pdf",
+  "views": ["extracted_text"],
+  "artifact_policy": "none",
+  "limits": {
+    "base": {
+      "max_input_bytes": 67108864,
+      "max_fact_text_bytes": 4096,
+      "max_fact_value_bytes": 4096,
+      "max_compare_work": 5000000,
+      "max_change_items": 10000,
+      "max_change_payload_bytes": 4194304
+    },
+    "worker_invocation": {
+      "max_total_backend_seconds": 30,
+      "max_total_stdout_stderr_bytes": 1048576,
+      "max_total_temp_bytes": 536870912,
+      "max_total_decoded_bytes": 268435456,
+      "max_total_worker_output_bytes": 67108864,
+      "max_peak_worker_rss_bytes": 536870912,
+      "max_peak_concurrent_worker_processes": 1,
+      "max_total_worker_processes_spawned": 1
+    },
+    "extracted_text": {
+      "max_pages": 1000,
+      "max_stream_bytes": 268435456,
+      "max_decoded_stream_bytes": 268435456,
+      "max_text_runs": 1000000,
+      "max_view_backend_seconds": 30,
+      "max_view_stdout_stderr_bytes": 1048576,
+      "max_view_temp_bytes": 536870912,
+      "max_view_decoded_bytes": 268435456,
+      "max_view_worker_output_bytes": 67108864,
+      "max_view_peak_worker_rss_bytes": 536870912,
+      "max_view_peak_concurrent_worker_processes": 1,
+      "max_view_total_worker_processes_spawned": 1
+    },
+    "objects_metadata": null,
+    "rendered_pages": null
+  }
+}
+```
 
 接受/启动边界如下：
 
 - P6-S1 与 P6-S2 是 source-code gate，不受 PDF backend numeric default 阻塞；
 - P6-P1a 可以使用 `PdfCompareSpec()` 与 `PdfResourceLimits()` 接受并启动，因为默认 view 是
   `binary`，且不解析 nonbinary PDF content；
-- P6-P1b 在开始前必须为 text extraction 提供并论证默认 page、text-run、worker RSS、
-  timeout、temp、output、process 与 stream/decode limit；
+- P6-P1b 在开始前必须为 text extraction 提供并论证 `worker_invocation` 与
+  `extracted_text` default，覆盖 page、text-run、stream/decode、backend-time、
+  stdout/stderr、temp、decoded/output、RSS peak 与 process counter；
 - P6-P2 在开始前必须为 object/metadata inspection 提供并论证默认 object、page、
-  stream/decode、worker RSS、timeout、temp、output 与 process limit；
+  stream/decode、backend-time、stdout/stderr、temp、decoded/output、RSS peak 与 process
+  counter，并分别落在 `worker_invocation` 与 `objects_metadata`；
 - P6-P3 在开始前必须为 rendering 提供并论证默认 page、rendered-page、raster-pixel、
-  worker RSS、timeout、temp、output 与 process limit；
+  backend-time、stdout/stderr、temp、decoded/output、RSS peak 与 process counter，并分别落在
+  `worker_invocation` 与 `rendered_pages`；
 - P6-A1 仍受 artifact authority 阻塞，不因 PDF backend default evidence 而获得授权。
 
 PDF work accounting 按 view 固定：
@@ -742,7 +868,7 @@ Failure 保持可区分：
 
 - 缺少 parser/text/render backend：`unavailable/backend_unavailable`；
 - selected nonbinary view 遇到 encrypted input：`failed/pdf_encrypted`；
-- selected nonbinary view 缺少匹配的 finite limit：`failed/invalid_spec`；
+- selected nonbinary view 缺少 `worker_invocation` 或匹配的 finite limit：`failed/invalid_spec`；
 - malformed syntax 或 unsupported object graph：`failed/decode_error`；
 - decompression 或 size limit：`failed/resource_limit_exceeded`；
 - comparison work limit：`failed/compare_resource_limit`；
@@ -766,13 +892,19 @@ implementation 不允许在进程内解析 nonbinary PDF content。Worker protoc
 
 - cancellation：caller 取消或 limit 触发时，host 可以终止 worker；schema 不提供 completed
   partial result；
-- timeout：wall-clock timeout 会杀掉 worker process group，并记录 `pdf_worker_timeout`；
-- RSS：worker 有强制 resident-memory ceiling；超过时记录 `pdf_worker_rss_exceeded`；
-- temp：所有 temp file 位于 host 创建的有界 temp root，并计入 `max_temp_bytes`；
-- output：stdout/stderr/protocol payload 受 `max_worker_output_bytes` 限制，raw backend
-  stderr 不复制进 outcome；
-- process：worker 不能派生超过 `max_worker_processes` 的进程；不支持 process supervision
-  时 backend unavailable；
+- timeout：wall-clock timeout 会杀掉 worker process group，并计入
+  `max_view_backend_seconds` 与 `max_total_backend_seconds`；超过任一 limit 时记录
+  `pdf_worker_timeout`；
+- RSS：worker 有强制 per-view 与 invocation resident-memory peak；超过
+  `max_view_peak_worker_rss_bytes` 或 `max_peak_worker_rss_bytes` 时记录
+  `pdf_worker_rss_exceeded`；
+- temp：所有 temp file 位于 host 创建的有界 temp root，并计入 `max_view_temp_bytes` 与
+  `max_total_temp_bytes`；
+- output：stdout/stderr/protocol payload 受 `max_view_stdout_stderr_bytes`、
+  `max_total_stdout_stderr_bytes`、`max_view_worker_output_bytes` 与
+  `max_total_worker_output_bytes` 限制，raw backend stderr 不复制进 outcome；
+- process：concurrent 与 total spawned process 受 per-view 与 invocation process field
+  限制；不支持 process supervision 时 backend unavailable；
 - network：policy 禁用 network access 与 remote resource loading；若 platform 无法对某
   backend 强制执行，该 backend unavailable；
 - filesystem：worker 只接收该 view 所需的 opened source descriptor 或 host-owned temp path，
@@ -871,8 +1003,9 @@ Gate：schema migration 继续兼容 P6-P1a；任何 encrypted input 返回
 `failed/pdf_encrypted`；text extraction 只在受监督 bounded worker 中运行；multi-view
 all-or-nothing 行为有测试；text order、font/encoding、Unicode mapping、page alignment、
 worker isolation、cumulative resource、backend provenance 与无 fallback 均由 generated
-fixture 覆盖。该 gate 开始前必须提供并论证默认 page、text-run、worker RSS、timeout、temp、
-output、process 与 stream/decode limit。
+fixture 覆盖。该 gate 开始前必须提供并论证 `worker_invocation` 与 `extracted_text` default，
+覆盖 page、text-run、stream/decode、backend-time、stdout/stderr、temp、decoded/output、RSS
+peak 与 process counter。
 
 ### P6-P2：PDF object/metadata view
 
@@ -883,7 +1016,8 @@ output、process 与 stream/decode limit。
 Gate：xref/object stream/incremental update 处理、active-content inventory、embedded-file
 inventory、metadata ignore policy、object alignment、stream limit、decompression bomb、
 malformed reference 与 deterministic canonical ordering 通过。该 gate 开始前必须提供并论证
-默认 object、page、stream/decode、worker RSS、timeout、temp、output 与 process limit。
+`worker_invocation` 与 `objects_metadata` default，覆盖 object、page、stream/decode、
+backend-time、stdout/stderr、temp、decoded/output、RSS peak 与 process counter。
 
 ### P6-P3：无 artifact 的 PDF rendered-page view
 
@@ -895,8 +1029,9 @@ malformed reference 与 deterministic canonical ordering 通过。该 gate 开�
 Gate：renderer backend license/security/platform review 完成；page box、rotation、color、
 alpha、transparency、antialiasing、font substitution、pixel limit、subprocess timeout、temp
 limit、changed-region grouping 与 platform variance 均有测试。该 gate 开始前必须提供并论证
-默认 page、rendered-page、raster-pixel、worker RSS、timeout、temp、output 与 process
-limit。不写入 page-image 或 heatmap artifact。
+`worker_invocation` 与 `rendered_pages` default，覆盖 page、rendered-page、raster-pixel、
+backend-time、stdout/stderr、temp、decoded/output、RSS peak 与 process counter。不写入
+page-image 或 heatmap artifact。
 
 ### P6-A1：rendered page 的可选 artifact gate
 
@@ -944,7 +1079,7 @@ validation、digital signature 与 archival conformance 都是独立契约。
 | 显式 source `syntax_tree`，parser/resource bound exceeded | `decoding/failed/resource_limit_exceeded`；没有 partial result。 |
 | 显式 source `syntax_tree`，alignment ambiguity 或 work bound exceeded | `aligning/failed/alignment_failed` 或 `comparing/failed/compare_resource_limit`；没有 approximate result。 |
 | PDF `views=("binary",)`，encrypted input | 若 byte limit 满足，则对 original bytes 完成 binary-view comparison。 |
-| PDF 包含任一 nonbinary view 但缺少匹配的 finite limit | `validating/failed/invalid_spec`；不进行 backend resolution，且没有 `DiffResult`。 |
+| PDF 包含任一 nonbinary view 但缺少 `worker_invocation` 或匹配的 finite limit | `validating/failed/invalid_spec`；不进行 backend resolution，且没有 `DiffResult`。 |
 | PDF 包含任一 nonbinary view 且 input encrypted | `decoding/failed/pdf_encrypted`；不 fallback 到 binary，且没有 `DiffResult`。 |
 | PDF nonbinary backend unavailable，或 platform 无法监督 worker | `resolving/unavailable/backend_unavailable`；不启动 worker。 |
 | PDF required multi-view run 中早期 view failed | 顶层 failed/unavailable outcome；已完成的早期 view work 只进入 execution attempt。 |
