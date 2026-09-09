@@ -38,6 +38,10 @@ from platydiff.core.models import (
     Verdict,
 )
 from platydiff.core.serialization import dumps_outcome, loads_outcome
+from platydiff.plugin_sdk import (
+    RendererPresentationOptionsV1,
+    RendererSinkV1,
+)
 from platydiff.renderers.terminal import render_terminal
 from tests.plugin_compatibility.test_renderer_execution_profile import (
     _Renderer,
@@ -310,6 +314,94 @@ def test_plugin_renderer_overflow_has_safe_stderr_and_no_fallback(
             renderer.capability_id,
             "--max-render-bytes",
             "1",
+            str(before),
+            str(after),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert status == 3
+    assert captured.out == ""
+    assert captured.err == "platydiff: rendering failed safely\n"
+
+
+@pytest.mark.parametrize("failure_boundary", ["discover", "compare"])
+def test_plugin_internal_error_remains_schema_v2_with_enabled_context(
+    failure_boundary: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    before, after = write_pair(tmp_path, b"same", b"same")
+    module = importlib.import_module("platydiff.cli.main")
+
+    class ExplodingHost:
+        def compare(self, *_arguments: object, **_options: object) -> object:
+            raise RuntimeError(f"private path: {tmp_path}")
+
+    def discover(_policy: object) -> object:
+        if failure_boundary == "discover":
+            raise RuntimeError(f"private path: {tmp_path}")
+        return ExplodingHost()
+
+    monkeypatch.setattr(module.PluginHost, "discover", staticmethod(discover))
+    status = module.main(
+        [
+            "text",
+            "--format",
+            "json",
+            "--plugin",
+            "org.example.absent",
+            str(before),
+            str(after),
+        ]
+    )
+    captured = capsys.readouterr()
+    payload = parse_object(captured.out)
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    plugin_host = execution["plugin_host"]
+    assert isinstance(plugin_host, dict)
+
+    assert status == 3
+    assert payload["schema_version"] == 2
+    assert payload["kind"] == "failed"
+    assert plugin_host["enabled_plugin_ids"] == ["org.example.absent"]
+    assert plugin_host["loaded_providers"] == []
+    assert str(tmp_path) not in captured.out
+    assert captured.err == ""
+
+
+def test_plugin_renderer_hostile_terminal_controls_fail_safely(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class UnsafeRenderer(_Renderer):
+        def render(
+            self,
+            outcome: AnyCompareOutcome,
+            options: RendererPresentationOptionsV1,
+            sink: RendererSinkV1,
+        ) -> None:
+            del outcome, options
+            sink.write_text("\x1b]0;spoofed\x07\t\ufeff\u202e")
+
+    before, after = write_pair(tmp_path, b"same", b"same")
+    module = importlib.import_module("platydiff.cli.main")
+    renderer = UnsafeRenderer()
+    host = _renderer_host(renderer)
+    monkeypatch.setattr(
+        module.PluginHost, "discover", staticmethod(lambda _policy: host)
+    )
+
+    status = module.main(
+        [
+            "text",
+            "--plugin",
+            "org.example.scidiff",
+            "--renderer",
+            renderer.capability_id,
             str(before),
             str(after),
         ]
@@ -618,6 +710,8 @@ def test_unknown_exception_is_safe_and_suppresses_traceback(
     status = module.main(["text", "--format", "json", str(before), str(after)])
     captured = capsys.readouterr()
     assert status == 3
+    payload = parse_object(captured.out)
+    assert payload["schema_version"] == 1
     assert "internal_error" in captured.out
     assert str(tmp_path) not in captured.out
     assert "Traceback" not in captured.err

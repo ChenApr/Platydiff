@@ -13,10 +13,14 @@ from platydiff.core.models import (
     CompletedOutcome,
     CompletedOutcomeV2,
     ExecutionProblem,
+    ExecutionProblemV2,
     ExecutionRecord,
+    ExecutionRecordV2,
     FailedOutcome,
+    FailedOutcomeV2,
     PathSource,
     PipelineStage,
+    PluginHostExecutionRecord,
     StageDisposition,
     StageRecord,
     Verdict,
@@ -24,10 +28,12 @@ from platydiff.core.models import (
 from platydiff.plugin_sdk import RendererPresentationOptionsV1
 from platydiff.plugins import PluginDiscoveryPolicy, PluginHost
 from platydiff.renderers.json import render_json
-from platydiff.renderers.terminal import render_terminal
+from platydiff.renderers.terminal import _terminal_text_is_safe, render_terminal
 
 
-def _internal_error_outcome() -> FailedOutcome:
+def _internal_error_outcome(
+    enabled_plugin_ids: tuple[str, ...] | None = None,
+) -> FailedOutcome | FailedOutcomeV2:
     stamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     stage = StageRecord(
         PipelineStage.VALIDATING,
@@ -36,14 +42,24 @@ def _internal_error_outcome() -> FailedOutcome:
         0,
         StageDisposition.FAILED,
     )
-    execution = ExecutionRecord(stamp, stamp, 0, (stage,))
+    message = "An unexpected internal error prevented comparison."
+    if enabled_plugin_ids is not None:
+        return FailedOutcomeV2(
+            execution=ExecutionRecordV2(
+                stamp,
+                stamp,
+                0,
+                (stage,),
+                plugin_host=PluginHostExecutionRecord(enabled_plugin_ids, ()),
+            ),
+            problem=ExecutionProblemV2(
+                "internal_error", 500, PipelineStage.VALIDATING, message
+            ),
+        )
     return FailedOutcome(
-        execution=execution,
+        execution=ExecutionRecord(stamp, stamp, 0, (stage,)),
         problem=ExecutionProblem(
-            "internal_error",
-            500,
-            PipelineStage.VALIDATING,
-            "An unexpected internal error prevented comparison.",
+            "internal_error", 500, PipelineStage.VALIDATING, message
         ),
     )
 
@@ -79,7 +95,9 @@ def main(argv: list[str] | None = None) -> int:
     except MemoryError:
         raise
     except Exception:
-        outcome = _internal_error_outcome()
+        outcome = _internal_error_outcome(
+            command.enabled_plugin_ids if command.uses_plugin_host else None
+        )
 
     try:
         if command.renderer_id is not None:
@@ -94,7 +112,10 @@ def main(argv: list[str] | None = None) -> int:
                 ),
             )
             if plugin_output.is_text:
-                sys.stdout.write(plugin_output.text or "")
+                text = plugin_output.text
+                if text is None or not _terminal_text_is_safe(text):
+                    raise ValueError("plugin renderer text is unsafe for a terminal")
+                sys.stdout.write(text)
             else:
                 sys.stdout.buffer.write(plugin_output.data)
             sys.stdout.flush()
