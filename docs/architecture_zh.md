@@ -222,6 +222,9 @@ DiffResult
 
 语法相同不等于运行语义相同。AST 比较需要明确其解析器版本、错误恢复策略和宏/预处理边界。
 
+[RFC 0008](rfcs/0008-source-code-and-pdf-comparison_zh.md) 提议显式源代码比较契约与
+独立授权的 Phase 6 门禁。它仍为 Proposed，不授权实现。
+
 ### 6.4 图片
 
 严格模式将双方解码到统一尺寸、方向、色彩空间和 Alpha 表示，然后逐像素计算差异。可输出不同像素数、MAE、RMSE、PSNR 和热图。结构或感知模式使用 SSIM、MS-SSIM、LPIPS 或感知哈希。
@@ -239,6 +242,10 @@ DiffResult
 ### 6.7 PDF
 
 PDF 同时包含文本、绘制指令、字体、图片和页面布局。应提供三种可组合视角：提取文本比较、PDF 对象/元数据比较、页面渲染后的图片比较。不同生成器可能产生完全不同的内部对象但视觉页面一致，因此不能只做二进制 Diff。
+
+[RFC 0008](rfcs/0008-source-code-and-pdf-comparison_zh.md) 提议 PDF 的显式 view
+契约：binary、extracted text、objects/metadata 与 rendered pages。它仍为 Proposed，
+不授权实现。
 
 ### 6.8 表格、数组和统计数据
 

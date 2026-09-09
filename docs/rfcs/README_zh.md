@@ -22,5 +22,6 @@
 | [0004](0004-human-review-ui-and-renderer-boundary_zh.md) | Proposed | 保持人类评审界面位于 validated outcome 下游，并分阶段规划 terminal、HTML、TUI 和 desktop 工作 |
 | [0005](0005-third-party-plugin-discovery-sdk-and-compatibility_zh.md) | Implemented | 定义显式第三方 discovery、版本化 SDK、确定性 capability execution 与兼容性证据 |
 | [0006](0006-structured-data-comparison_zh.md) | Accepted | 在 schema v3 与独立授权交付门禁后定义显式 JSON/YAML、表格及稠密数组语义 |
+| [0008](0008-source-code-and-pdf-comparison_zh.md) | Proposed | 在独立授权的 Phase 6 门禁后定义显式 source-code 与 PDF 比较契约 |
 
 计划中的行为在实现并完成验证前，必须继续明确标记为计划能力。
