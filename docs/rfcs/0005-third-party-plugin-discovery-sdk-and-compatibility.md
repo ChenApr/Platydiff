@@ -2,22 +2,23 @@
 
 [Chinese documentation](0005-third-party-plugin-discovery-sdk-and-compatibility_zh.md)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-09
+- Accepted: 2026-09-09
 - Owners: Platydiff maintainers
-- Implementation owner: unassigned pending acceptance and explicit authorization
+- Implementation owner: unassigned pending explicit implementation authorization
 
 ## Summary and authorization boundary
 
-This RFC proposes Phase 3: explicit discovery of installed Python plugins,
-a versioned plugin SDK, deterministic capability selection, and a compatibility
-suite. It is based on the implemented Phase 1 text and Phase 2 automatic/binary
-paths rather than the earlier single-class plugin sketch.
+This RFC defines the accepted Phase 3 contract: explicit discovery of installed
+Python plugins, a versioned plugin SDK, deterministic capability selection, and
+a compatibility suite. It is based on the implemented Phase 1 text and Phase 2
+automatic/binary paths rather than the earlier single-class plugin sketch.
 
-This RFC is not an implementation authorization. While it is `Proposed`, no
-entry-point group, SDK symbol, CLI option, compatibility badge, or third-party
-execution behavior is public. Acceptance must resolve the human decisions near
-the end of this document. Implementation then requires a separately dispatched
+Acceptance approves P1-P8 as normative design decisions. It is not an
+implementation authorization: no entry-point group, SDK symbol, CLI option,
+compatibility badge, or third-party execution behavior is implemented merely
+because this RFC is `Accepted`. Implementation requires a separately dispatched
 session on a new branch from updated `main`.
 
 Phase 3 does not authorize new modalities or the UI work proposed by
@@ -139,7 +140,7 @@ and never merely because `compare()` is called. The snapshot is fixed for the
 lifetime of its `PluginHost`; changes to the Python environment require a new
 discovery call and host.
 
-There is no `enable all installed plugins` default. The proposed Python shape is:
+There is no `enable all installed plugins` default. The accepted Python shape is:
 
 ```python
 policy = PluginDiscoveryPolicy(
@@ -154,7 +155,7 @@ unchanged and built-in-only. A host is immutable and safe to inspect after
 construction; there is no public `register()` method and no process-global
 third-party catalog.
 
-The corresponding CLI design is explicit and remains subject to decision P8:
+The corresponding accepted CLI design is explicit under decision P8:
 
 ```text
 platydiff ... --plugin org.example.scidiff \
@@ -397,8 +398,8 @@ receipt because rendering happens after the comparison outcome exists.
 
 The current schema cannot represent all comparison facts without overloading
 `capability_id`, `implementation_version`, or diagnostic prose. It also cannot
-attribute fused detection candidates. Phase 3 implementation is therefore
-blocked on decision P6. The recommended design is outcome schema v2 with:
+attribute fused detection candidates. Approved decision P6 therefore requires
+outcome schema v2 with:
 
 - a typed `ProviderIdentity` containing plugin, distribution, manifest, and
   negotiated SDK identity/version without module paths;
@@ -409,10 +410,25 @@ blocked on decision P6. The recommended design is outcome schema v2 with:
 - a stable `plugin_execution_failure` problem mapping;
 - a v1 reader and documented v1-to-v2 migration tests.
 
-Built-in-only v2 producers omit plugin-only fields. Existing v1 payloads remain
-readable and their golden fixtures remain unchanged; a legacy v1 encoder, if
-retained, cannot encode plugin execution. Reusing schema v1 requires an explicit
-amendment to RFC 0003 decision D3 and is the non-recommended alternative.
+The existing `platydiff.compare()` path and existing CLI routes without plugin
+selection continue to produce schema v1 byte-for-byte where behavior is
+unchanged. `PluginHost.compare()` and every CLI invocation that enables or pins
+a plugin produce schema v2, even when final resolution selects a built-in,
+because the enabled provider environment is execution input. Built-in-only v2
+outcomes omit selected-provider fields but retain their v2 plugin-host record.
+
+Readers and renderers accept both versions. A documented typed v1-to-v2 upgrader
+preserves v1 semantics and adds an empty plugin-host context. Schema v2 is never
+silently down-converted; a retained v1 encoder rejects v2/plugin execution that
+cannot be represented. Existing v1 payloads remain readable and their golden
+fixtures remain unchanged.
+
+This does not amend, supersede, or silently override RFC 0003 decision D3. D3's
+single pre-release extension occurred in Phase 2 and continues to freeze the
+closed unions and meanings of schema v1. Phase 3 introduces the explicit
+successor schema v2 instead of adding plugin fields or problem codes to v1.
+The implementation must preserve the v1 reader, document migration into v2,
+and prove in compatibility tests that v1 data retains its original meaning.
 
 No provider identity may contain an absolute path, module filesystem location,
 username, environment variable, traceback, token, or source content. Distribution
@@ -446,8 +462,8 @@ problem and includes only a bounded safe reason in structured details.
 Known exceptions raised by a selected plugin are mapped at the method boundary.
 Capability absence remains `unavailable`; resource exhaustion, invalid plugin
 output, and execution failure are `failed` and never content differences. A new
-stable `plugin_execution_failure` problem code is recommended but requires the
-schema decision P6. `KeyboardInterrupt`, `SystemExit`, and `MemoryError` propagate
+stable schema-v2 `plugin_execution_failure` problem code is required by P6.
+`KeyboardInterrupt`, `SystemExit`, and `MemoryError` propagate
 from the Python API. Programming defects are not silently converted by library
 code; the CLI retains its outer safe `internal_error` boundary.
 
@@ -546,11 +562,11 @@ Compatibility policy is:
 - deprecation spans at least one documented release line and never silently
   changes capability selection.
 
-## Proposed implementation and merge gates
+## Implementation and merge gates
 
-No work below begins while this RFC is `Proposed`. After acceptance and explicit
-authorization, use three independently reviewable merge gates; do not stack them
-unless the user approves stacked review.
+Acceptance alone does not start any work below. After separate explicit
+implementation authorization, use three independently reviewable merge gates;
+do not stack them unless the user approves stacked review.
 
 ### P3-A: SDK and discovery, no plugin execution
 
@@ -590,22 +606,25 @@ Each merge gate requires independent contract review mapping this RFC to code
 and tests, actual verification commands, dependency/license impact, and a scan
 showing no source, fixture, secret, local path, or generated artifact leakage.
 
-## Human decisions required before acceptance
+## Approved decisions
 
-| ID | Decision | Recommended default | Consequence |
+The user approved P1-P8 on 2026-09-09. They are normative parts of this RFC but
+do not assign an implementation owner or authorize development.
+
+| ID | Decision | Approved contract | Consequence |
 | --- | --- | --- | --- |
 | P1 | Default enablement | Keep `compare()` built-in-only; require an exact plugin-ID allowlist | Installed packages cannot silently change behavior |
 | P2 | Entry-point layout | Use only `platydiff.plugins.v1` with one manifest factory | Atomic identity and one negotiation boundary; role-specific groups remain reserved |
-| P3 | First SDK modality scope | Limit detector/comparator plugins to existing text/binary specs and one pinned detector per run | Avoids pretending schema v1 supports new modalities or detector fusion |
+| P3 | First SDK modality scope | Limit detector/comparator plugins to existing text/binary specs and one pinned detector per run | Prevents plugin installation from bypassing new-modality and detector-fusion RFC gates |
 | P4 | Execution isolation | Start with explicitly trusted in-process plugins and state that no sandbox exists | Small implementable SDK; untrusted/out-of-process execution needs a successor RFC |
 | P5 | Outcome ownership | Let plugins return validated comparison payloads; host constructs provenance, `DiffResult`, and outcome | Prevents plugins from rewriting execution history or provider identity |
-| P6 | Outcome schema evolution | Use schema v2 with v1 reading/migration support; amend RFC 0003 D3 only if choosing the non-recommended additive-v1 alternative | Provider identity and plugin failures become typed and reproducible |
+| P6 | Outcome schema evolution | Use schema v2 with v1 reading and migration support; keep RFC 0003 D3 intact and schema v1 frozen | Provider identity and plugin failures become typed and reproducible without changing v1 meanings |
 | P7 | Fallback and retry | Permit pre-execution skipping of unpinned unavailable candidates; forbid post-start fallback and all v1 retries | Preserves semantics and makes attempts auditable |
 | P8 | Renderer and CLI scope | Add bounded renderer protocol and explicit capability flags, but no arbitrary file writes or HTML/UI behavior | Keeps RFC 0004 independent and prevents hidden plugin activation |
 
-P1-P8 are recommendations, not approved decisions. P6 is a blocking release
-choice and must be reconciled explicitly with RFC 0003 decision D3. Acceptance
-should record the chosen values and date in this section.
+P6 selects a schema successor rather than reopening schema v1. Any future attempt
+to add the Phase 3 provider fields to v1 would contradict this accepted contract
+and require explicit successor RFC review of both RFC 0003 D3 and this decision.
 
 ## Rejected alternatives
 
@@ -643,7 +662,7 @@ RFC. A plugin transport must not bypass those gates.
 
 ## Consequences
 
-The proposed SDK is intentionally narrower than arbitrary Python extension
+The accepted SDK contract is intentionally narrower than arbitrary Python extension
 hooks. It provides deterministic, auditable third-party implementations for
 contracts that Platydiff already understands, while keeping installation,
 trust, new modalities, and UI on separate decision paths. The extra manifest,

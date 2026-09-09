@@ -776,6 +776,13 @@ The user approved D1-D6 on 2026-09-09. They are normative parts of this RFC:
 | D5 | Auto text semantics | Auto-selected text uses strict UTF-8, preserved newlines, and no other normalization | Auto spec normalization |
 | D6 | Platform gate | Add Windows CI before claiming cross-platform Phase 2 support; Linux remains the minimum merge gate | Support statement |
 
+[RFC 0005](0005-third-party-plugin-discovery-sdk-and-compatibility.md)
+subsequently accepts outcome schema v2 for Phase 3 provider identity and plugin
+failure contracts. That decision applies rather than amends D3: schema v1
+remains frozen after the Phase 2 extension, v1 payloads remain readable with
+their original meanings, and Phase 3 changes use the explicit v2 successor and
+migration tests.
+
 ## Consequences
 
 This contract makes automatic behavior auditable and conservative: ambiguity

@@ -2,20 +2,21 @@
 
 [English documentation](0005-third-party-plugin-discovery-sdk-and-compatibility.md)
 
-- 状态：Proposed
+- 状态：Accepted
 - 日期：2026-09-09
+- 接受日期：2026-09-09
 - Owners：Platydiff 维护者
-- 实现 owner：等待接受并获得显式授权后指派
+- 实现 owner：等待单独的显式实施授权后指派
 
 ## 摘要与授权边界
 
-本 RFC 提议 Phase 3：显式发现已安装的 Python 插件、版本化插件 SDK、确定性的
-capability 选择，以及兼容性套件。它以已实现的 Phase 1 text 和 Phase 2 auto/binary
-路径为证据，而不是沿用早期的单一插件类草图。
+本 RFC 定义已接受的 Phase 3 契约：显式发现已安装的 Python 插件、版本化插件 SDK、
+确定性的 capability 选择，以及兼容性套件。它以已实现的 Phase 1 text 和 Phase 2
+auto/binary 路径为证据，而不是沿用早期的单一插件类草图。
 
-本 RFC 不构成实施授权。在状态为 `Proposed` 时，任何 entry-point group、SDK symbol、
-CLI option、兼容性标志或第三方执行行为都不是公共契约。接受前必须解决本文末尾的
-人类决策。实施还需要另行派发会话，并从更新后的 `main` 新建分支。
+接受本 RFC 表示 P1-P8 成为规范性设计决策，但不构成实施授权。RFC 进入 `Accepted`
+不会使任何 entry-point group、SDK symbol、CLI option、兼容性标志或第三方执行行为
+自动成为已实现能力。实施仍需另行派发会话，并从更新后的 `main` 新建分支。
 
 Phase 3 不授权新模态，也不授权 [RFC 0004](0004-human-review-ui-and-renderer-boundary_zh.md)
 提议的 UI 工作。首版 SDK 刻意只用现有 `text` 与 `binary` 契约验证。
@@ -117,7 +118,7 @@ Discovery 被显式拆成三步：
 只在调用 `discover_plugins()` 时枚举；package import 与单独调用 `compare()` 都不会触发。
 环境快照在 `PluginHost` 生命周期内固定；Python 环境改变后必须重新 discovery 和建 host。
 
-不存在“默认启用全部已安装插件”。提议的 Python 形式为：
+不存在“默认启用全部已安装插件”。已接受的 Python 形式为：
 
 ```python
 policy = PluginDiscoveryPolicy(
@@ -130,7 +131,7 @@ outcome = host.compare(before, after, spec)
 现有三参数 `platydiff.compare(before, after, spec)` 保持不变且只使用 built-in。Host 构造后
 不可变并可安全检查；不提供公共 `register()`，也没有进程全局第三方 catalog。
 
-对应 CLI 设计是显式的，且仍受决策 P8 约束：
+对应的已接受 CLI 设计按 P8 保持显式：
 
 ```text
 platydiff ... --plugin org.example.scidiff \
@@ -332,8 +333,8 @@ Renderer identity 属于独立 rendering result 或 compatibility receipt，因�
 comparison outcome 已存在之后。
 
 当前 schema 无法在不滥用 `capability_id`、`implementation_version` 或 diagnostic prose 的
-情况下表示全部比较事实，也无法归因融合后的 detection candidate。因此 Phase 3 实施被决策
-P6 阻塞。推荐使用 outcome schema v2，并包含：
+情况下表示全部比较事实，也无法归因融合后的 detection candidate。因此已批准决策 P6
+要求使用 outcome schema v2，并包含：
 
 - typed `ProviderIdentity`，记录 plugin、distribution、manifest 与协商后的 SDK identity/version，
   且不含 module path；
@@ -343,9 +344,19 @@ P6 阻塞。推荐使用 outcome schema v2，并包含：
 - 稳定的 `plugin_execution_failure` problem mapping；
 - v1 reader 与有文档的 v1-to-v2 migration test。
 
-Built-in-only v2 producer 省略 plugin-only field。既有 v1 payload 保持可读，golden fixture 不变；
-若保留 legacy v1 encoder，它不能编码 plugin execution。复用 schema v1 必须显式修订 RFC 0003
-决策 D3，是不推荐的替代方案。
+现有 `platydiff.compare()` 路径与未选择插件的现有 CLI route，在行为不变时继续逐字节产生
+schema v1。`PluginHost.compare()` 及每个 enable/pin 插件的 CLI invocation 都产生 schema v2；
+即使最终 resolution 选择 built-in 也如此，因为 enabled provider environment 是 execution input。
+Built-in-only v2 outcome 省略 selected-provider field，但保留 v2 plugin-host record。
+
+Reader 与 renderer 同时接受两个版本。有文档的 typed v1-to-v2 upgrader 保留 v1 语义并增加
+empty plugin-host context。Schema v2 不得静默 down-convert；若保留 v1 encoder，它必须拒绝
+无法表示的 v2/plugin execution。既有 v1 payload 保持可读，golden fixture 不变。
+
+该决定不修订、取代或静默覆盖 RFC 0003 决策 D3。D3 规定的单次 pre-release extension
+已经在 Phase 2 完成，并继续冻结 schema v1 的 closed union 与含义。Phase 3 将引入显式
+successor schema v2，而不是向 v1 添加 plugin field 或 problem code。实施必须保留 v1 reader、
+记录迁移到 v2 的方法，并通过兼容性测试证明 v1 数据保持原有含义。
 
 Provider identity 不得包含 absolute path、module filesystem location、username、environment
 variable、traceback、token 或 source content。Distribution/plugin string 在 manifest validation
@@ -377,8 +388,9 @@ plugin/capability 无法加载或 resolve 时，比较使用既有 `capability_u
 
 Selected plugin 抛出的已知异常在 method boundary 映射。Capability absence 仍为
 `unavailable`；resource exhaustion、invalid plugin output 与 execution failure 为 `failed`，
-且绝不是 content difference。建议新增稳定 `plugin_execution_failure` problem code，但它
-需要 schema 决策 P6。Python API 继续传播 `KeyboardInterrupt`、`SystemExit` 与 `MemoryError`。
+且绝不是 content difference。P6 要求在 schema v2 增加稳定的
+`plugin_execution_failure` problem code。Python API 继续传播 `KeyboardInterrupt`、
+`SystemExit` 与 `MemoryError`。
 Library code 不静默转换 programming defect；CLI 保留最外层 safe `internal_error` 边界。
 
 进程内 Python 无法安全地强制 timeout。正常结果必须依赖确定性 work/byte/count budget，
@@ -454,9 +466,9 @@ output 完全相同。
 - outcome-schema migration test 覆盖 plugin-produced change/provenance；
 - deprecation 至少跨一个有文档的 release line，且不能静默改变 capability selection。
 
-## 提议的实施与 merge 门禁
+## 实施与 merge 门禁
 
-本 RFC 为 `Proposed` 时，下列工作均不得开始。接受并显式授权后，使用三个可独立评审的
+接受本 RFC 本身不会启动下列工作。获得单独的显式实施授权后，使用三个可独立评审的
 merge gate；除非用户批准 stacked review，否则不做 stacked PR。
 
 ### P3-A：SDK 与 discovery，不执行插件 capability
@@ -491,21 +503,24 @@ package content 与 license inventory；Ruff、strict mypy、完整 pytest、bui
 每个 merge gate 都要求独立 contract review：把本 RFC 映射到 code/test，列出实际验证命令、
 dependency/license impact，并确认无 source、fixture、secret、local path 或 generated artifact 泄漏。
 
-## 接受前需要的人类决策
+## 已批准决策
 
-| ID | 决策 | 推荐默认值 | 后果 |
+用户于 2026-09-09 批准 P1-P8。它们是本 RFC 的规范性组成部分，但不指派实现 owner，
+也不授权开发。
+
+| ID | 决策 | 已批准契约 | 后果 |
 | --- | --- | --- | --- |
 | P1 | 默认启用 | 保持 `compare()` built-in-only；要求精确 plugin-ID allowlist | 已安装 package 不能静默改变行为 |
 | P2 | Entry-point layout | 只用 `platydiff.plugins.v1` 的单一 manifest factory | 原子 identity 与单一 negotiation boundary；保留 role-specific group |
-| P3 | 首版 SDK modality scope | Detector/comparator 限定现有 text/binary spec，每次只使用一个 pinned detector | 不伪装 schema v1 已支持新模态或 detector fusion |
+| P3 | 首版 SDK modality scope | Detector/comparator 限定现有 text/binary spec，每次只使用一个 pinned detector | 防止安装插件绕过新模态与 detector-fusion RFC 门禁 |
 | P4 | Execution isolation | 从显式受信任的 in-process plugin 开始，并声明不存在 sandbox | SDK 可小步实施；不可信/跨进程执行需要后继 RFC |
 | P5 | Outcome ownership | 插件返回 validated comparison payload；host 构造 provenance、`DiffResult` 与 outcome | 插件不能改写 execution history 或 provider identity |
-| P6 | Outcome schema evolution | 使用 schema v2 并保留 v1 reading/migration support；只有选择不推荐的 additive-v1 方案时才修订 RFC 0003 D3 | Provider identity 与 plugin failure 类型化且可复现 |
+| P6 | Outcome schema evolution | 使用 schema v2 并保留 v1 reading/migration support；保持 RFC 0003 D3 不变并冻结 schema v1 | Provider identity 与 plugin failure 类型化且可复现，同时不改变 v1 含义 |
 | P7 | Fallback/retry | 允许执行前跳过未 pin 且 unavailable 的候选；禁止开始执行后的 fallback 与全部 v1 retry | 保留语义并让 attempt 可审计 |
 | P8 | Renderer/CLI scope | 增加 bounded renderer protocol 与显式 capability flag，但不允许任意 file write 或 HTML/UI behavior | 保持 RFC 0004 独立，并防止隐藏激活插件 |
 
-P1-P8 是推荐项，不是已批准决策。P6 是阻塞性 release 选择，必须与 RFC 0003 决策 D3
-显式协调。接受时应在本节记录所选值与日期。
+P6 选择 schema successor，而不是重新打开 schema v1。未来若试图把 Phase 3 provider field
+加入 v1，将违背本已接受契约，且必须通过后继 RFC 显式重新评审 RFC 0003 D3 与本决策。
 
 ## 被拒绝的替代方案
 
@@ -539,6 +554,6 @@ artifact、failure 与 equivalence semantics。插件 transport 不能绕过这�
 
 ## 后果
 
-提议的 SDK 刻意窄于任意 Python extension hook。它让第三方实现可确定、可审计地服务于
+已接受的 SDK 契约刻意窄于任意 Python extension hook。它让第三方实现可确定、可审计地服务于
 Platydiff 已理解的契约，同时把 installation、trust、新模态与 UI 保持为独立决策路径。
 额外的 manifest、host、provenance 与 conformance 机制，是避免插件变成不可见第二条流水线的成本。

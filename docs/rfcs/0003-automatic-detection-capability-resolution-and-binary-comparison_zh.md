@@ -693,6 +693,11 @@ CI 绿色、dependency/license 影响已记录，且 PR 不包含 Phase 3 plugin
 | D5 | Auto text 语义 | auto 选中 text 后使用 strict UTF-8、保留 newline，不做其他 normalization | Auto spec normalization |
 | D6 | 平台门禁 | 声明跨平台 Phase 2 支持前加入 Windows CI；Linux 仍是最低 merge gate | 支持声明 |
 
+[RFC 0005](0005-third-party-plugin-discovery-sdk-and-compatibility_zh.md)
+随后为 Phase 3 provider identity 与 plugin failure 契约接受 outcome schema v2。该决定
+落实而非修订 D3：schema v1 在 Phase 2 extension 后继续冻结，v1 payload 保持可读且
+含义不变，Phase 3 变更使用显式 v2 successor 与 migration test。
+
 ## 后果
 
 本契约使自动行为可审计且保守：歧义可见、显式意图优先、精确二进制比较从不只

@@ -100,8 +100,9 @@ Implemented in Phases 1 and 2:
 
 Planned, not implemented:
 
-- public plugin discovery or SDKs (see the
-  [proposed Phase 3 RFC](docs/rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility.md));
+- public plugin discovery or SDKs (the contract is accepted in
+  [RFC 0005](docs/rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility.md),
+  but implementation remains separately gated);
 - JSON/YAML, tables, arrays, images, source code, PDF, audio, and video;
 - stdin, directories, recursive comparison, and configuration files;
 - color, HTML, JUnit, and patch artifacts.

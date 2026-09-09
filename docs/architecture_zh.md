@@ -111,11 +111,11 @@ class DiffPlugin(Protocol):
     ) -> DiffResult: ...
 ```
 
-以现有实现证据为基础的 Phase 3 提案见
+以现有实现证据为基础的 Phase 3 契约见
 [RFC 0005](rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility_zh.md)。它保持当前
 registry 与 source snapshot 私有，要求显式 allowlist discovery，并让 host 拥有 stage、
-resource、provenance 与 outcome construction。该 RFC 为 `Proposed`：entry-point group、
-SDK API 与第三方执行均未实现，也未获授权。
+resource、provenance 与 outcome construction。该 RFC 为 `Accepted`，但 entry-point group、
+SDK API 与第三方执行均未实现，也不会自动获得实施授权；实施仍有独立门禁。
 
 ### 4.1 CompareSpec
 
@@ -242,7 +242,7 @@ PDF 同时包含文本、绘制指令、字体、图片和页面布局。应提�
 
 ## 7. 里程碑
 
-分阶段交付计划及实现门禁由 [RFC 0002](rfcs/0002-development-phases-and-text-slice_zh.md) 定义。Phase 2 的有界探测、内部能力解析和精确二进制比较已实现 [RFC 0003](rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison_zh.md)。Phase 3 插件边界提案见 [RFC 0005](rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility_zh.md)，尚未接受或实现。下方版本分组只描述产品方向，不表示后续能力已经实现。
+分阶段交付计划及实现门禁由 [RFC 0002](rfcs/0002-development-phases-and-text-slice_zh.md) 定义。Phase 2 的有界探测、内部能力解析和精确二进制比较已实现 [RFC 0003](rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison_zh.md)。Phase 3 插件边界已由 [RFC 0005](rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility_zh.md) 接受但尚未实现；接受不授权开发。下方版本分组只描述产品方向，不表示后续能力已经实现。
 
 Phase 1 与 Phase 2 包含 Python 包、schema-v1 契约、显式文本、有界文本/二进制
 探测、精确二进制比较、CLI 及 terminal/JSON renderer，且仍未发布。下列其他
