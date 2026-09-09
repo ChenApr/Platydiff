@@ -91,7 +91,9 @@ Phase 1 与 Phase 2 已实现：
 
 计划中、尚未实现：
 
-- 公共插件发现或 SDK；
+- 公共插件发现或 SDK（契约已由
+  [RFC 0005](docs/rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility_zh.md)
+  接受，但实施仍需单独授权）；
 - JSON/YAML、表格、数组、图片、源代码、PDF、音频和视频；
 - stdin、目录、递归比较和配置文件；
 - color、HTML、JUnit 和 patch artifact。

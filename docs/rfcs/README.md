@@ -21,5 +21,6 @@ This directory contains accepted and proposed design decisions for Platydiff. En
 | [0002](0002-development-phases-and-text-slice.md) | Implemented | Gate the first Python/text slice and defer later capabilities behind explicit contract reviews |
 | [0003](0003-automatic-detection-capability-resolution-and-binary-comparison.md) | Implemented | Define bounded automatic detection, deterministic internal capability resolution, and exact binary comparison |
 | [0004](0004-human-review-ui-and-renderer-boundary.md) | Proposed | Keep human review surfaces downstream of validated outcomes and stage terminal, HTML, TUI, and desktop work |
+| [0005](0005-third-party-plugin-discovery-sdk-and-compatibility.md) | Accepted | Define explicit third-party discovery, a versioned SDK, deterministic capability execution, and compatibility evidence |
 
 Planned behavior must remain explicitly marked as planned until implementation and verification are complete.
