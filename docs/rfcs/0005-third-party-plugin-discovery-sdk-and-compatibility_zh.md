@@ -2,11 +2,11 @@
 
 [English documentation](0005-third-party-plugin-discovery-sdk-and-compatibility.md)
 
-- 状态：Accepted
+- 状态：Implemented
 - 日期：2026-09-09
 - 接受日期：2026-09-09
 - Owners：Platydiff 维护者
-- 实现 owner：P3-A 为 Platydiff 维护者；P3-B/P3-C 尚未指派
+- 实现 owner：Platydiff 维护者
 
 ## 摘要与授权边界
 
@@ -18,9 +18,10 @@ auto/binary 路径为证据，而不是沿用早期的单一插件类草图。
 不会使任何 entry-point group、SDK symbol、CLI option、兼容性标志或第三方执行行为
 自动成为已实现能力。实施仍需另行派发会话，并从更新后的 `main` 新建分支。
 
-实现说明：单独获授权的 P3-A 门禁现已提供 SDK-v1 declaration 和不执行 capability 的
-显式 discovery/catalog negotiation。P3-B 与 P3-C 仍未实现并继续受独立门禁控制，因此
-本 RFC 保持 `Accepted`，而不是 `Implemented`。
+实现说明：单独获授权的 P3-A、P3-B 与 P3-C 门禁现已提供 SDK-v1 declaration 与
+discovery、detector/comparator 执行、schema-v2 provider provenance、有界 renderer
+执行、显式 CLI opt-in 与 compatibility receipt。RFC 0004 UI、新模态、配置文件、任意
+artifact 与自动插件安装仍不在本实现范围内。
 
 Phase 3 不授权新模态，也不授权 [RFC 0004](0004-human-review-ui-and-renderer-boundary_zh.md)
 提议的 UI 工作。首版 SDK 刻意只用现有 `text` 与 `binary` 契约验证。

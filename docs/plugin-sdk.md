@@ -2,11 +2,10 @@
 
 [Chinese documentation](plugin-sdk_zh.md)
 
-Phase 3 gates P3-A and P3-B implement declaration, discovery, explicitly
-selected detector/comparator execution, and provider provenance from
+Phase 3 gates P3-A, P3-B, and P3-C implement declaration, discovery, explicitly
+selected detector/comparator execution, bounded renderer execution, CLI opt-in,
+provider provenance, and compatibility receipts from
 [RFC 0005](rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility.md).
-Renderer execution, CLI plugin flags, and published compatibility receipts
-remain gated by P3-C.
 
 ## Declare one SDK-v1 manifest
 
@@ -152,9 +151,14 @@ called.
 
 Every host comparison returns schema v2, including built-in selections. Schema
 v2 records the enabled/loaded provider snapshot, versioned attempts, and selected
-provider provenance. The existing three-argument `compare()` and CLI remain
-schema v1. Readers accept both versions, and `upgrade_outcome_v1_to_v2()` adds an
-empty host context without changing v1 result meaning. Schema-v1 models and
+provider provenance. The existing three-argument `compare()` and a CLI command
+without plugin/capability flags remain schema v1. A CLI command that enables or
+pins a plugin capability uses the host and schema v2. If an unexpected CLI
+failure occurs after discovery, the failure outcome preserves the exact loaded
+provider snapshot; a discovery failure records the enabled IDs with no loaded
+providers. Readers accept both
+versions, and `upgrade_outcome_v1_to_v2()` adds an empty host context without
+changing v1 result meaning. Schema-v1 models and
 encoders reject schema-v2 nested values. Schema-v2 construction and reading
 cross-check provider-backed attempts against the loaded host snapshot and the
 selected comparator/detector provenance, require selected comparator versions
@@ -162,7 +166,163 @@ to match result provenance, and apply SDK-grade distribution/version identity
 validation. The built-in terminal and JSON renderers accept both outcome schema
 versions without recomputing result semantics.
 
-There is still no public mutable registration method, process-global third-party
-catalog, renderer hook, plugin CLI option, or published compatibility receipt.
-Private requests, snapshots, descriptors, and stage runners are never passed to
-a plugin.
+## Author a bounded renderer
+
+An SDK-v1.1 renderer handle has one declared capability ID, a deterministic
+tuple of media types, an availability probe, and a `render()` method. Associate
+the handle with a matching `CapabilityDeclarationV1` through the manifest's
+`capability_handles` tuple:
+
+```python
+from dataclasses import dataclass
+
+from platydiff.core.models import AnyCompareOutcome
+from platydiff.plugin_sdk import (
+    CapabilityAvailabilityV1,
+    CapabilityDeclarationV1,
+    CapabilityKind,
+    PluginManifestV1,
+    RendererPresentationOptionsV1,
+    RendererSinkV1,
+)
+
+
+@dataclass
+class SafeTextRenderer:
+    capability_id: str = "org.example.scidiff.safe_text"
+    media_types: tuple[str, ...] = ("text/plain; charset=utf-8",)
+
+    def availability(self) -> CapabilityAvailabilityV1:
+        return CapabilityAvailabilityV1(True)
+
+    def render(
+        self,
+        outcome: AnyCompareOutcome,
+        options: RendererPresentationOptionsV1,
+        sink: RendererSinkV1,
+    ) -> None:
+        del options
+        sink.write_text(f"{outcome.kind}:{outcome.schema_version}")
+
+
+def manifest() -> PluginManifestV1:
+    renderer = SafeTextRenderer()
+    declaration = CapabilityDeclarationV1(
+        capability_id=renderer.capability_id,
+        kind=CapabilityKind.RENDERER,
+        implementation_version="1.0",
+    )
+    return PluginManifestV1(
+        manifest_schema_version=1,
+        plugin_id="org.example.scidiff",
+        plugin_version="1.0",
+        api_major=1,
+        minimum_api_minor=1,
+        maximum_api_minor=1,
+        required_host_features=("host.execution.v1",),
+        capabilities=(declaration,),
+        license_expression="Apache-2.0",
+        capability_handles=(renderer,),
+    )
+```
+
+The renderer receives a validated copy of the outcome, presentation options,
+and a host-owned sink only. It receives no source, path, registry, artifact
+root, or comparison callback. Use either `write_text()` or `write_bytes()` for
+one invocation, never both. The sink enforces the exact UTF-8 byte budget and
+declared media type. A `text/*` media type always uses strict UTF-8 text mode,
+including bytes supplied through `write_bytes()`; invalid UTF-8 fails rendering,
+and valid bytes remain subject to the CLI terminal-safety check. Renderers must escape hostile controls before producing
+terminal text; the CLI rejects BOM, bidi controls, and C0/C1 controls other than
+newline before writing plugin text to stdout. Renderers must not recompute
+relation, verdict, metrics, completeness, or any other comparison fact. SDK v1
+does not provide arbitrary file writes, HTML policy, or UI behavior.
+
+Python callers select a renderer only after comparison:
+
+```python
+from platydiff import PluginDiscoveryPolicy, PluginHost
+from platydiff.plugin_sdk import RendererPresentationOptionsV1
+
+host = PluginHost.discover(PluginDiscoveryPolicy(("org.example.scidiff",)))
+outcome = host.compare(before, after, spec)
+rendered = host.render(
+    outcome,
+    renderer_id="org.example.scidiff.safe_text",
+    options=RendererPresentationOptionsV1(max_output_bytes=1_048_576),
+)
+```
+
+`RenderedOutputV1` records exact renderer/provider/backend identity, media type,
+bounded bytes, and whether the output is UTF-8 text. Its public constructor
+validates namespaces, identity strings, media type, bytes/boolean types, backend
+pairing, provider type, and text UTF-8 consistency. A missing, unavailable,
+invalid, failing, or over-limit renderer raises a typed renderer error containing
+the unchanged outcome. There is no implicit fallback.
+
+## Select plugins and capabilities from the CLI
+
+`--plugin` is repeatable and is an exact allowlist. It enables loading only:
+
+```bash
+platydiff compare --type auto \
+  --plugin org.example.scidiff \
+  --detector org.example.scidiff.text_binary_detector \
+  --comparator org.example.scidiff.text_exact before.dat after.dat
+
+platydiff text \
+  --plugin org.example.scidiff \
+  --renderer org.example.scidiff.safe_text \
+  --renderer-media-type "text/plain; charset=utf-8" \
+  --max-render-bytes 1048576 before.txt after.txt
+```
+
+`--detector` is valid only for automatic comparison. Capability IDs are exact;
+absence or unavailability never chooses a substitute. Duplicate/invalid plugin
+IDs, invalid media types and bounds, or renderer-only options without
+`--renderer` are usage errors (exit `2`). Comparison unavailability/failure and
+renderer failure use exit `3`; renderer failures emit only
+`platydiff: rendering failed safely` on stderr and no fallback output.
+Environment variables, configuration files, installation, upgrade, download,
+and dependency resolution remain out of scope.
+
+## Run the compatibility suite and create a receipt
+
+The source distribution includes `tests/plugin_compatibility`. Run it in an
+isolated Python 3.12+ environment containing the exact plugin distribution and
+backend versions under test:
+
+```bash
+python -m pytest tests/plugin_compatibility
+```
+
+The profile covers manifest/API negotiation, explicit discovery, detector and
+comparator lifecycles, renderer authority and bounds, terminal-control safety,
+dependency/license/platform inventory, deterministic ordering, redaction, and
+the discovery-to-CLI failure-isolation matrix. Receipt helpers in
+`tests/plugin_compatibility/profiles.py` require one
+`CompatibilityProfileResultV1` per actually executed profile. Each result
+contains a pass/fail value and a non-empty normalized evidence summary. Canonical
+JSON records those results together with the exact suite and host versions,
+plugin/distribution identity, negotiated SDK and outcome schema versions, and
+backend/platform inventory. The SHA-256 digest covers the normalized per-profile
+results. Evidence is recursively snapshotted at result construction and
+revalidated when the receipt is emitted; strings containing `/` or `\` are
+rejected so embedded local paths cannot enter a receipt. Every nested evidence
+key must also be a bounded lowercase ASCII identifier. Overall `conforms` and the permitted
+`conforms to Platydiff plugin profile X under suite version Y.` claims appear
+only when every included profile passed; a failed or mixed receipt contains no
+conformance claim.
+
+A receipt is self-attestation, not certification, endorsement, security review,
+or permission to redistribute. Plugin code is trusted in-process Python: least
+authority APIs reduce accidental misuse but provide no sandbox. Plugin authors
+own dependency pinning, hashes, license texts, NOTICE/SBOM obligations, export
+controls, patent review, and redistribution permission. Platydiff never installs
+or fetches a plugin, and disabled plugins are never imported for richer
+inventory.
+
+There is no public mutable registration method or process-global third-party
+catalog. Private requests, snapshots, descriptors, and stage runners are never
+passed to a plugin. New modalities, configuration files, arbitrary artifacts,
+HTML, TUI, and desktop review remain planned and require their own gates.

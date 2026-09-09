@@ -11,10 +11,19 @@ from pathlib import Path
 
 import pytest
 
-from platydiff import CompletedOutcome, TextCompareSpec, TextSource, compare
+from platydiff import (
+    CompletedOutcome,
+    PluginHost,
+    TextCompareSpec,
+    TextSource,
+    compare,
+)
 from platydiff.cli.main import exit_code
+from platydiff.cli.parser import parse_command
 from platydiff.core.models import (
+    AnyCompareOutcome,
     CapabilityProblem,
+    CompareSpec,
     Diagnostic,
     DiagnosticSeverity,
     ExecutionProblem,
@@ -22,13 +31,22 @@ from platydiff.core.models import (
     FailedOutcome,
     PipelineStage,
     PolicyEvaluation,
+    Source,
     StageDisposition,
     StageRecord,
     UnavailableOutcome,
     Verdict,
 )
 from platydiff.core.serialization import dumps_outcome, loads_outcome
+from platydiff.plugin_sdk import (
+    RendererPresentationOptionsV1,
+    RendererSinkV1,
+)
 from platydiff.renderers.terminal import render_terminal
+from tests.plugin_compatibility.test_renderer_execution_profile import (
+    _Renderer,
+    _renderer_host,
+)
 
 
 def run_module(
@@ -73,12 +91,389 @@ def test_compare_route_json_fail_exit_one(tmp_path: Path) -> None:
     )
     assert result.returncode == 1
     payload = parse_object(result.stdout)
+    assert payload["schema_version"] == 1
     assert payload["kind"] == "completed"
     result_data = payload["result"]
     assert isinstance(result_data, dict)
     assert result_data["relation"] == "different"
     assert result_data["verdict"] == "fail"
     assert result.stderr == ""
+
+
+def test_plugin_cli_options_are_explicit_normalized_and_bounded() -> None:
+    command = parse_command(
+        [
+            "compare",
+            "--type",
+            "auto",
+            "--plugin",
+            "org.example.zeta",
+            "--plugin",
+            "org.example.alpha",
+            "--detector",
+            "org.example.alpha.detector",
+            "--comparator",
+            "org.example.zeta.comparator",
+            "--renderer",
+            "org.example.alpha.renderer",
+            "--renderer-media-type",
+            "application/octet-stream",
+            "--max-render-bytes",
+            "7",
+            "before",
+            "after",
+        ]
+    )
+
+    assert command.enabled_plugin_ids == (
+        "org.example.alpha",
+        "org.example.zeta",
+    )
+    assert command.detector_id == "org.example.alpha.detector"
+    assert command.comparator_id == "org.example.zeta.comparator"
+    assert command.renderer_id == "org.example.alpha.renderer"
+    assert command.renderer_media_type == "application/octet-stream"
+    assert command.max_render_bytes == 7
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        (
+            "text",
+            "--plugin",
+            "org.example.same",
+            "--plugin",
+            "org.example.same",
+            "a",
+            "b",
+        ),
+        ("text", "--plugin", "not-a-plugin-id", "a", "b"),
+        ("text", "--detector", "org.example.detector", "a", "b"),
+        ("text", "--renderer-media-type", "application/json", "a", "b"),
+        ("text", "--max-render-bytes", "10", "a", "b"),
+    ],
+)
+def test_invalid_plugin_cli_combinations_are_usage_errors(
+    arguments: tuple[str, ...],
+) -> None:
+    with pytest.raises(SystemExit) as caught:
+        parse_command(list(arguments))
+    assert caught.value.code == 2
+
+
+def test_plugin_enablement_alone_uses_schema_v2_without_changing_selection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    before, after = write_pair(tmp_path, b"same\n", b"same\n")
+    module = importlib.import_module("platydiff.cli.main")
+    policies: list[object] = []
+
+    original_discover = PluginHost.discover
+
+    def isolated_discover(policy: object) -> PluginHost:
+        policies.append(policy)
+        return original_discover(policy)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(module.PluginHost, "discover", staticmethod(isolated_discover))
+    status = module.main(
+        [
+            "text",
+            "--format",
+            "json",
+            "--plugin",
+            "org.example.absent",
+            str(before),
+            str(after),
+        ]
+    )
+    payload = parse_object(capsys.readouterr().out)
+
+    assert status == 0
+    assert len(policies) == 1
+    assert payload["schema_version"] == 2
+    result = payload["result"]
+    assert isinstance(result, dict)
+    provenance = result["provenance"]
+    assert isinstance(provenance, dict)
+    assert provenance["comparator_id"] == "text"
+
+
+def test_explicit_capability_ids_are_forwarded_to_plugin_host(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    before, after = write_pair(tmp_path, b"same", b"same")
+    module = importlib.import_module("platydiff.cli.main")
+    delegate = PluginHost.discover(
+        module.PluginDiscoveryPolicy(("org.example.absent",))
+    )
+    calls: list[tuple[str | None, str | None]] = []
+
+    class RecordingHost:
+        def compare(
+            self,
+            before_source: Source,
+            after_source: Source,
+            spec: CompareSpec,
+            *,
+            detector_id: str | None,
+            comparator_id: str | None,
+        ) -> AnyCompareOutcome:
+            calls.append((detector_id, comparator_id))
+            return delegate.compare(
+                before_source,
+                after_source,
+                spec,
+                detector_id=detector_id,
+                comparator_id=comparator_id,
+            )
+
+    monkeypatch.setattr(
+        module.PluginHost,
+        "discover",
+        staticmethod(lambda _policy: RecordingHost()),
+    )
+    status = module.main(
+        [
+            "compare",
+            "--type",
+            "auto",
+            "--format",
+            "json",
+            "--plugin",
+            "org.example.absent",
+            "--detector",
+            "org.example.absent.detector",
+            "--comparator",
+            "text",
+            str(before),
+            str(after),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert status == 3
+    assert calls == [("org.example.absent.detector", "text")]
+    assert parse_object(captured.out)["schema_version"] == 2
+
+
+def test_explicit_plugin_renderer_writes_exact_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    before, after = write_pair(tmp_path, b"same", b"same")
+    module = importlib.import_module("platydiff.cli.main")
+    renderer = _Renderer()
+    host = _renderer_host(renderer)
+    monkeypatch.setattr(
+        module.PluginHost, "discover", staticmethod(lambda _policy: host)
+    )
+
+    status = module.main(
+        [
+            "text",
+            "--plugin",
+            "org.example.scidiff",
+            "--renderer",
+            renderer.capability_id,
+            str(before),
+            str(after),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert status == 0
+    assert captured.out == "completed:2"
+    assert captured.err == ""
+
+
+def test_plugin_renderer_overflow_has_safe_stderr_and_no_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    before, after = write_pair(tmp_path, b"same", b"same")
+    module = importlib.import_module("platydiff.cli.main")
+    renderer = _Renderer()
+    host = _renderer_host(renderer)
+    monkeypatch.setattr(
+        module.PluginHost, "discover", staticmethod(lambda _policy: host)
+    )
+
+    status = module.main(
+        [
+            "text",
+            "--plugin",
+            "org.example.scidiff",
+            "--renderer",
+            renderer.capability_id,
+            "--max-render-bytes",
+            "1",
+            str(before),
+            str(after),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert status == 3
+    assert captured.out == ""
+    assert captured.err == "platydiff: rendering failed safely\n"
+
+
+@pytest.mark.parametrize("failure_boundary", ["discover", "compare"])
+def test_plugin_internal_error_remains_schema_v2_with_enabled_context(
+    failure_boundary: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    before, after = write_pair(tmp_path, b"same", b"same")
+    module = importlib.import_module("platydiff.cli.main")
+    discovered = _renderer_host(_Renderer())
+
+    class ExplodingHost:
+        catalog = discovered.catalog
+
+        def compare(self, *_arguments: object, **_options: object) -> object:
+            raise RuntimeError(f"private path: {tmp_path}")
+
+    def discover(_policy: object) -> object:
+        if failure_boundary == "discover":
+            raise RuntimeError(f"private path: {tmp_path}")
+        return ExplodingHost()
+
+    monkeypatch.setattr(module.PluginHost, "discover", staticmethod(discover))
+    status = module.main(
+        [
+            "text",
+            "--format",
+            "json",
+            "--plugin",
+            "org.example.scidiff",
+            str(before),
+            str(after),
+        ]
+    )
+    captured = capsys.readouterr()
+    payload = parse_object(captured.out)
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    plugin_host = execution["plugin_host"]
+    assert isinstance(plugin_host, dict)
+
+    assert status == 3
+    assert payload["schema_version"] == 2
+    assert payload["kind"] == "failed"
+    assert plugin_host["enabled_plugin_ids"] == ["org.example.scidiff"]
+    loaded = plugin_host["loaded_providers"]
+    assert isinstance(loaded, list)
+    if failure_boundary == "discover":
+        assert loaded == []
+    else:
+        assert len(loaded) == 1
+        provider = loaded[0]
+        assert isinstance(provider, dict)
+        assert provider == {
+            "api_major": 1,
+            "distribution_name": "example-plugin",
+            "distribution_version": "1",
+            "manifest_schema_version": 1,
+            "negotiated_api_minor": 1,
+            "negotiated_host_features": ["host.execution.v1"],
+            "plugin_id": "org.example.scidiff",
+            "plugin_version": "1",
+        }
+    assert str(tmp_path) not in captured.out
+    assert captured.err == ""
+
+
+def test_plugin_renderer_hostile_terminal_controls_fail_safely(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class UnsafeRenderer(_Renderer):
+        def render(
+            self,
+            outcome: AnyCompareOutcome,
+            options: RendererPresentationOptionsV1,
+            sink: RendererSinkV1,
+        ) -> None:
+            del outcome, options
+            sink.write_text("\x1b]0;spoofed\x07\t\ufeff\u202e")
+
+    before, after = write_pair(tmp_path, b"same", b"same")
+    module = importlib.import_module("platydiff.cli.main")
+    renderer = UnsafeRenderer()
+    host = _renderer_host(renderer)
+    monkeypatch.setattr(
+        module.PluginHost, "discover", staticmethod(lambda _policy: host)
+    )
+
+    status = module.main(
+        [
+            "text",
+            "--plugin",
+            "org.example.scidiff",
+            "--renderer",
+            renderer.capability_id,
+            str(before),
+            str(after),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert status == 3
+    assert captured.out == ""
+    assert captured.err == "platydiff: rendering failed safely\n"
+
+
+@pytest.mark.parametrize("payload", [b"\x1b]0;spoofed\x07", b"\xff"])
+def test_plugin_renderer_text_bytes_fail_safely(
+    payload: bytes,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class UnsafeBytesRenderer(_Renderer):
+        def render(
+            self,
+            outcome: AnyCompareOutcome,
+            options: RendererPresentationOptionsV1,
+            sink: RendererSinkV1,
+        ) -> None:
+            del outcome, options
+            sink.write_bytes(payload)
+
+    before, after = write_pair(tmp_path, b"same", b"same")
+    module = importlib.import_module("platydiff.cli.main")
+    renderer = UnsafeBytesRenderer()
+    host = _renderer_host(renderer)
+    monkeypatch.setattr(
+        module.PluginHost, "discover", staticmethod(lambda _policy: host)
+    )
+
+    status = module.main(
+        [
+            "text",
+            "--plugin",
+            "org.example.scidiff",
+            "--renderer",
+            renderer.capability_id,
+            str(before),
+            str(after),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert status == 3
+    assert captured.out == ""
+    assert captured.err == "platydiff: rendering failed safely\n"
 
 
 def test_two_routes_use_the_same_result_path(tmp_path: Path) -> None:
@@ -378,6 +773,8 @@ def test_unknown_exception_is_safe_and_suppresses_traceback(
     status = module.main(["text", "--format", "json", str(before), str(after)])
     captured = capsys.readouterr()
     assert status == 3
+    payload = parse_object(captured.out)
+    assert payload["schema_version"] == 1
     assert "internal_error" in captured.out
     assert str(tmp_path) not in captured.out
     assert "Traceback" not in captured.err

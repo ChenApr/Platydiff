@@ -15,6 +15,9 @@ All notable changes to Platydiff are documented in this file.
 - Implemented Phase 3 gate P3-B with SDK-v1.1 detector/comparator handles,
   immutable host-owned execution, schema-v2 provider and attempt provenance,
   dual-version readers, and a typed schema-v1-to-v2 upgrader.
+- Implemented Phase 3 gate P3-C with bounded third-party renderer handles,
+  explicit CLI plugin/detector/comparator/renderer selection, deterministic
+  compatibility receipts, and a complete failure-isolation profile.
 - Recorded the terminal/HTML-first human review UI roadmap without authorizing
   UI implementation or scheduling.
 - Python 3.12 package and `platydiff` console entry point.
@@ -29,6 +32,16 @@ All notable changes to Platydiff are documented in this file.
 
 ### Fixed
 
+- Preserved the exact loaded-provider snapshot in schema-v2 CLI failures after
+  discovery, and made compatibility-receipt evidence deeply immutable,
+  path-free, and revalidated at emission.
+- Enforced strict UTF-8 text mode for `text/*` renderer output even when a plugin
+  writes bytes, and constrained every nested receipt-evidence key.
+
+- Preserved schema v2 and exact enabled-plugin context at every plugin-enabled
+  CLI exception boundary, rejected unsafe third-party terminal controls before
+  stdout, validated public rendered-output identities and backend versions, and
+  made compatibility claims conditional on normalized executed-profile results.
 - Hardened P3-B plugin execution around unavailable detectors, executable-shape
   validation, single-use run tracking, final path-snapshot mutation checks, and
   auditable failed detector attempts. Discovery now quarantines ordinary handle
@@ -49,8 +62,8 @@ All notable changes to Platydiff are documented in this file.
 - Safe separation of rendered outcomes on stdout from parser and renderer
   failures on stderr.
 
-CLI plugin flags, third-party renderer invocation, compatibility receipts, and
-later modalities remain planned.
+Later modalities, HTML/UI rendering, configuration files, and automatic plugin
+installation remain planned.
 
 ### Changed
 

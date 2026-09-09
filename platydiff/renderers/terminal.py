@@ -15,6 +15,19 @@ _BIDI_CONTROLS = frozenset(
 )
 
 
+def _terminal_text_is_safe(value: str) -> bool:
+    return all(
+        character == "\n"
+        or (
+            ord(character) >= 0x20
+            and not 0x7F <= ord(character) <= 0x9F
+            and ord(character) != 0xFEFF
+            and ord(character) not in _BIDI_CONTROLS
+        )
+        for character in value
+    )
+
+
 def _escape_terminal_text(value: str) -> str:
     escaped: list[str] = []
     for character in value:

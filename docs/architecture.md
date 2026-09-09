@@ -118,8 +118,9 @@ It keeps current registries and source snapshots private, makes discovery
 explicit and allowlisted, and gives the host ownership of stages, resources,
 provenance, and outcome construction. P3-A implements immutable declarations
 and explicit discovery; P3-B implements explicitly pinned detector/comparator
-execution and schema-v2 provider provenance. P3-C renderer invocation, CLI
-flags, and compatibility receipts remain unimplemented and separately gated.
+execution and schema-v2 provider provenance; P3-C implements bounded renderer
+invocation, explicit CLI flags, and compatibility receipts. New modalities and
+the RFC 0004 review UI remain outside the implemented Phase 3 boundary.
 
 ### 4.1 CompareSpec
 
@@ -247,11 +248,12 @@ Statistical comparison can include KS tests, Wasserstein distance, chi-squared t
 
 ## 7. Milestones
 
-The staged delivery plan and its implementation gates are defined by [RFC 0002](rfcs/0002-development-phases-and-text-slice.md). Phase 2 bounded detection, internal resolution, and exact binary comparison implement [RFC 0003](rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison.md). Phase 3 gates P3-A and P3-B implement SDK declaration/discovery and explicitly selected detector/comparator execution with schema-v2 provenance from [RFC 0005](rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility.md); P3-C renderer, CLI, and receipt publication work remains separately gated. The version groupings below describe product direction and do not imply that later capabilities are implemented.
+The staged delivery plan and its implementation gates are defined by [RFC 0002](rfcs/0002-development-phases-and-text-slice.md). Phase 2 bounded detection, internal resolution, and exact binary comparison implement [RFC 0003](rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison.md). Phase 3 gates P3-A, P3-B, and P3-C implement SDK declaration/discovery, explicitly selected detector/comparator/renderer execution, schema-v2 provenance, explicit CLI opt-in, and compatibility receipts from [RFC 0005](rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility.md). The version groupings below describe product direction and do not imply that later capabilities are implemented.
 
-Phases 1 and 2 contain the Python package, schema-v1 contracts, explicit text,
-bounded text/binary detection, exact binary comparison, CLI, and terminal/JSON
-renderers. They remain unreleased. Every other modality and renderer below is planned.
+Phases 1 through 3 contain the Python package, schema-v1/v2 contracts, explicit
+text, bounded text/binary detection, exact binary comparison, CLI,
+terminal/JSON renderers, and the explicit plugin boundary. They remain
+unreleased. Every other modality and renderer below is planned.
 
 ### v0.1: Core loop
 

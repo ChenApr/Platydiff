@@ -11,6 +11,13 @@ from platydiff.plugins._discovery import (
     discover_plugins,
 )
 from platydiff.plugins._host import PluginHost
+from platydiff.plugins._rendering import (
+    RenderedOutputV1,
+    RendererError,
+    RendererExecutionError,
+    RendererOutputLimitError,
+    RendererUnavailableError,
+)
 
 __all__ = [
     "DiscoveredCapabilityV1",
@@ -21,5 +28,10 @@ __all__ = [
     "PluginDiscoveryReason",
     "PluginEntryPointV1",
     "PluginHost",
+    "RenderedOutputV1",
+    "RendererError",
+    "RendererExecutionError",
+    "RendererOutputLimitError",
+    "RendererUnavailableError",
     "discover_plugins",
 ]
