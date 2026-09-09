@@ -8,7 +8,7 @@
 - Review revision: 2026-09-10
 - Approved decisions: S1-S13
 - Owners: Platydiff maintainers
-- Implementation owner: unassigned pending acceptance and separate authorization
+- Implementation owner: unassigned pending separate implementation authorization
 
 ## Summary and authorization boundary
 

@@ -8,7 +8,7 @@
 - Review revision: 2026-09-10
 - Approved decisions: S1-S13
 - Owners: Platydiff maintainers
-- Implementation owner: 尚未指派，等待接受 RFC 并另行授权
+- Implementation owner: 尚未指派，等待单独的实现授权
 
 ## 摘要与授权边界
 
