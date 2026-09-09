@@ -9,7 +9,7 @@ from contextlib import ExitStack
 from dataclasses import dataclass, field, replace
 from functools import partial
 from hashlib import sha256
-from typing import Literal, cast
+from typing import Literal, cast, overload
 
 from platydiff.api import _CATALOG
 from platydiff.api import compare as compare_builtin
@@ -256,6 +256,28 @@ class PluginHost:
             renderer_id=renderer_id,
             options=options,
         )
+
+    @overload
+    def compare(
+        self,
+        before: Source,
+        after: Source,
+        spec: CompareSpec,
+        *,
+        detector_id: str | None = None,
+        comparator_id: str | None = None,
+    ) -> CompareOutcomeV2: ...
+
+    @overload
+    def compare(
+        self,
+        before: Source,
+        after: Source,
+        spec: JsonCompareSpec,
+        *,
+        detector_id: str | None = None,
+        comparator_id: str | None = None,
+    ) -> CompareOutcomeV3: ...
 
     def compare(
         self,

@@ -23,9 +23,7 @@ _DISTRIBUTION_NAME = re.compile(
     r"^(?:[A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9])\Z"
 )
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_JSON_NUMBER = re.compile(
-    r"^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$"
-)
+_JSON_NUMBER = re.compile(r"^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$")
 _PERCENT_ESCAPE = re.compile(r"%[0-9a-fA-F]{2}")
 _INVALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9a-fA-F]{2})")
 _MAX_EXACT_INTEGER = 2**53
@@ -1424,7 +1422,9 @@ class StructuredChange:
         while cursor < len(self.path):
             if self.path[cursor] == "~":
                 if cursor + 1 >= len(self.path) or self.path[cursor + 1] not in "01":
-                    raise ValueError("structured change path must be canonical RFC 6901")
+                    raise ValueError(
+                        "structured change path must be canonical RFC 6901"
+                    )
                 cursor += 2
             else:
                 cursor += 1
