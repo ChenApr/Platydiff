@@ -26,6 +26,7 @@ from platydiff.core.models import (
     DiagnosticSeverity,
     DiffSummary,
     ExtensionChange,
+    ResourceUsage,
 )
 from platydiff.plugin_sdk import (
     CapabilityAvailabilityV1,
@@ -260,6 +261,27 @@ def test_foreign_extension_namespace_is_rejected() -> None:
     assert isinstance(outcome, FailedOutcomeV2)
     assert outcome.problem.code == "plugin_execution_failure"
     assert outcome.problem.stage.value == "aggregating"
+
+
+@pytest.mark.parametrize(
+    "resource_name",
+    ["host.plugin_before_source_bytes", "host.plugin_after_source_bytes"],
+)
+def test_host_reserved_resource_name_is_an_aggregating_failure(
+    resource_name: str,
+) -> None:
+    facts = replace(
+        _facts(),
+        resources=(ResourceUsage(resource_name, 4, 1),),
+    )
+    outcome = _compare(_ConfiguredHandle(aggregate_facts=facts))
+    assert isinstance(outcome, FailedOutcomeV2)
+    assert outcome.problem.code == "plugin_execution_failure"
+    assert outcome.problem.stage.value == "aggregating"
+    assert outcome.execution.stages[-1].stage.value == "aggregating"
+    assert outcome.execution.stages[-1].disposition.value == "failed"
+    assert outcome.execution.attempts[-1].disposition == "failed"
+    assert outcome.execution.attempts[-1].reason_code == "plugin_execution_failure"
 
 
 def test_unsafe_diagnostic_detail_is_rejected_without_disclosure() -> None:
