@@ -28,6 +28,7 @@ from platydiff.core.models import (
     ExtensionChange,
     ResourceUsage,
 )
+from platydiff.core.serialization import dumps_outcome, loads_outcome
 from platydiff.plugin_sdk import (
     CapabilityAvailabilityV1,
     CapabilityKind,
@@ -364,6 +365,31 @@ def test_comparator_availability_resource_limit_is_auditable() -> None:
     assert attempt.disposition == "failed"
     assert attempt.reason_code == "resource_limit_exceeded"
     assert attempt.provider is not None
+
+
+def test_comparator_runtime_backend_must_match_its_declaration() -> None:
+    class UndeclaredBackendHandle(_ConfiguredHandle):
+        def availability(self) -> CapabilityAvailabilityV1:
+            return CapabilityAvailabilityV1(
+                True,
+                "org.example.scidiff.dynamic_backend",
+                "9",
+            )
+
+    handle = UndeclaredBackendHandle()
+    host, _ = _capability(handle, CapabilityKind.COMPARATOR)
+    outcome = host.compare(
+        TextSource("same"),
+        TextSource("same"),
+        TextCompareSpec(),
+        comparator_id=handle.capability_id,
+    )
+    assert isinstance(outcome, FailedOutcomeV2)
+    assert handle.cached_run is None
+    assert outcome.problem.code == "plugin_execution_failure"
+    assert outcome.problem.stage.value == "resolving"
+    assert outcome.execution.attempts[-1].disposition == "failed"
+    assert loads_outcome(dumps_outcome(outcome)) == outcome
 
 
 def test_unpinned_enabled_comparator_never_preempts_builtin() -> None:

@@ -16,6 +16,7 @@ from platydiff import (
     UnavailableOutcomeV2,
 )
 from platydiff.core.models import ComparisonProvenanceV2, JsonObject
+from platydiff.core.serialization import dumps_outcome, loads_outcome
 from platydiff.plugin_sdk import (
     CapabilityAvailabilityV1,
     CapabilityKind,
@@ -192,6 +193,31 @@ def test_detector_availability_resource_limit_is_auditable() -> None:
     assert attempt.disposition == "failed"
     assert attempt.reason_code == "resource_limit_exceeded"
     assert attempt.provider is not None
+
+
+def test_detector_runtime_backend_must_match_its_declaration() -> None:
+    class UndeclaredBackendDetector(_Detector):
+        def availability(self) -> CapabilityAvailabilityV1:
+            return CapabilityAvailabilityV1(
+                True,
+                "org.example.scidiff.dynamic_backend",
+                "9",
+            )
+
+    detector = UndeclaredBackendDetector()
+    host, _ = _capability(detector, CapabilityKind.DETECTOR)
+    outcome = host.compare(
+        BytesSource(b"ascii"),
+        BytesSource(b"ascii"),
+        _spec(),
+        detector_id=detector.capability_id,
+    )
+    assert isinstance(outcome, FailedOutcomeV2)
+    assert detector.calls == []
+    assert outcome.problem.code == "plugin_execution_failure"
+    assert outcome.problem.stage.value == "detecting"
+    assert outcome.execution.attempts[-1].disposition == "failed"
+    assert loads_outcome(dumps_outcome(outcome)) == outcome
 
 
 def test_missing_pinned_detector_does_not_fall_back_to_builtin() -> None:
