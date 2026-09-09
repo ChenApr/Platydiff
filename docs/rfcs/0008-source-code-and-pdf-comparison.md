@@ -27,16 +27,15 @@ successor to RFC 0003 accepts new detection semantics.
 
 ## Evidence ledger
 
-| Current evidence at `origin/main` `fde2bd4` | Phase 6 constraint |
+| Current evidence at `origin/main` `cbc7e36` | Phase 6 constraint |
 | --- | --- |
 | RFC 0001 separates failed/unavailable execution outcomes from completed `DiffResult` facts. | Parser, backend, resource, encryption, sandbox, and rendering failures must not become empty or synthetic differences. |
 | RFC 0002 requires each new modality to define spec, changes, metrics, artifacts, equivalence relation, policy, failures, and gates before implementation. | This RFC records contracts and gates but does not start code. |
 | RFC 0003 keeps automatic detection bounded and closed to text/binary. | Source/PDF do not participate in auto detection; no filename, MIME, grammar, or PDF magic probe changes existing auto behavior. |
-| RFC 0003 snapshot paths own bounded replay, hashing, mutation checks, and safe labels. | Source/PDF gates must revalidate the snapshot implementation before relying on it; concurrent Phase 4/5 work is design evidence only. |
+| RFC 0003 snapshot paths own bounded replay, hashing, mutation checks, and safe labels. | Source/PDF gates must revalidate the snapshot implementation before relying on it; concurrent Phase 4/5 work is not evidence. |
 | RFC 0004 makes renderers and UI consume validated outcomes without rereading sources or recomputing facts. | Source/PDF renderers may present validated facts and inert artifact refs only; page images and heatmaps need an artifact gate. |
 | RFC 0005 implements SDK v1.1 for text/binary detector, comparator, and renderer handles only. | Source/PDF plugin comparators require an explicit SDK-v2 callback and cannot be added through SDK v1.1. |
-| RFC 0006 accepts schema v3 for structured-data built-in specs and changes, but its gates remain unimplemented. | Phase 6 must audit the actual schema-v3 predecessor before public schema implementation. |
-| RFC 0007 reserves schema v4 for the first image slice after the actual schema-v3 predecessor audit. | Phase 6 source/PDF uses the next global successor, schema v5, and does not race or reopen image v4. |
+| RFC 0006 accepts schema v3 for structured-data built-in specs and changes, but its gates remain unimplemented. | Phase 6 may extend schema v3 only after revalidating its actual implementation state; if v3 has shipped, a schema successor may be required. |
 | Runtime dependencies are currently zero and PDF/source backends are only architecture-level plans. | Tree-sitter, PDF parsers, renderers, fonts, and subprocess tools need separate dependency, license, platform, and security review. |
 
 This ledger is evidence for design constraints, not proof that any future
@@ -55,8 +54,7 @@ Phase 6 goals are:
   object/metadata, and rendered-page views;
 - PDF backend boundaries for parsing, text extraction, rendering, sandboxing,
   timeouts, resource limits, and hostile document features;
-- schema compatibility with v1, v2, the actual P4 schema-v3 predecessor, and
-  the Phase 5 schema-v4 reservation;
+- schema compatibility with v1, v2, and accepted v3 migration rules;
 - clear SDK-v2, artifact, detection, and UI callback gates.
 
 Phase 6 does not include:
@@ -82,11 +80,11 @@ are not accepted until a reviewer explicitly approves them.
 | ID | Proposed decision | Alternative not selected |
 | --- | --- | --- |
 | P6X1 | Keep source-code and PDF comparison explicit-only; existing auto remains text/binary. | Add source/PDF candidates to RFC 0003 detection without defining ambiguity and attribution. |
-| P6X2 | Use the globally allocated schema v5 successor for Phase 6 built-in source/PDF spec/change variants after auditing the actual v3 predecessor and Phase 5 v4 reservation. | Extend v1/v2 closed unions, reopen v3, reuse image v4, or assume RFC 0006 implementation details before they exist. |
+| P6X2 | Use schema v3 for Phase 6 built-in spec/change variants only if v3 is still unreleased and revalidated at implementation start; otherwise require a schema successor. | Extend v1/v2 closed unions or assume RFC 0006 implementation details before they exist. |
 | P6X3 | Reject source/PDF plugin comparators under SDK v1.1; require SDK v2 before third-party source/PDF modalities. | Let plugin installation introduce source/PDF specs or built-in change kinds. |
 | P6X4 | Authorize source-code and PDF implementation gates independently. | Treat Phase 6 as one batch because both need parsers. |
 | P6X5 | Keep RFC 0004 artifact/UI work separate; Phase 6 facts may reference artifacts only after an artifact writer gate. | Let PDF rendering implicitly create page images or HTML reports. |
-| P6X6 | Mark every code-dependent assumption as a revalidation gate, including P4-A1 and Phase 5 work. | Treat concurrent unmerged work as implementation or merge evidence. |
+| P6X6 | Mark every code-dependent assumption as a revalidation gate, including P4-A1 and future Phase 5 work. | Treat concurrent unmerged work as design evidence. |
 | P6X7 | Forbid fallback that changes comparison relation after a parser/backend starts. | On failure, silently fall back to text, binary, another parser, another renderer, or approximate semantics. |
 | SC1 | Add an explicit `SourceCodeCompareSpec` with required `language` and `relation` fields. | Infer language from suffix/content or reuse `TextCompareSpec`. |
 | SC2 | First source languages are `python` and `javascript`; `typescript`, `c`, `cpp`, `rust`, `go`, `java`, notebooks, templates, and generated-code policies are deferred. | Start with every grammar available from a backend package. |
@@ -111,50 +109,40 @@ are not accepted until a reviewer explicitly approves them.
 
 ## Schema and compatibility contract
 
-Phase 6 uses the globally allocated schema v5 successor. The allocation order is
-stable human decision: P4 structured data uses schema v3, P5 image uses schema
-v4, P6 source/PDF uses schema v5, and P7 audio/video uses schema v6. Design,
-backend, dependency, and fixture research may proceed concurrently across
-phases, but public schema implementation and merge must respect this
-predecessor order and its compatibility fixtures.
-
-Schema v5 is an additive semantic successor to the actually merged schema-v4
-predecessor:
+If Phase 6 starts while schema v3 remains unreleased and the RFC 0006 v3 base
+has been implemented, Phase 6 built-ins extend v3 as follows:
 
 ```python
-CompareSpecV5 = CompareSpecV4 | SourceCodeCompareSpec | PdfCompareSpec
-ChangeV5 = ChangeV4 | SourceCodeChange | PdfChange
+CompareSpecV3 = (
+    AutoCompareSpec | TextCompareSpec | BinaryCompareSpec
+    | JsonCompareSpec | YamlCompareSpec | TableCompareSpec | ArrayCompareSpec
+    | SourceCodeCompareSpec | PdfCompareSpec
+)
+ChangeV3 = (
+    TextHunk | BinarySpan | StructuredChange | TableChange | ArrayChange
+    | SourceCodeChange | PdfChange | ExtensionChange
+)
 ```
 
-If P4-A1 schema v3 is not implemented on `main`, if the implemented v3 differs
-from RFC 0006, or if Phase 5 schema v4 is absent or changes its allocation, a
-Phase 6 implementation gate stops and updates this RFC before code. Source/PDF
-schema work depends on the real v3/v4 readers, writers, upgraders, and
-fixtures, not on accepted design text alone. In every case:
+If schema v3 has already been released with closed unions, Phase 6 must use a
+schema successor instead of extending v3 in place. In either case:
 
 - existing built-in text, binary, and auto calls keep schema v1;
 - existing `PluginHost` text/binary calls keep schema v2;
-- merged Phase 4 structured-data calls keep the actual implemented schema v3;
-- merged Phase 5 image calls keep schema v4;
-- built-in source-code and PDF specs produce schema v5, including validation,
-  sourcing, resolution, parser/backend, rendered-page backend, alignment, and
-  comparison failures;
-- the v5 reader accepts v1/v2/v3/v4/v5 payloads and dispatches by explicit
-  schema version before inspecting spec or change kinds;
-- explicit v1/v2/v3/v4-to-v5 migration helpers preserve original facts and add
-  only documented neutral defaults;
-- byte-stable v1/v2 fixtures, P4 schema-v3 fixtures, P5 schema-v4 fixtures, and
-  P6 v5 round-trip fixtures remain in the compatibility corpus;
-- no automatic downgrade exists for source-code or PDF outcomes. A lossless
-  helper may downgrade only an outcome whose facts are representable in the
-  requested older schema;
+- built-in source-code and PDF specs produce the new schema selected by the
+  implementation gate, including failure before resolution;
+- readers for the selected schema accept v1/v2/that schema;
+- explicit v1/v2/v3 migration helpers preserve original facts and add only
+  documented neutral defaults;
+- no automatic downgrade exists for source-code or PDF outcomes;
 - unknown built-in spec/change kinds remain invalid; unknown namespaced
   extension changes retain RFC 0001 behavior.
 
 The selected schema must define stable JSON names for every new spec field,
 change kind, metric, evaluation rule, transformation ID, backend identity, and
-problem detail. Schema predecessor assumptions are revalidated at the beginning
-of each Phase 6 implementation gate and before merge.
+problem detail. Schema v3 assumptions are revalidated at the beginning of each
+Phase 6 implementation gate because RFC 0006 is accepted but unimplemented at
+the time of this RFC.
 
 ## Design-contract matrix
 
@@ -575,11 +563,11 @@ These gates are proposed plans, not implementation authorization.
 3. `feat(cli): add explicit source-code comparison commands`
 4. `docs: document source-code comparison contracts`
 
-Gate: schema-v5 migration tests pass against the actual v3/v4 predecessor
-chain; existing v1/v2/v3/v4 fixtures remain compatible; `language` is required;
-no automatic language detection or text fallback exists; lexical relation has
-deterministic token/text fixtures for Python and JavaScript; limits, Unicode,
-newline, malformed input, and renderer escaping are tested.
+Gate: selected schema migration tests pass; existing v1/v2 and any implemented
+v3 fixtures remain compatible; `language` is required; no automatic language
+detection or text fallback exists; lexical relation has deterministic token/text
+fixtures for Python and JavaScript; limits, Unicode, newline, malformed input,
+and renderer escaping are tested.
 
 ### P6-S2: source-code syntax-tree relation and parser backend
 
