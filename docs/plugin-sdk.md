@@ -55,6 +55,13 @@ use the plugin ID prefix. Dependency, license, Python-version, platform, and
 native/external component fields are inventory declarations; the host does not
 resolve dependencies or make legal or platform-support claims from them.
 
+Distribution names follow the
+[PyPA name and normalization specification](https://packaging.python.org/en/latest/specifications/name-normalization/):
+they start and end with an ASCII letter or digit, may contain runs of `.`, `_`,
+and `-` internally, and normalize each such run to one lowercase `-` for
+identity comparisons. The original path-free spelling remains available for
+display and deterministic final tie-breaking.
+
 ## Discover an exact allowlist
 
 Discovery is an explicit call:

@@ -18,7 +18,9 @@ _MAX_IDENTIFIER_BYTES = 255
 _MAX_TEXT_BYTES = 1024
 _PLUGIN_ID = re.compile(r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$")
 _STABLE_IDENTIFIER = re.compile(r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$")
-_DISTRIBUTION_NAME = re.compile(r"^[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*$")
+_DISTRIBUTION_NAME = re.compile(
+    r"^(?:[A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9])\Z"
+)
 
 
 def _bounded_text(value: object, field_name: str, *, allow_empty: bool = False) -> str:

@@ -422,3 +422,62 @@ def test_loaded_plugin_rejects_boolean_negotiated_api_minor() -> None:
             False,
             (),
         )
+
+
+@pytest.mark.parametrize(
+    ("distribution_name", "normalized_name"),
+    [
+        ("friendly--bard", "friendly-bard"),
+        ("FrIeNdLy-._.-bArD", "friendly-bard"),
+    ],
+)
+def test_discovery_accepts_pypa_distribution_separator_runs(
+    monkeypatch: pytest.MonkeyPatch,
+    distribution_name: str,
+    normalized_name: str,
+) -> None:
+    metadata = PluginEntryPointV1(
+        "org.example.scidiff",
+        "platydiff.plugins.v1",
+        "compat_plugin:manifest",
+        distribution_name,
+        "1",
+    )
+    assert metadata.normalized_distribution_name == normalized_name
+    entry_point = FakeEntryPoint(
+        "org.example.scidiff",
+        lambda: _manifest("org.example.scidiff"),
+        distribution_name=distribution_name,
+    )
+    _install(monkeypatch, (entry_point,))
+    catalog = discover_plugins(PluginDiscoveryPolicy(("org.example.scidiff",)))
+    assert entry_point.load_count == 1
+    assert catalog.issues == ()
+
+
+@pytest.mark.parametrize(
+    "distribution_name",
+    ["-leading", "trailing_", ".period", "newline\n", "café", ""],
+)
+def test_entry_point_and_discovery_reject_invalid_pypa_distribution_names(
+    monkeypatch: pytest.MonkeyPatch,
+    distribution_name: str,
+) -> None:
+    with pytest.raises(ValueError):
+        PluginEntryPointV1(
+            "org.example.scidiff",
+            "platydiff.plugins.v1",
+            "compat_plugin:manifest",
+            distribution_name,
+            "1",
+        )
+    entry_point = FakeEntryPoint(
+        "org.example.scidiff",
+        lambda: _manifest("org.example.scidiff"),
+        distribution_name=distribution_name,
+    )
+    _install(monkeypatch, (entry_point,))
+    catalog = discover_plugins(PluginDiscoveryPolicy(("org.example.scidiff",)))
+    assert entry_point.load_count == 0
+    assert catalog.plugins == ()
+    assert catalog.issues[0].reason_code == "plugin_metadata_invalid"

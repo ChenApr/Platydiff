@@ -228,3 +228,39 @@ def test_manifest_profile_rejects_controls_in_all_serialized_inventory(
                 "1",
                 supported_platforms=("linux\x7f",),
             )
+
+
+@pytest.mark.parametrize("distribution_name", ["friendly--bard", "FrIeNdLy-._.-bArD"])
+def test_dependency_accepts_pypa_separator_runs(distribution_name: str) -> None:
+    dependency = RuntimeDependencyV1(distribution_name, ">=1")
+    capability = CapabilityDeclarationV1(
+        "org.example.scidiff.text_exact",
+        CapabilityKind.COMPARATOR,
+        "1",
+        runtime_dependencies=(dependency,),
+    )
+    assert capability.runtime_dependencies[0].distribution_name == distribution_name
+
+
+def test_dependency_separator_runs_preserve_normalized_collision_detection() -> None:
+    with pytest.raises(ValueError, match="unique after normalization"):
+        CapabilityDeclarationV1(
+            "org.example.scidiff.text_exact",
+            CapabilityKind.COMPARATOR,
+            "1",
+            runtime_dependencies=(
+                RuntimeDependencyV1("friendly--bard", ">=1"),
+                RuntimeDependencyV1("FrIeNdLy-._.-bArD", ">=1"),
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    "distribution_name",
+    ["-leading", "trailing_", ".period", "newline\n", "café", ""],
+)
+def test_dependency_rejects_invalid_pypa_distribution_names(
+    distribution_name: str,
+) -> None:
+    with pytest.raises(ValueError):
+        RuntimeDependencyV1(distribution_name, ">=1")

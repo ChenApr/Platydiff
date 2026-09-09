@@ -53,6 +53,12 @@ character 或文件系统路径。capability/backend ID 必须使用 plugin ID �
 license、Python version、platform 与 native/external component field 只用于 inventory；
 host 不负责解析依赖，也不据此作出法律或平台支持判断。
 
+distribution name 遵循
+[PyPA 名称与规范化规范](https://packaging.python.org/en/latest/specifications/name-normalization/)：
+名称以 ASCII 字母或数字开头和结尾，中间可以包含连续的 `.`、`_`、`-`；identity 比较
+时，每段连续分隔符会折叠为一个小写 `-`。原始的无路径拼写仍用于展示和确定性的最终
+tie-break。
+
 ## 发现精确 allowlist
 
 discovery 只能通过显式调用触发：

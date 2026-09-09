@@ -36,6 +36,9 @@ remain planned.
 
 ### Changed
 
+- Aligned plugin and dependency distribution-name validation and normalization
+  with the PyPA name specification, including valid separator runs and strict
+  full-string anchoring.
 - Extended the unreleased schema v1 with `auto` and `binary` specifications,
   `binary_span` changes, and optional detection provenance. Existing explicit
   text payloads remain byte-for-byte compatible; pre-release Phase 1 readers

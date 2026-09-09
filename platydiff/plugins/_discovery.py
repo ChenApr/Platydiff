@@ -43,7 +43,9 @@ _ENTRY_POINT_VALUE = re.compile(
     r"^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*:[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$",
     re.ASCII,
 )
-_DISTRIBUTION_NAME = re.compile(r"^[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*$")
+_DISTRIBUTION_NAME = re.compile(
+    r"^(?:[A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9])\Z"
+)
 _REASON_CODES: frozenset[str] = frozenset(
     {
         "plugin_disabled",
