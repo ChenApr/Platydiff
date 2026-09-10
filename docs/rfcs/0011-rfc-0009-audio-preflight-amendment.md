@@ -1,6 +1,6 @@
-# RFC 0010: RFC 0009 Audio Preflight Amendment
+# RFC 0011: RFC 0009 Audio Preflight Amendment
 
-[Chinese documentation](0010-rfc-0009-audio-preflight-amendment_zh.md)
+[Chinese documentation](0011-rfc-0009-audio-preflight-amendment_zh.md)
 
 - Status: Proposed
 - Date: 2026-09-10
@@ -56,10 +56,10 @@ Key order and defaults:
 
 | Key | Type | Default | Rule |
 | --- | --- | --- | --- |
-| `stream_index` | non-negative integer | `0` | Selects the audio stream before decoding. P7-A1 rejects files with no stream at this index. |
+| `stream_index` | non-negative integer | `0` | P7-A1 WAV has exactly one stream; only `0` is supported. Non-zero values are rejected as invalid intent before source inspection. |
 | `channel_mode` | `"all"` or `"indices"` | `"all"` | `"all"` selects every decoded channel in file order. |
 | `channel_indices` | tuple of non-negative integers | `[]` | Must be empty when `channel_mode="all"` and non-empty, unique, and ascending when `channel_mode="indices"`. |
-| `require_channel_labels` | boolean | `false` | If true, unknown channel labels fail at `validating`. |
+| `require_channel_labels` | boolean | `false` | If true, missing or unknown source channel labels fail at `resolving` when proven by header facts, or at `decoding` if only proven after decode begins. |
 
 ### `AudioDecodeOptions`
 
@@ -117,8 +117,34 @@ entries with `operation="encoded_byte_update"`, `operation="encoded_byte_insert"
 or `operation="encoded_byte_delete"`. Coordinates use absolute byte offsets in
 the source snapshot, not decoded sample coordinates. Payloads carry
 `before_digest`, `after_digest`, `byte_start`, `byte_end`, and `byte_count`.
-Large byte ranges are summarized by digest and bounded snippets according to
-existing change payload limits.
+Raw source bytes and bounded byte snippets are never serialized unless a later
+artifact/source-disclosure RFC explicitly authorizes them.
+
+`AudioChange` is a closed object with key order:
+
+```text
+kind, relation, operation, stream_index, coordinate, fact_name,
+before_digest, after_digest, before_value, after_value, byte_count,
+sample_count, truncated
+```
+
+Common invariants:
+
+- `kind` is always `"audio"`;
+- `relation` is one selected relation name;
+- `stream_index` is `0` for P7-A1 WAV;
+- `coordinate` is either an `AudioCoordinate` object or `null`;
+- `truncated` is boolean and appears on every change.
+
+Operation-specific fields:
+
+| Operation | Required fields | Null fields |
+| --- | --- | --- |
+| `encoded_byte_update` | `coordinate.byte_start`, `coordinate.byte_end`, `before_digest`, `after_digest`, `byte_count` | `fact_name`, `before_value`, `after_value`, `sample_count` |
+| `encoded_byte_insert` | `coordinate.byte_start`, `coordinate.byte_end`, `after_digest`, `byte_count` | `fact_name`, `before_digest`, `before_value`, `after_value`, `sample_count` |
+| `encoded_byte_delete` | `coordinate.byte_start`, `coordinate.byte_end`, `before_digest`, `byte_count` | `fact_name`, `after_digest`, `before_value`, `after_value`, `sample_count` |
+| `sample_update` | `coordinate.sample_index`, `before_digest`, `after_digest`, `sample_count` | `fact_name`, `before_value`, `after_value`, `byte_count` |
+| `format_update`, `channel_update`, `timing_update`, `metadata_update` | `fact_name`, `before_value`, `after_value` | `before_digest`, `after_digest`, `byte_count`, `sample_count` |
 
 The `ChangeSet` remains homogeneous: it contains `AudioChange` values only for
 audio results. Relation-level association is recorded in
@@ -168,8 +194,9 @@ corrupt inputs.
 
 ## Resolving and decoding boundary
 
-The bounded pre-resolution probe reads only RIFF headers, chunk headers, the
-first `fmt ` chunk, and the data-chunk inventory up to `max_probe_bytes`.
+The bounded pre-resolution probe runs during `resolving` and reads only RIFF
+headers, chunk headers, the first `fmt ` chunk, and the data-chunk inventory up
+to `max_probe_bytes`.
 Unsupported-but-valid profiles fail as:
 
 ```text
@@ -178,8 +205,11 @@ stage=resolving
 code=capability_unavailable
 ```
 
-Malformed RIFF/WAV structure fails as `failed/sourcing_error` or
-`failed/decode_error` according to the first stage that proves corruption.
+Malformed bytes that prevent opening or bounded snapshot reads fail at
+`sourcing`. Malformed RIFF/WAV headers or chunk structure proven by the
+resolving probe fail as `failed/resolving/media_header_invalid`. Malformed
+sample payload discovered only after decode starts fails as
+`failed/decoding/decode_error`.
 After decode starts, fallback to bytes, another backend, another profile, or a
 perceptual relation is forbidden.
 
@@ -189,8 +219,9 @@ Absence is distinct from zero. Unknown is distinct from absence.
 
 - Timestamps: PCM WAV without timestamp chunks records `timestamp_status="absent"`;
   unavailable or unparsed timestamp-bearing chunks record `"unknown"`.
-- Encoder delay and padding: no fact records `"absent"`; recognized but
-  unsupported metadata records `"unknown"`; numeric values are sample counts.
+- Encoder delay and padding: no delay/padding metadata records status
+  `"absent"`; recognized but unsupported metadata records `"unknown"`; numeric
+  values are sample counts.
 - Channel layout: classic PCM and extensible zero masks record
   `channel_layout="unknown_ordered"`; extensible non-zero masks record
   `channel_layout="mask"` with the numeric mask and derived labels.
@@ -206,7 +237,27 @@ within the selected decoded stream after deinterleaving, before any alignment
 other than `sample_index`. `AudioCoordinate.byte_start` and `byte_end` are
 absolute half-open byte offsets in the immutable source snapshot.
 
-Digest domains are length-framed and domain-separated:
+Digest algorithm is SHA-256. Digest inputs are byte-exact and use this framing:
+
+- `frame(tag, payload) = tag || uint32_be(len(payload)) || payload`;
+- string values use tag `S` and UTF-8 payload;
+- unsigned integers use tag `U` and canonical decimal ASCII payload;
+- signed integers use tag `I` and canonical decimal ASCII payload;
+- bytes use tag `B` and raw bytes;
+- absent optional values use tag `N` with zero-length payload;
+- lists use tag `L` and payload `uint32_be(item_count) || item_frame...`;
+- name/value pairs are lists of exactly two items: `S(name)`, then the framed
+  value.
+
+Digest input is:
+
+```text
+S("platydiff.audio.digest.v1") ||
+S(domain) ||
+L([pair(name, value), ...])
+```
+
+Digest domains are:
 
 - `audio.encoded_bytes.v1`: selected encoded byte ranges with source length and
   byte offsets;
@@ -214,6 +265,15 @@ Digest domains are length-framed and domain-separated:
   channel labels, sample format, signedness, endianness, container bits, valid
   bits, sample count, and per-channel sample bytes;
 - `audio.fact_set.v1`: sorted fact names, units, value types, and values.
+
+Normative vectors:
+
+| Domain | Fields | SHA-256 |
+| --- | --- | --- |
+| `audio.encoded_bytes.v1` | `source_length=0`, `ranges=[]` | `e2361113e7d5fe9d32fcf689ea057c9950deee12f0272191f810df4ac5e3fae4` |
+| `audio.encoded_bytes.v1` | `source_length=3`, `ranges=[(0,3,"abc")]` | `1127cf48354fc7b2e82205a4a37b41b2ab15f37f7504a569b4ecf96e9beb540d` |
+| `audio.decoded_samples.v1` | 8 kHz mono signed 16-bit little-endian, one zero sample | `571b0712e3cab0285232543121c61d8d79217483f7800e22636464f8be6641a2` |
+| `audio.fact_set.v1` | `facts=[]` | `a71820ac77a1695045cc22037a58821a619210cfaf2b8ea332a888b1ff276431` |
 
 Required first-gate fact order is:
 
@@ -233,14 +293,20 @@ Required first-gate fact order is:
 14. `encoder_delay_status` (unit `name`)
 15. `encoder_padding_status` (unit `name`)
 
-Stable identifiers are lowercase ASCII dotted names:
+Stable identifiers are lowercase ASCII dotted names. The complete P7-A1 set is:
 
 - comparator: `builtin.audio`
 - P7-A1 algorithm: `audio.decoded_samples.exact.v1`
 - encoded algorithm: `audio.encoded_bytes.exact.v1`
 - transformation: `audio.decode.stdlib_wave_pcm.v1`
 - resource profile: `audio.resource.p7_a1.v1`
-- policy rule prefix: `audio.policy.`
+- resource limits: `audio.resource.p7_a1.defaults.v1`
+- policy rules: `audio.policy.exact_decoded_samples.v1`,
+  `audio.policy.encoded_bytes.v1`, `audio.policy.no_hidden_transforms.v1`,
+  `audio.policy.no_fallback_after_backend_start.v1`
+- metrics: `audio.samples_changed`, `audio.bytes_changed`,
+  `audio.relation_facts_changed`, `audio.duration_delta`,
+  `audio.duration_delta_abs`
 
 ## Duration and timebase determinism
 

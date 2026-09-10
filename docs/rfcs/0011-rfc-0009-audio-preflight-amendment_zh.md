@@ -1,6 +1,6 @@
-# RFC 0010：RFC 0009 Audio Preflight Amendment
+# RFC 0011：RFC 0009 Audio Preflight Amendment
 
-[English documentation](0010-rfc-0009-audio-preflight-amendment.md)
+[English documentation](0011-rfc-0009-audio-preflight-amendment.md)
 
 - Status: Proposed
 - Date: 2026-09-10
@@ -49,10 +49,10 @@ Key order 与 default：
 
 | Key | Type | Default | Rule |
 | --- | --- | --- | --- |
-| `stream_index` | 非负 integer | `0` | 解码前选择 audio stream。P7-A1 拒绝没有该 stream 的文件。 |
+| `stream_index` | 非负 integer | `0` | P7-A1 WAV 正好只有一个 stream；仅支持 `0`。非零值在 source inspection 前作为 invalid intent 拒绝。 |
 | `channel_mode` | `"all"` 或 `"indices"` | `"all"` | `"all"` 按文件顺序选择所有 decoded channel。 |
 | `channel_indices` | 非负 integer tuple | `[]` | `channel_mode="all"` 时必须为空；`"indices"` 时必须非空、唯一且升序。 |
-| `require_channel_labels` | boolean | `false` | 为 true 时，unknown channel label 在 `validating` 失败。 |
+| `require_channel_labels` | boolean | `false` | 为 true 时，missing 或 unknown source channel label 在 header fact 可证明时于 `resolving` 失败；若只有 decode 开始后才能证明，则于 `decoding` 失败。 |
 
 ### `AudioDecodeOptions`
 
@@ -109,8 +109,34 @@ Key order 与 default：
 `operation="encoded_byte_update"`、`operation="encoded_byte_insert"` 或
 `operation="encoded_byte_delete"`。Coordinate 使用 source snapshot 中的 absolute byte offset，
 不是 decoded sample coordinate。Payload 携带 `before_digest`、`after_digest`、`byte_start`、
-`byte_end` 与 `byte_count`。大型 byte range 按既有 change payload limit 使用 digest 与有界 snippet
-摘要。
+`byte_end` 与 `byte_count`。除非后续 artifact/source-disclosure RFC 明确授权，否则绝不序列化 raw
+source byte 或 bounded byte snippet。
+
+`AudioChange` 是 closed object，key order 为：
+
+```text
+kind, relation, operation, stream_index, coordinate, fact_name,
+before_digest, after_digest, before_value, after_value, byte_count,
+sample_count, truncated
+```
+
+共同 invariant：
+
+- `kind` 始终为 `"audio"`；
+- `relation` 是一个 selected relation name；
+- P7-A1 WAV 的 `stream_index` 为 `0`；
+- `coordinate` 是 `AudioCoordinate` object 或 `null`；
+- `truncated` 是 boolean，并出现在每个 change 上。
+
+Operation-specific field：
+
+| Operation | Required fields | Null fields |
+| --- | --- | --- |
+| `encoded_byte_update` | `coordinate.byte_start`、`coordinate.byte_end`、`before_digest`、`after_digest`、`byte_count` | `fact_name`、`before_value`、`after_value`、`sample_count` |
+| `encoded_byte_insert` | `coordinate.byte_start`、`coordinate.byte_end`、`after_digest`、`byte_count` | `fact_name`、`before_digest`、`before_value`、`after_value`、`sample_count` |
+| `encoded_byte_delete` | `coordinate.byte_start`、`coordinate.byte_end`、`before_digest`、`byte_count` | `fact_name`、`after_digest`、`before_value`、`after_value`、`sample_count` |
+| `sample_update` | `coordinate.sample_index`、`before_digest`、`after_digest`、`sample_count` | `fact_name`、`before_value`、`after_value`、`byte_count` |
+| `format_update`、`channel_update`、`timing_update`、`metadata_update` | `fact_name`、`before_value`、`after_value` | `before_digest`、`after_digest`、`byte_count`、`sample_count` |
 
 `ChangeSet` 保持 homogeneous：audio result 只包含 `AudioChange`。Relation-level association 记录在
 `DiffResult.media_evaluations`：每个 `MediaViewEvaluation` 列出 relation、selector、
@@ -151,8 +177,9 @@ for P7-A1。单个 `data` chunk 后可以跟 well-formed non-audio chunk；它�
 
 ## Resolving 与 decoding 边界
 
-有界 pre-resolution probe 只读取 RIFF header、chunk header、第一个 `fmt ` chunk，以及不超过
-`max_probe_bytes` 的 data-chunk inventory。Unsupported-but-valid profile 按如下方式失败：
+有界 pre-resolution probe 在 `resolving` 期间运行，且只读取 RIFF header、chunk header、第一个
+`fmt ` chunk，以及不超过 `max_probe_bytes` 的 data-chunk inventory。Unsupported-but-valid profile
+按如下方式失败：
 
 ```text
 outcome=unavailable
@@ -160,9 +187,11 @@ stage=resolving
 code=capability_unavailable
 ```
 
-Malformed RIFF/WAV structure 根据第一个证明 corruption 的阶段返回 `failed/sourcing_error` 或
-`failed/decode_error`。Decode 开始后，禁止 fallback 到 bytes、另一 backend、另一 profile 或
-perceptual relation。
+无法打开 source 或有界 snapshot read 失败的 malformed byte 在 `sourcing` 失败。Resolving probe
+证明的 malformed RIFF/WAV header 或 chunk structure 返回
+`failed/resolving/media_header_invalid`。只有 decode 开始后才发现的 malformed sample payload 返回
+`failed/decoding/decode_error`。Decode 开始后，禁止 fallback 到 bytes、另一 backend、另一 profile
+或 perceptual relation。
 
 ## Absence 与 unknown 语义
 
@@ -170,8 +199,8 @@ Absence 不等于 zero。Unknown 不等于 absence。
 
 - Timestamp：没有 timestamp chunk 的 PCM WAV 记录 `timestamp_status="absent"`；存在但不可用或未解析的
   timestamp-bearing chunk 记录 `"unknown"`。
-- Encoder delay 与 padding：没有 fact 记录 `"absent"`；识别到但不支持的 metadata 记录 `"unknown"`；
-  numeric value 是 sample count。
+- Encoder delay 与 padding：没有 delay/padding metadata 时记录 status `"absent"`；识别到但不支持的
+  metadata 记录 `"unknown"`；numeric value 是 sample count。
 - Channel layout：classic PCM 和 extensible zero mask 记录 `channel_layout="unknown_ordered"`；
   extensible non-zero mask 记录 `channel_layout="mask"`，并带 numeric mask 和派生 label。
 
@@ -184,12 +213,40 @@ Change 按 relation、stream index、operation、coordinate 分组。Ordering �
 位于除 `sample_index` 外任何 alignment 之前。`AudioCoordinate.byte_start` 和 `byte_end` 是 immutable
 source snapshot 中的 absolute half-open byte offset。
 
-Digest domain 使用 length-framed 且 domain-separated：
+Digest algorithm 是 SHA-256。Digest input 是 byte-exact，并使用以下 framing：
+
+- `frame(tag, payload) = tag || uint32_be(len(payload)) || payload`；
+- string value 使用 tag `S` 和 UTF-8 payload；
+- unsigned integer 使用 tag `U` 和 canonical decimal ASCII payload；
+- signed integer 使用 tag `I` 和 canonical decimal ASCII payload；
+- bytes 使用 tag `B` 和 raw bytes；
+- absent optional value 使用 tag `N` 和 zero-length payload；
+- list 使用 tag `L`，payload 为 `uint32_be(item_count) || item_frame...`；
+- name/value pair 是正好两个 item 的 list：`S(name)`，然后是 framed value。
+
+Digest input 是：
+
+```text
+S("platydiff.audio.digest.v1") ||
+S(domain) ||
+L([pair(name, value), ...])
+```
+
+Digest domain 为：
 
 - `audio.encoded_bytes.v1`：selected encoded byte range，以及 source length 和 byte offset；
 - `audio.decoded_samples.v1`：stream index、sample rate、channel count、channel label、sample
   format、signedness、endianness、container bits、valid bits、sample count 与 per-channel sample byte；
 - `audio.fact_set.v1`：排序后的 fact name、unit、value type 与 value。
+
+Normative vector：
+
+| Domain | Fields | SHA-256 |
+| --- | --- | --- |
+| `audio.encoded_bytes.v1` | `source_length=0`、`ranges=[]` | `e2361113e7d5fe9d32fcf689ea057c9950deee12f0272191f810df4ac5e3fae4` |
+| `audio.encoded_bytes.v1` | `source_length=3`、`ranges=[(0,3,"abc")]` | `1127cf48354fc7b2e82205a4a37b41b2ab15f37f7504a569b4ecf96e9beb540d` |
+| `audio.decoded_samples.v1` | 8 kHz mono signed 16-bit little-endian，one zero sample | `571b0712e3cab0285232543121c61d8d79217483f7800e22636464f8be6641a2` |
+| `audio.fact_set.v1` | `facts=[]` | `a71820ac77a1695045cc22037a58821a619210cfaf2b8ea332a888b1ff276431` |
 
 首批门禁要求的 fact order 是：
 
@@ -209,14 +266,20 @@ Digest domain 使用 length-framed 且 domain-separated：
 14. `encoder_delay_status`（unit `name`）
 15. `encoder_padding_status`（unit `name`）
 
-Stable identifier 使用 lowercase ASCII dotted name：
+Stable identifier 使用 lowercase ASCII dotted name。完整 P7-A1 set 为：
 
 - comparator：`builtin.audio`
 - P7-A1 algorithm：`audio.decoded_samples.exact.v1`
 - encoded algorithm：`audio.encoded_bytes.exact.v1`
 - transformation：`audio.decode.stdlib_wave_pcm.v1`
 - resource profile：`audio.resource.p7_a1.v1`
-- policy rule prefix：`audio.policy.`
+- resource limits：`audio.resource.p7_a1.defaults.v1`
+- policy rules：`audio.policy.exact_decoded_samples.v1`、
+  `audio.policy.encoded_bytes.v1`、`audio.policy.no_hidden_transforms.v1`、
+  `audio.policy.no_fallback_after_backend_start.v1`
+- metrics：`audio.samples_changed`、`audio.bytes_changed`、
+  `audio.relation_facts_changed`、`audio.duration_delta`、
+  `audio.duration_delta_abs`
 
 ## Duration 与 timebase determinism
 
