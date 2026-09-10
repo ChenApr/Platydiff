@@ -37,6 +37,11 @@ backend/worker amendment 和下一个 schema successor。
 | P7A-AM8 | 冻结首批 CLI flag，并要求 SDK-v1 plugin audio flag 在 plugin execution 前被拒绝。 | 让 generic plugin 或 media flag 进入 SDK v1.1 host。 |
 | P7A-AM9 | 冻结 P7-A1 failure 的 stable problem detail key、value type、ordering 与 omission rule。 | 透传 backend-specific detail dictionary。 |
 | P7A-AM10 | 让 audio schema successor 取决于 pending global predecessor resolution 对 schema v3/v4/v5/v6 numbering 的处理。 | 在这个 audio-specific amendment 中解决 cross-RFC closed-union numbering。 |
+| P7A-W1 | 保持 classic PCM `fmt ` chunk size 16 作为 P7-A1 唯一可解码的 classic PCM form；valid size-18 且 `cbSize=0` 的 chunk 是 valid but unsupported。 | 接受 size-18 classic PCM，并把它视为等价于 size 16。 |
+| P7A-W2 | 保持 multiple `data` chunk 对 P7-A1 valid but unsupported。 | 拼接多个 `data` chunk，并增加显式 chunk-boundary fact。 |
+| P7A-W3 | 对 `valid_bits < container_bits` 的 WAVE_FORMAT_EXTENSIBLE，要求 profile 规定的 unused padding bit 为零，保留 valid-bits 与 container-bits fact，并精确比较已验证的 stored integer representation，不做 hidden masking；non-zero padding bit 是 malformed。 | 在 sample comparison 前 mask unused bit。 |
+| P7A-W4 | 同时暴露 `platydiff audio` 与 `platydiff compare --type audio`；二者构造相同的 `CompareSpec` 并执行相同 comparison path，以保持与其他 built-in 一致。 | 只保留 generic compare command。 |
+| P7A-W5 | 只有 RFC 0010 Option A/SP1-SP6 被接受，并且 P4-C1 到 v4 到 v5 的 predecessor 实际 merge 后，才保留 audio schema v6。 | 在本 amendment 中独立分配 audio v6。 |
 
 ## Wire shape 与解析规则
 
@@ -176,12 +181,15 @@ evaluation ID，metric 也不包含 source evaluation ID。
 8-bit PCM 是 unsigned。16/24/32-bit PCM 是 signed two's complement little-endian integer。
 24-bit PCM 每个 sample 正好打包为 3 byte。IEEE float、A-law、mu-law、ADPCM、extensible
 non-PCM GUID、big-endian `RIFX` sample byte 与 compressed profile 是 valid but unsupported；
-header malformed 时则为 corrupt。
+header malformed 时则为 corrupt。Classic PCM `fmt ` chunk size 18 且 `cbSize=0` 时也属于
+P7-A1 valid but unsupported。
 
 `nBlockAlign`、`nAvgBytesPerSec`、channel count、sample rate、container bits、valid bits 与
 channel mask 必须内部一致。Classic PCM 的 channel label unknown，channel 有序。
 WAVE_FORMAT_EXTENSIBLE 且 mask 非零时，从 mask 记录 label；zero mask 记录 unknown label 与
 ordered channel。Valid bits 记录为 fact，不会静默 mask stored container bit。
+当 WAVE_FORMAT_EXTENSIBLE 满足 `valid_bits < container_bits` 时，profile 规定的 unused
+padding bit 必须在 exact comparison 前为零；non-zero padding bit 是 malformed input。
 
 必须正好有一个 `fmt ` chunk，且至少有一个 `data` chunk。多个 `data` chunk 是 valid but unsupported
 for P7-A1。单个 `data` chunk 后可以跟 well-formed non-audio chunk；它们的 chunk ID 与 byte size
@@ -315,9 +323,16 @@ platform-specific float string 都非法。
 
 ## CLI 与 SDK-v1 plugin rejection
 
-P7-A1 预留以下 CLI flag：
+P7-A1 预留两个等价 CLI entry point：
 
 ```text
+platydiff audio LEFT RIGHT
+  --audio-relation decoded_samples
+  --audio-backend stdlib_wave_pcm
+  --audio-profile p7_a1_wav_pcm
+  --audio-stream-index 0
+  --format json
+
 platydiff compare --type audio LEFT RIGHT
   --audio-relation decoded_samples
   --audio-backend stdlib_wave_pcm
@@ -326,6 +341,7 @@ platydiff compare --type audio LEFT RIGHT
   --format json
 ```
 
+两个 entry point 构造相同的 `CompareSpec`，并执行相同 built-in comparison path。
 `--audio-stream-index` 映射到已接受的 `stream.index`；P7-A1 只接受 `0`。`encoded_bytes`
 通过 `--audio-relation encoded_bytes` 选择。Waveform、spectral、perceptual、channel-selection
 以及非 `sample_index` alignment flag 在后续 gate 前继续被拒绝。
@@ -385,13 +401,5 @@ detail object。
 
 ## 需要人工批准的问题
 
-1. Classic PCM `fmt ` chunk size 18 且 `cbSize=0` 时是否应接受，还是 P7-A1 继续采用更严格的
-   size-16-only rule？
-2. Multiple `data` chunk 是否继续 valid-but-unsupported，还是 P7-A1 应拼接它们并记录显式
-   chunk-boundary fact？
-3. WAVE_FORMAT_EXTENSIBLE 的 valid bits 小于 container bits 时，是否如本文提议一样精确比较 stored
-   container bit，还是在 sample comparison 前 mask unused bit？
-4. P7-A1 后续是否需要专用 convenience command，还是只保留仓库约定
-   `platydiff compare --type audio`？
-5. 单独的 cross-RFC predecessor resolution 在协调 RFC 0006、RFC 0008 和已实现 schema-v3 closed
-   union 后，应为 audio 分配哪个 schema successor number？
+请整体批准 P7A-W1 到 P7A-W5，或返回需要 revision 的具体 ID，然后本 amendment 才能从
+Proposed 移至 Accepted。

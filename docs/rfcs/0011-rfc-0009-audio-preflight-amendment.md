@@ -42,6 +42,11 @@ until this amendment is explicitly accepted.
 | P7A-AM8 | Freeze first-gate CLI flags and require SDK-v1 plugin audio flags to be rejected before plugin execution. | Let generic plugin or media flags reach SDK v1.1 hosts. |
 | P7A-AM9 | Freeze stable problem detail keys, value types, ordering, and omission rules for P7-A1 failures. | Pass through backend-specific detail dictionaries. |
 | P7A-AM10 | Keep the audio schema successor conditional on the pending global predecessor resolution for schema v3/v4/v5/v6 numbering. | Resolve cross-RFC closed-union numbering inside this audio-specific amendment. |
+| P7A-W1 | Keep classic PCM `fmt ` chunk size 16 as the only P7-A1 decodable classic PCM form; valid size-18 chunks with `cbSize=0` are valid but unsupported. | Accept size-18 classic PCM as equivalent to size 16. |
+| P7A-W2 | Keep multiple `data` chunks valid but unsupported for P7-A1. | Concatenate multiple `data` chunks and add explicit chunk-boundary facts. |
+| P7A-W3 | For WAVE_FORMAT_EXTENSIBLE with `valid_bits < container_bits`, require profile-mandated unused padding bits to be zero, retain valid-bits and container-bits facts, and compare the validated stored integer representation exactly with no hidden masking; non-zero padding bits are malformed. | Mask unused bits before sample comparison. |
+| P7A-W4 | Expose both `platydiff audio` and `platydiff compare --type audio`; both construct the same `CompareSpec` and execute the same comparison path, consistent with other built-ins. | Keep only the generic compare command. |
+| P7A-W5 | Retain audio schema v6 only if RFC 0010 Option A/SP1-SP6 is accepted and the P4-C1 to v4 to v5 predecessors actually merge. | Assign audio v6 independently inside this amendment. |
 
 ## Wire shapes and parsing rules
 
@@ -198,13 +203,17 @@ complement little-endian integers. Twenty-four-bit PCM is packed as exactly
 three bytes per sample. IEEE float, A-law, mu-law, ADPCM, extensible non-PCM
 GUIDs, big-endian `RIFX` sample bytes, and compressed profiles are valid but
 unsupported unless the header is malformed, in which case they are corrupt.
+Classic PCM `fmt ` chunks with size 18 and `cbSize=0` are also valid but
+unsupported in P7-A1.
 
 `nBlockAlign`, `nAvgBytesPerSec`, channel count, sample rate, container bits,
 valid bits, and channel mask must be internally consistent. Classic PCM has
 unknown channel labels and ordered channels. WAVE_FORMAT_EXTENSIBLE with a
 non-zero mask records labels from the mask; a zero mask records unknown labels
 with ordered channels. Valid bits are recorded as a fact and do not silently
-mask stored container bits.
+mask stored container bits. When WAVE_FORMAT_EXTENSIBLE has
+`valid_bits < container_bits`, the profile-mandated unused padding bits must be
+zero before exact comparison; non-zero padding bits are malformed input.
 
 Exactly one `fmt ` chunk and at least one `data` chunk are required. Multiple
 `data` chunks are valid but unsupported for P7-A1. A single `data` chunk may be
@@ -353,9 +362,16 @@ invalid.
 
 ## CLI and SDK-v1 plugin rejection
 
-P7-A1 reserves these CLI flags:
+P7-A1 reserves two equivalent CLI entry points:
 
 ```text
+platydiff audio LEFT RIGHT
+  --audio-relation decoded_samples
+  --audio-backend stdlib_wave_pcm
+  --audio-profile p7_a1_wav_pcm
+  --audio-stream-index 0
+  --format json
+
 platydiff compare --type audio LEFT RIGHT
   --audio-relation decoded_samples
   --audio-backend stdlib_wave_pcm
@@ -364,6 +380,8 @@ platydiff compare --type audio LEFT RIGHT
   --format json
 ```
 
+Both entry points construct the same `CompareSpec` and execute the same built-in
+comparison path.
 `--audio-stream-index` maps to accepted `stream.index`; P7-A1 accepts only `0`.
 `encoded_bytes` is selected by `--audio-relation encoded_bytes`. Waveform,
 spectral, perceptual, channel-selection, and non-`sample_index` alignment flags
@@ -428,15 +446,5 @@ duration determinism, CLI rejection, and stable problem detail objects.
 
 ## Questions requiring human approval
 
-1. Should classic PCM `fmt ` chunks with size 18 and `cbSize=0` be accepted, or
-   should P7-A1 keep the stricter size-16-only rule?
-2. Should multiple `data` chunks remain valid-but-unsupported, or should P7-A1
-   concatenate them with explicit chunk-boundary facts?
-3. Should WAVE_FORMAT_EXTENSIBLE valid bits smaller than container bits compare
-   stored container bits exactly, as proposed, or mask unused bits before sample
-   comparison?
-4. Should P7-A1 expose a dedicated convenience command later, or keep only the
-   repository convention `platydiff compare --type audio`?
-5. What schema successor number should the separate cross-RFC predecessor
-   resolution assign to audio after reconciling RFC 0006, RFC 0008, and
-   implemented schema-v3 closed unions?
+Approve recommendations P7A-W1 through P7A-W5 together, or return specific IDs
+that require revision before this amendment can move from Proposed to Accepted.
