@@ -21,7 +21,7 @@ video successor 才能把 v3 当作稳定前驱。
 
 ## 证据
 
-在 `origin/main` `7907fbf` 上，已实现的 schema-v3 代码公开了 `JsonCompareSpec` 与
+在 `origin/main` `cf3c526` 上，已实现的 schema-v3 代码公开了 `JsonCompareSpec` 与
 `StructuredChange`。它没有把 `YamlCompareSpec`、`TableCompareSpec`、`ArrayCompareSpec`、
 `TableChange` 或 `ArrayChange` 作为已实现的 schema-v3 public model 公开。
 
@@ -124,10 +124,145 @@ P4-C1，或者等待本 RFC 中另一个方案被接受。
 | P6C0-4 | 在任何 renderer backend 前先在 schema contract 中定义 render bound：maximum pages、rendered pages、pixels per page、decoded bytes、temp bytes、backend seconds、worker output bytes、peak RSS、concurrent workers 与 spawned process count 都有有限 accounting rule。 | 只在 backend 文档中描述 render limit。 |
 | P6C0-5 | 为 source fact、PDF fact、rendered-page fact 与 change payload 定义精确 digest framing，包括 domain string、canonical byte framing、hash algorithm 与 normative test vector。 | 只用非正式文字引用 RFC 0006 digest，不给 vector。 |
 | P6C0-6 | 在任何 source/PDF writer 发布前，为 summary key、resource counter、transformation ID、comparator ID、algorithm ID、metric name 与 problem code 预留 stable lowercase ASCII ID。 | 让 implementation 临时创造 ID。 |
-| P6C0-7 | 将 `pdf_encrypted` 定义为 structured problem code，并给出明确 status mapping：缺少 password 或 encryption unsupported 时，policy 允许报告 unsupported capability 则为 `unavailable`，已选择 comparison 但 validation 后无法继续则为 `failed`；problem detail 只能包含安全字段。 | 把 encryption 折叠成 generic decode failure。 |
+| P6C0-7 | 精确定义 encrypted PDF 行为：`views=("binary",)` 忽略 encryption 并比较字节；任一 selected nonbinary view 遇到任一 encrypted input，都产生顶层 `failed` outcome，`stage="decoding"`，registry ID 为 `schema-v5/pdf_encrypted`，serialized code 为 `pdf_encrypted`，且没有 `DiffResult`。 | 把 encryption 折叠成 generic decode failure，或让 encryption 行为依赖 policy。 |
 | P6C0-8 | 定义 worker problem detail：timeout、resource exhaustion、crash、protocol violation、invalid output、stderr overflow、temp overflow、decoded-output overflow、RSS overflow 与 spawn-limit overflow；每个都有稳定 status 与安全 detail shape。 | 把 backend-specific string 直接作为 problem detail 返回。 |
 | P6C0-9 | 定义 fact presence invariant：每个 selected 且 successful 的 view 都发出其 required fact、metric、summary、resource 与 transformation；每个 unselected view 按规定 absent 或显式 null；failed 或 unavailable view 不伪造空 fact。 | 允许没有 schema-level invariant 的 partial fact。 |
 | P6C0-10 | P6-C0 保持 models/serialization only：source/PDF 的 public `compare()` 与 CLI 行为直到 P6-S1 或 P6-P1a 才可用。P6-C0 fixture 可以直接构造 unavailable outcome 用于 reader/writer validation，但不得暴露可运行 source/PDF comparator route。 | 在 P6-C0 添加返回 unavailable 的 source/PDF `compare()` 行为。 |
+
+### 提议的 schema-v5 public shape
+
+这些 shape 属于 Proposed amendment。它们刻意具体到足以支持后续 P6-C0 implementation review，
+但在本 RFC 或后继 RFC 被 Accepted 前仍未授权。
+
+Source lexical change 使用 discriminator `kind="source_lexical_text_hunk"`，稳定 field order 为：
+
+```text
+kind
+source_id
+language
+relation
+coordinate_encoding
+before_range
+after_range
+text
+payload_digest
+```
+
+`source_id` 是 snapshot 层提供的安全 source label。`language` 是显式 spec language。
+`relation` 是 `lexical_text`。`coordinate_encoding` 是 `utf-8`。`before_range` 与
+`after_range` 是 nullable range object，字段为 `start_byte`、`end_byte`、`start_line`、
+`start_column`、`end_line`、`end_column`。Byte offset 是 decoded byte sequence 中的
+zero-based half-open offset。Line 是 one-based。Column 默认是 one-based Unicode scalar value
+column，除非显式出现 `column_unit="utf8_byte"`。`text` 包含 RFC 0002 hunk payload field：
+`before_lines`、`after_lines`、`line_ending`，不包含 raw source byte。
+
+PDF binary change 使用 discriminator `kind="pdf_binary_span"`，稳定 field order 为：
+
+```text
+kind
+view
+document_id
+ranges
+payload_digest
+```
+
+`view` 必须是 `binary`。`document_id` 是 `before`、`after`，或当 span 映射到双方时为
+`both`。每个 range 有 `side`、`start_byte`、`end_byte`；byte offset 是 original PDF bytes
+上的 zero-based half-open offset，位于 parsing、decryption、repair 或 decompression 之前。
+即使报告相同 byte range，它也不同于 generic `BinarySpan`。
+
+Coordinate grammar 为：
+
+| Coordinate | Grammar | Base |
+| --- | --- | --- |
+| Source bytes | `source-byte-range(start,end)` | zero-based half-open decoded UTF-8 bytes |
+| Source text | `source-text-range(line,column,line,column,column_unit)` | one-based lines and columns |
+| PDF bytes | `pdf-byte-range(start,end)` | zero-based half-open original bytes |
+| PDF object | `pdf-object(obj,generation)` | PDF 中存储的 object 与 generation number |
+| PDF page | `pdf-page(number)` | document catalog resolution 后的一基 logical page number |
+| PDF stream | `pdf-stream(obj,generation,start,end)` | object identity 加 zero-based half-open decoded stream byte |
+| Rendered pixels | `pdf-raster-rect(page,x,y,width,height,dpi,colorspace)` | declared rendered page space 中的 zero-based raster pixel |
+
+Canonical view ordering 是 `binary`、`extracted_text`、`objects_metadata`、`rendered_pages`。
+每个 view 内，fact 与 change 按 before coordinate、after coordinate、discriminator、
+`payload_digest` 排序；absent coordinate 排在 present coordinate 之后。
+
+### Digest framing 与 vector
+
+Schema-v5 digest framing 为：
+
+```text
+sha256(
+  b"platydiff\0schema-v5\0"
+  + ascii_domain
+  + b"\0"
+  + canonical_json_bytes
+)
+```
+
+`canonical_json_bytes` 是 UTF-8 JSON bytes，object key 排序、无无意义空白，并使用 checked
+integer formatting。Normative empty object vector 为：
+
+| Domain | 使用 `\0` escape 展示的 framed bytes | SHA-256 |
+| --- | --- | --- |
+| `source.fact` | `platydiff\0schema-v5\0source.fact\0{}` | `1883c8b8971db03c909ca8c27569afe787ccf17a11cf1e1c1e9d22b5c0e57c4a` |
+| `source.change_payload` | `platydiff\0schema-v5\0source.change_payload\0{}` | `40b2ec6b43958055c88ef2be025bef108bc8ba233cd2035d42135970dd94ebfa` |
+| `pdf.fact` | `platydiff\0schema-v5\0pdf.fact\0{}` | `9089cd53f93ba5548178bfd7cc85cd568392498f1a6ce22bd33353335855134d` |
+| `pdf.rendered_page.fact` | `platydiff\0schema-v5\0pdf.rendered_page.fact\0{}` | `ad3d89a46b566d702239423b52d6f8de0bdcb33e8de56e0a79abca17b1c0db79` |
+| `pdf.change_payload` | `platydiff\0schema-v5\0pdf.change_payload\0{}` | `07b1d508a7ec6dd7c4f1dde06ae52322d4c9298ffadd9bff8113cc78d0fc9bb9` |
+
+### Stable ID 与 counter
+
+P6-C0 预留以下 stable lowercase ASCII ID：
+
+- comparator ID：`source.lexical_text`、`source.syntax_tree`、
+  `source.semantic_unavailable`、`pdf.binary`、`pdf.extracted_text`、
+  `pdf.objects_metadata`、`pdf.rendered_pages`；
+- transformation ID：`source.decode_utf8`、`source.normalize_newlines`、
+  `source.lexical_tokenize_lines`、`pdf.read_original_bytes`、`pdf.parse_xref`、
+  `pdf.extract_text_runs`、`pdf.enumerate_objects`、`pdf.render_page`；
+- metric ID：`source.changed_hunks`、`source.changed_ranges`、
+  `pdf.binary_changed_spans`、`pdf.text_changed_runs`、
+  `pdf.object_changed_records`、`pdf.render_changed_pixels`；
+- summary key：`changed_items`、`added_items`、`removed_items`、
+  `modified_items`、`moved_items`、`truncated`、`selected_views`；
+- resource counter：`input_bytes`、`fact_text_bytes`、`fact_value_bytes`、
+  `compare_work`、`change_items`、`change_payload_bytes`、
+  `pdf_backend_seconds`、`pdf_stdout_stderr_bytes`、`pdf_temp_bytes`、
+  `pdf_decoded_bytes`、`pdf_worker_output_bytes`、`pdf_peak_worker_rss_bytes`、
+  `pdf_peak_concurrent_worker_processes`、`pdf_worker_processes_spawned`。
+
+### Problem registry
+
+新的 schema-v5 problem code 使用 scoped registry key `schema-v5/<code>` 注册，而 serialized
+`problem.code` 保持短 stable code。P6-C0 预留：
+
+| Registry ID | Serialized status/code | Stage | Detail keys |
+| --- | --- | --- | --- |
+| `schema-v5/pdf_encrypted` | `failed/pdf_encrypted` | `decoding` | `input_side`, `view`, `encryption_detected=true` |
+| `schema-v5/pdf_worker_timeout` | `failed/pdf_worker_timeout` | observed worker stage | `view`, `limit`, `elapsed_seconds` |
+| `schema-v5/pdf_worker_resource_exhausted` | `failed/pdf_worker_resource_exhausted` | observed worker stage | `view`, `resource`, `limit`, `actual` |
+| `schema-v5/pdf_worker_crash` | `failed/pdf_worker_crash` | observed worker stage | `view`, `exit_status` |
+| `schema-v5/pdf_worker_protocol_violation` | `failed/pdf_worker_protocol_violation` | `decoding` or `rendering` | `view`, `message_kind` |
+| `schema-v5/pdf_worker_invalid_output` | `failed/pdf_worker_invalid_output` | `decoding` or `rendering` | `view`, `field` |
+| `schema-v5/source_coordinate_invalid` | `failed/source_coordinate_invalid` | `serializing` | `field`, `reason` |
+| `schema-v5/pdf_coordinate_invalid` | `failed/pdf_coordinate_invalid` | `serializing` | `field`, `reason` |
+
+`pdf_encrypted` 不用于 pure binary view。任一 selected nonbinary view 遇到任一 encrypted input
+时，整个 all-or-nothing PDF invocation failed，不产生 `DiffResult`，也不 fallback 到 binary。
+
+### Fact presence 与 ordering
+
+Completed source/PDF schema-v5 outcome 必须为每个 selected relation 或 view 发出全部 required
+spec、fact、metric、summary、resource、transformation、comparator、algorithm 与 digest field。
+Unselected optional view 只有在 RFC 0008 明确定义 nullable option object 时才序列化为 `null`；
+其他情况下 absent。Failed 或 unavailable outcome 不包含 `DiffResult`；如果 execution model
+存在 attempt field，partial view fact 只能出现在 execution attempt 中。
+
+Reader validation 会拒绝 selected view fact 的非 canonical order、重复 summary 或 metric ID、
+unknown schema-v5 problem registry ID、未 scoped 的新 problem code、缺失 required counter、
+digest/domain mismatch、非 canonical coordinate，以及任何在 P6-C0 payload 中暴露 public
+source/PDF `compare()` 或 CLI 行为的内容。
 
 ## Migration 与兼容性测试
 

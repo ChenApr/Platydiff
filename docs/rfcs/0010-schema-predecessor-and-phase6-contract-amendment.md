@@ -24,7 +24,7 @@ successor can use v3 as a stable predecessor.
 
 ## Evidence
 
-At `origin/main` `7907fbf`, the implemented schema-v3 code exposes
+At `origin/main` `cf3c526`, the implemented schema-v3 code exposes
 `JsonCompareSpec` and `StructuredChange`. It does not expose
 `YamlCompareSpec`, `TableCompareSpec`, `ArrayCompareSpec`, `TableChange`, or
 `ArrayChange` as implemented schema-v3 public models.
@@ -147,10 +147,160 @@ for the Phase 6 amendment, not implementation authority.
 | P6C0-4 | Define render bounds in the schema contract before any renderer backend: maximum pages, rendered pages, pixels per page, decoded bytes, temp bytes, backend seconds, worker output bytes, peak RSS, concurrent workers, and spawned process count all have finite accounting rules. | Put render limits only in backend documentation. |
 | P6C0-5 | Define exact digest framing with domain strings, canonical byte framing, hash algorithm, and normative test vectors for source facts, PDF facts, rendered-page facts, and change payloads. | Reuse informal prose references to RFC 0006 digests without vectors. |
 | P6C0-6 | Reserve stable lowercase ASCII IDs for summary keys, resource counters, transformation IDs, comparator IDs, algorithm IDs, metric names, and problem codes before any source/PDF writer ships. | Let implementations mint IDs opportunistically. |
-| P6C0-7 | Define `pdf_encrypted` as a structured problem code with explicit status mapping: missing password or unsupported encryption is `unavailable` when policy permits unsupported capability reporting, and `failed` when selected comparison cannot proceed after validation; problem details must include only safe fields. | Collapse encryption into generic decode failure. |
+| P6C0-7 | Define encrypted PDF behavior exactly: `views=("binary",)` ignores encryption and compares bytes; any selected nonbinary view on either encrypted input produces a top-level `failed` outcome at `stage="decoding"` with registry ID `schema-v5/pdf_encrypted`, serialized code `pdf_encrypted`, and no `DiffResult`. | Collapse encryption into generic decode failure or make encryption policy-dependent. |
 | P6C0-8 | Define worker problem details for timeout, resource exhaustion, crash, protocol violation, invalid output, stderr overflow, temp overflow, decoded-output overflow, RSS overflow, and spawn-limit overflow; each has a stable status and safe detail shape. | Return backend-specific strings as problem details. |
 | P6C0-9 | Define fact presence invariants: every selected successful view emits its required facts, metrics, summaries, resources, and transformations; every unselected view is absent or explicitly null as specified; failed or unavailable views do not fabricate empty facts. | Permit partial facts without a schema-level invariant. |
 | P6C0-10 | Keep P6-C0 models/serialization only: public `compare()` and CLI behavior for source/PDF remain unavailable until P6-S1 or P6-P1a. P6-C0 fixtures may construct unavailable outcomes directly for reader/writer validation but must not expose a runnable source/PDF comparator route. | Add `compare()` behavior that returns unavailable for source/PDF during P6-C0. |
+
+### Proposed schema-v5 public shapes
+
+These shapes are part of the Proposed amendment. They are intentionally exact
+enough for a later P6-C0 implementation review, but they remain unauthorized
+until this RFC or a successor is Accepted.
+
+Source lexical changes use discriminator `kind="source_lexical_text_hunk"` and
+the stable field order below:
+
+```text
+kind
+source_id
+language
+relation
+coordinate_encoding
+before_range
+after_range
+text
+payload_digest
+```
+
+`source_id` is a safe source label from the snapshot layer. `language` is the
+explicit spec language. `relation` is `lexical_text`. `coordinate_encoding` is
+`utf-8`. `before_range` and `after_range` are nullable range objects with
+`start_byte`, `end_byte`, `start_line`, `start_column`, `end_line`, and
+`end_column`. Byte offsets are zero-based half-open offsets in the decoded byte
+sequence. Lines are one-based. Columns are one-based Unicode scalar value
+columns unless `column_unit="utf8_byte"` is explicitly present. `text` contains
+the RFC 0002 hunk payload fields `before_lines`, `after_lines`, and
+`line_ending`, not raw source bytes.
+
+PDF binary changes use discriminator `kind="pdf_binary_span"` and stable field
+order:
+
+```text
+kind
+view
+document_id
+ranges
+payload_digest
+```
+
+`view` is exactly `binary`. `document_id` is `before`, `after`, or `both` when
+the span maps to both sides. Each range has `side`, `start_byte`, and
+`end_byte`; byte offsets are zero-based half-open offsets over original PDF
+bytes before parsing, decryption, repair, or decompression. This is distinct
+from generic `BinarySpan` even when the same byte ranges are reported.
+
+Coordinate grammars are:
+
+| Coordinate | Grammar | Base |
+| --- | --- | --- |
+| Source bytes | `source-byte-range(start,end)` | zero-based half-open decoded UTF-8 bytes |
+| Source text | `source-text-range(line,column,line,column,column_unit)` | one-based lines and columns |
+| PDF bytes | `pdf-byte-range(start,end)` | zero-based half-open original bytes |
+| PDF object | `pdf-object(obj,generation)` | PDF object and generation numbers as stored |
+| PDF page | `pdf-page(number)` | one-based logical page number after document catalog resolution |
+| PDF stream | `pdf-stream(obj,generation,start,end)` | object identity plus zero-based half-open decoded stream bytes |
+| Rendered pixels | `pdf-raster-rect(page,x,y,width,height,dpi,colorspace)` | zero-based raster pixels in declared rendered page space |
+
+Canonical view ordering is `binary`, `extracted_text`, `objects_metadata`,
+`rendered_pages`. Within a view, facts and changes sort by before coordinate,
+after coordinate, discriminator, and `payload_digest`; absent coordinates sort
+after present coordinates.
+
+### Digest framing and vectors
+
+Schema-v5 digest framing is:
+
+```text
+sha256(
+  b"platydiff\0schema-v5\0"
+  + ascii_domain
+  + b"\0"
+  + canonical_json_bytes
+)
+```
+
+`canonical_json_bytes` are UTF-8 JSON bytes with sorted object keys, no
+insignificant whitespace, and checked integer formatting. The normative empty
+object vectors are:
+
+| Domain | Framed bytes shown with `\0` escapes | SHA-256 |
+| --- | --- | --- |
+| `source.fact` | `platydiff\0schema-v5\0source.fact\0{}` | `1883c8b8971db03c909ca8c27569afe787ccf17a11cf1e1c1e9d22b5c0e57c4a` |
+| `source.change_payload` | `platydiff\0schema-v5\0source.change_payload\0{}` | `40b2ec6b43958055c88ef2be025bef108bc8ba233cd2035d42135970dd94ebfa` |
+| `pdf.fact` | `platydiff\0schema-v5\0pdf.fact\0{}` | `9089cd53f93ba5548178bfd7cc85cd568392498f1a6ce22bd33353335855134d` |
+| `pdf.rendered_page.fact` | `platydiff\0schema-v5\0pdf.rendered_page.fact\0{}` | `ad3d89a46b566d702239423b52d6f8de0bdcb33e8de56e0a79abca17b1c0db79` |
+| `pdf.change_payload` | `platydiff\0schema-v5\0pdf.change_payload\0{}` | `07b1d508a7ec6dd7c4f1dde06ae52322d4c9298ffadd9bff8113cc78d0fc9bb9` |
+
+### Stable IDs and counters
+
+P6-C0 reserves these stable lowercase ASCII IDs:
+
+- comparator IDs: `source.lexical_text`, `source.syntax_tree`,
+  `source.semantic_unavailable`, `pdf.binary`, `pdf.extracted_text`,
+  `pdf.objects_metadata`, `pdf.rendered_pages`;
+- transformation IDs: `source.decode_utf8`, `source.normalize_newlines`,
+  `source.lexical_tokenize_lines`, `pdf.read_original_bytes`,
+  `pdf.parse_xref`, `pdf.extract_text_runs`, `pdf.enumerate_objects`,
+  `pdf.render_page`;
+- metric IDs: `source.changed_hunks`, `source.changed_ranges`,
+  `pdf.binary_changed_spans`, `pdf.text_changed_runs`,
+  `pdf.object_changed_records`, `pdf.render_changed_pixels`;
+- summary keys: `changed_items`, `added_items`, `removed_items`,
+  `modified_items`, `moved_items`, `truncated`, `selected_views`;
+- resource counters: `input_bytes`, `fact_text_bytes`, `fact_value_bytes`,
+  `compare_work`, `change_items`, `change_payload_bytes`,
+  `pdf_backend_seconds`, `pdf_stdout_stderr_bytes`, `pdf_temp_bytes`,
+  `pdf_decoded_bytes`, `pdf_worker_output_bytes`, `pdf_peak_worker_rss_bytes`,
+  `pdf_peak_concurrent_worker_processes`, and
+  `pdf_worker_processes_spawned`.
+
+### Problem registry
+
+New schema-v5 problem codes are registered under a scoped registry key
+`schema-v5/<code>` while the serialized `problem.code` remains the short stable
+code. P6-C0 reserves:
+
+| Registry ID | Serialized status/code | Stage | Detail keys |
+| --- | --- | --- | --- |
+| `schema-v5/pdf_encrypted` | `failed/pdf_encrypted` | `decoding` | `input_side`, `view`, `encryption_detected=true` |
+| `schema-v5/pdf_worker_timeout` | `failed/pdf_worker_timeout` | observed worker stage | `view`, `limit`, `elapsed_seconds` |
+| `schema-v5/pdf_worker_resource_exhausted` | `failed/pdf_worker_resource_exhausted` | observed worker stage | `view`, `resource`, `limit`, `actual` |
+| `schema-v5/pdf_worker_crash` | `failed/pdf_worker_crash` | observed worker stage | `view`, `exit_status` |
+| `schema-v5/pdf_worker_protocol_violation` | `failed/pdf_worker_protocol_violation` | `decoding` or `rendering` | `view`, `message_kind` |
+| `schema-v5/pdf_worker_invalid_output` | `failed/pdf_worker_invalid_output` | `decoding` or `rendering` | `view`, `field` |
+| `schema-v5/source_coordinate_invalid` | `failed/source_coordinate_invalid` | `serializing` | `field`, `reason` |
+| `schema-v5/pdf_coordinate_invalid` | `failed/pdf_coordinate_invalid` | `serializing` | `field`, `reason` |
+
+`pdf_encrypted` is not used for pure binary view. Any selected nonbinary view on
+either encrypted input fails the whole all-or-nothing PDF invocation with no
+`DiffResult` and no fallback to binary.
+
+### Fact presence and ordering
+
+Completed source/PDF schema-v5 outcomes must emit all required spec, fact,
+metric, summary, resource, transformation, comparator, algorithm, and digest
+fields for each selected relation or view. Unselected optional views are
+serialized as `null` only where RFC 0008 explicitly defines a nullable option
+object; otherwise they are absent. Failed or unavailable outcomes contain no
+`DiffResult`, and partial view facts appear only inside execution attempts when
+the execution model has such an attempt field.
+
+Reader validation rejects selected view facts in a noncanonical order, duplicate
+summary or metric IDs, unknown schema-v5 problem registry IDs, unscoped new
+problem codes, missing required counters, digest/domain mismatches, noncanonical
+coordinates, and any P6-C0 payload that exposes public source/PDF `compare()` or
+CLI behavior.
 
 ## Migration and compatibility tests
 
