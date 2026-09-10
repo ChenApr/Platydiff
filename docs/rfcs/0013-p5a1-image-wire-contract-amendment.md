@@ -401,7 +401,9 @@ v4 completed outcome. `CompletedOutcomeV4.result` remains the existing
 
 `BackendComponentVersion.component_id` is a stable lowercase identifier and
 `component_version` is bounded identity text. Components are unique and sorted
-by `component_id`. A v4 attempt with `backend_id=null` requires
+by `component_id`. The seven inherited attempt fields retain all P4-C1 value,
+provider, selected-capability, version, and `plugin_host` bindings. A v4
+attempt with `backend_id=null` requires
 `backend_version=null` and `backend_components=[]`. A non-null backend requires
 a non-null backend version; separately versioned linked components, when the
 backend exposes them, are recorded here rather than in transformations or
@@ -651,7 +653,8 @@ previous ambiguity between an unsupported codec and a damaged PNG.
 | Structurally valid PNG contains an unknown critical chunk | failed / `unsupported_image_profile` (415) | decoding | `unknown_critical_chunk` |
 | Signature is PNG but framing, CRC, ordering, multiplicity, chunk value, compressed metadata, `IEND`, or stream termination is malformed | failed / `decode_error` (422) | decoding | — |
 | Scanner accepts the profile but a later backend reports a different codec, mode, dimensions, frame state, or malformed decode | failed / `decode_error` (422) | decoding | — |
-| Input, metadata, ICC, dimension, pixel, decoded-byte, or decompression-bomb limit is crossed | failed / `resource_limit_exceeded` (413) | observed sourcing/decoding stage | — |
+| Input snapshot crosses `max_input_bytes` | failed / `resource_limit_exceeded` (413) | sourcing | — |
+| Metadata, ICC, dimension, pixel, decoded-byte, or decompression-bomb limit is crossed | failed / `resource_limit_exceeded` (413) | decoding | — |
 | Complete sample comparison would cross its work budget | failed / `compare_resource_limit` (413) | comparing | — |
 | Selected built-in comparator fails outside classified decode/resource conditions | failed / `comparator_failure` (502) | comparing | — |
 | Unexpected exception mapped only at the CLI outer boundary | failed / `internal_error` (500) | outer CLI boundary | — |

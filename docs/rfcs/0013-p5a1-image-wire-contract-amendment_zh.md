@@ -369,7 +369,9 @@ provenance object 直接放入 v4 completed outcome。`CompletedOutcomeV4.result
 按 v4 validation。
 
 `BackendComponentVersion.component_id` 是稳定小写 identifier，`component_version` 是 bounded
-identity text。Component 按 `component_id` 唯一并排序。`backend_id=null` 的 v4 attempt 要求
+identity text。Component 按 `component_id` 唯一并排序。七个 inherited attempt field 保留全部
+P4-C1 value、provider、selected-capability、version 与 `plugin_host` binding。`backend_id=null`
+的 v4 attempt 要求
 `backend_version=null` 且 `backend_components=[]`。非 null backend 要求非 null backend version；
 backend 暴露的 separately versioned linked component 记录在这里，而不是 transformation 或
 free-form diagnostic。后续 runtime 例如可标识 `libpng`/`zlib`，但 P5-A1 不声称安装了任何
@@ -581,7 +583,8 @@ Classification 依据显式 PNG profile，而非 filename/MIME label。对于 8-
 | Structurally valid PNG 含 unknown critical chunk | failed / `unsupported_image_profile` (415) | decoding | `unknown_critical_chunk` |
 | Signature 是 PNG，但 framing、CRC、ordering、multiplicity、chunk value、compressed metadata、`IEND` 或 stream termination malformed | failed / `decode_error` (422) | decoding | — |
 | Scanner 接受 profile，但后续 backend 报告其他 codec/mode/dimensions/frame state 或 malformed decode | failed / `decode_error` (422) | decoding | — |
-| 跨越 input、metadata、ICC、dimension、pixel、decoded-byte 或 decompression-bomb limit | failed / `resource_limit_exceeded` (413) | 实际 sourcing/decoding stage | — |
+| Input snapshot 跨越 `max_input_bytes` | failed / `resource_limit_exceeded` (413) | sourcing | — |
+| 跨越 metadata、ICC、dimension、pixel、decoded-byte 或 decompression-bomb limit | failed / `resource_limit_exceeded` (413) | decoding | — |
 | 完整 sample comparison 将跨越 work budget | failed / `compare_resource_limit` (413) | comparing | — |
 | Selected built-in comparator 在已分类 decode/resource condition 外失败 | failed / `comparator_failure` (502) | comparing | — |
 | 只在 CLI outer boundary mapping 的 unexpected exception | failed / `internal_error` (500) | outer CLI boundary | — |
