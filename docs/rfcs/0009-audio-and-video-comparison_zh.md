@@ -2,21 +2,23 @@
 
 [English documentation](0009-audio-and-video-comparison.md)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-10
 - Owners: Platydiff 维护者
 - Implementation owner: 尚未指派，等待单独的实现授权
 
 ## 摘要与授权边界
 
-本 RFC 提议 Phase 7 的显式音频与视频比较契约。本文只进行设计工作，不授权音频或
-视频实现、依赖变更、FFmpeg 或模型安装、SDK v2、自动探测、UI 工作、artifact 生成、
-新媒体模态插件执行或任何后端集成。
+本 RFC 接受 Phase 7 的显式 audio 比较契约，并把 Phase 7 video 方向接受为 roadmap-only
+design。本文不授权 audio 或 video 实现、依赖变更、FFmpeg 或模型安装、SDK v2、自动探测、
+UI 工作、artifact 生成、新媒体模态插件执行或任何后端集成。
 
 音频和视频同属 Phase 7 路线图，是因为二者都是基于时间的媒体；但它们不是同一个实现
 门禁。音频和视频具有不同的等价关系、IR、编解码器、时间模型、指标、artifact、后端
-风险和依赖审查。下列每个门禁都需要后续基于更新后的 `main` 获得明确人工授权；仅接受
-或合并本 RFC 文本不会启动实现。
+风险和依赖审查。P7X1-P7X8 与 A1-A7 是已接受决策。V1-V6 只是已接受的 roadmap direction：
+它们不冻结 video implementation、video backend selection、worker protocol、schema membership
+或 public fixture shape。下列每个交付门禁都需要后续基于更新后的 `main` 获得明确人工授权；
+仅接受或合并本 RFC 文本不会启动实现。
 
 所有行为保持显式启用。调用者必须直接选择 `AudioCompareSpec` 或 `VideoCompareSpec`。
 既有 `AutoCompareSpec` 在 RFC 0003 的后继 RFC 定义媒体探测、歧义、成对选择和 provenance
@@ -24,14 +26,14 @@
 
 ## P7-S0 review-revision gate
 
-P7-S0 是 PR #14 之后引入的 documentation-only review gate。它的目标是在任何实现授权前补齐
-Phase 7 契约缺口。产出是本 RFC revision、对齐后的 architecture/index reference，以及后续 gate
-需要的 compatibility-fixture requirement。它不授权代码、依赖变更、backend 安装、schema acceptance、
-video worker、SDK v2、auto detection、artifact、UI 或 Accepted status。
+P7-S0 是 PR #14 之后引入且已经完成的 documentation-only review gate。它在任何实现授权前补齐了
+Phase 7 契约缺口。产出是本 accepted RFC revision、对齐后的 architecture/index reference，以及后续
+gate 需要的 compatibility-fixture requirement。它不授权代码、依赖变更、backend 安装、video worker、
+SDK v2、auto detection、artifact、UI，或已接受 audio schema allocation 的实现。
 
 P7-S0 的前置条件是当前 `main` contract，以及来自 RFC 0007 和 RFC 0008 的 review evidence。
 RFC 0008 在 `main` 上仍为 Proposed；因此其 schema-v5 reservation 取决于 RFC 0008 amendment 与
-acceptance。Phase 7 可以并发提出依赖该前驱的 allocation 与 backend design，但 public schema
+acceptance。Phase 7 可以并发接受依赖该前驱的 allocation 与 backend design，但 public schema
 implementation 与 merge 必须等待前驱决策及其 fixture。
 
 ## 证据账本
@@ -39,14 +41,14 @@ implementation 与 merge 必须等待前驱决策及其 fixture。
 | `origin/main` `fde2bd4` 上的当前证据 | Phase 7 约束 |
 | --- | --- |
 | RFC 0001 将 failed/unavailable 执行终态与 completed `DiffResult` 事实分离。 | decode、backend、timeout、resource、sandbox、model 和 rendering 失败不得变成空或伪造的媒体差异。 |
-| RFC 0002 要求每个新模态在实现前定义 spec、change、metric、artifact、等价关系、policy、failure 与 gate。 | 本 RFC 只记录契约与门禁，不启动音视频代码工作。 |
+| RFC 0002 要求每个新模态在实现前定义 spec、change、metric、artifact、等价关系、policy、failure 与 gate。 | 本 RFC 只记录已接受契约与门禁，不启动音视频代码工作。 |
 | RFC 0003 保持自动探测有界且只对 text/binary 封闭。 | 音视频不参与 auto detection；extension、MIME、magic byte、stream probe 或 codec probe 不得改变既有 auto 行为。 |
 | RFC 0003 的 snapshot path 为 path/bytes/text source 管理有界 replay、hash、mutation check 与安全 label。 | 媒体门禁依赖它处理大型或可变媒体前，必须重新验证 snapshot 行为。 |
 | RFC 0004 要求 renderer 与 UI 消费 validated outcome，不重读 source 或重算事实。 | 媒体 thumbnail、waveform、heatmap 和 frame preview 需要显式有界 artifact 契约；UI 工作仍未授权。 |
 | RFC 0005 实现的 SDK v1.1 只覆盖 text/binary detector、comparator 与 renderer handle。 | 音视频插件需要 SDK-v2 后继 RFC；SDK v1.1 不能引入媒体 spec 或内建媒体 change kind。 |
 | RFC 0006 接受 schema v3 用于结构化数据，但后续门禁启动时必须重新验证其实现状态。 | 音视频 schema 决策必须从已实现 v1/v2 和已接受 v3 迁移，不能假设未合并 P4-A1 行为。 |
 | RFC 0007 提议 schema v4 作为首个 image slice，前提是通过实际合并的 schema-v3 前驱审计。 | Phase 7 不得与 Phase 5 争用 v4，也不得重开冻结前驱；媒体需要单独的全局 schema successor。 |
-| RFC 0008 提议 source-code/PDF 契约，并保持重量级后端、artifact、auto detection 和 SDK v2 分离。 | Source/PDF 的 schema-v5 reservation 仍取决于 RFC 0008 amendment 与 acceptance；Phase 7 audio 提议的 v6 allocation 依赖该前驱决策。 |
+| RFC 0008 提议 source-code/PDF 契约，并保持重量级后端、artifact、auto detection 和 SDK v2 分离。 | Source/PDF 的 schema-v5 reservation 仍取决于 RFC 0008 amendment 与 acceptance；Phase 7 audio 已接受的 v6 allocation 依赖该前驱决策。 |
 | 当前运行时依赖为空；音视频后端仍是架构层计划。 | 任何依赖或 subprocess path 进入前，必须审查 codec、model、patent、export 与 FFmpeg build/license 影响。 |
 | P4-A1 和 Phase 5 实现工作仍可能缺失，或与 `main` 分歧。 | 只能把这些工作当作设计证据；本文中所有依赖代码状态的假设都是后续 revalidation gate。 |
 
@@ -82,11 +84,13 @@ Phase 7 不包含：
 - HTML、TUI、desktop、local-web 或 review UI 工作；
 - 除下方可选 artifact gate 外的媒体 artifact 写入。
 
-## 提议决策
+## 已接受决策与路线方向
 
-下面的稳定 ID 是本提案的人工决策清单。在 reviewer 显式批准前，它们都是建议而非已接受决策。
+下面的稳定 ID 是已接受的人工决策清单。P7X1-P7X8 与 A1-A7 是 Phase 7 audio 与 cross-media
+契约决策。V1-V6 只是已接受的 roadmap direction；在后续 backend/worker amendment 接受 P7-V1
+并分配下一个全局 schema successor 前，它们不授权或冻结 video implementation。
 
-| ID | 提议决策 | 未选择的替代方案 |
+| ID | 已接受决策或路线方向 | 未选择的替代方案 |
 | --- | --- | --- |
 | P7X1 | 音视频比较保持 explicit-only；既有 auto 仍只支持 text/binary。 | 未定义昂贵 probe 与 ambiguity 就把媒体 candidate 加入 RFC 0003。 |
 | P7X2 | 将音频和视频拆分为独立授权门禁。 | 把所有 time-based media 当作一个实现批次。 |
@@ -112,11 +116,11 @@ Phase 7 不包含：
 
 ## Schema 与兼容性契约
 
-Phase 7 提议全局分配的 schema v6 仅用于 audio。如果 pending Phase 6 amendment 被接受，分配顺序是
+Phase 7 接受全局分配的 schema v6 仅用于 audio。如果 pending Phase 6 amendment 被接受，分配顺序是
 稳定人工决策：P4 structured data 使用 schema v3，P5 image 使用 schema v4，P6 source/PDF 使用
 schema v5，P7 audio 使用 schema v6。Design、backend、dependency 与 fixture research 可以跨 phase
 并发推进，但 public schema implementation 与 merge 必须遵守此前驱顺序及其兼容性 fixture。后续实现
-门禁必须重新验证 `main` 状态，并在仓库级 schema ledger 中记录最终 schema 编号后才可写代码。它不得
+门禁 P7-A1 仍必须重新验证实际合并的 v3/v4/v5 前驱链，并在仓库级 schema ledger 中记录最终 schema 编号后才可写代码。它不得
 重开 schema v3、占用 schema v4 或 v5、把 pending video type 放入 audio v6，或与其他模态并行分配
 冲突的 successor。
 
@@ -165,8 +169,8 @@ source view、lifecycle stage、backend role、sandboxing、artifact authority�
 | 已合并 Phase 4 path | v3 | 显式 json/yaml/table/array | 无 | 实际 v3 model、migration 与 fixture 是前驱。 |
 | 提议中的 Phase 5 image path | v4 | 显式 static PNG image | 无 | 媒体不得复用 v4，也不得要求 image 实现改变。 |
 | 提议中的 Phase 6 source/PDF path | v5 pending RFC 0008 amendment/acceptance | source-code/PDF | 单独授权前无 | 前驱 schema 预留不是 `main` 上的事实；audio v6 merge 等待 accepted v5 fixture。 |
-| 提议中的 Phase 7 audio path | v6，依赖 pending v5 predecessor | 显式 audio | 首批门禁无 | 产生 validated audio spec、change、metric、transformation 与 failure。 |
-| 提议中的 Phase 7 video path | v6 之后的下一个全局 successor | 显式 video | 首批门禁无 | backend 与 worker contract 冻结前保持 pending；video type 不加入 audio v6。 |
+| 已接受 Phase 7 audio path | v6，依赖 pending v5 predecessor | 显式 audio | 首批门禁无 | 单独实现授权后产生 validated audio spec、change、metric、transformation 与 failure。 |
+| 已接受 Phase 7 video roadmap path | v6 之后的下一个全局 successor | 显式 video | 首批门禁无 | 后续 amendment 冻结 backend 与 worker contract 前保持 pending；video type 不加入 audio v6。 |
 | 对 media-looking bytes 使用既有 auto | v1 | 仅 text 或 binary | 仅既有规则 | detection evidence 与 result 不变。 |
 | 未来 SDK v2 或 media auto | 未指定 | 未指定 | 未指定 | 需要后继 RFC。 |
 
@@ -236,7 +240,7 @@ overall completeness 为 `truncated`；否则为 `complete`。`partial` 不在 P
 
 ### Public intent
 
-提议的首个 public shape 是一个稳定 schema family，但 P7-A1 只公开下列首批 exact relation。
+已接受的首个 public shape 是一个稳定 schema family，但 P7-A1 只公开下列首批 exact relation。
 后续门禁只有在各自审查后，才可激活保留字段。
 
 ```python
@@ -363,7 +367,7 @@ score、较小 absolute offset、较小 absolute drift、较小 before coordinat
 `failed/decode_error`，而不是近似完成的 equality claim。Media-specific `alignment_failed` problem
 code 需要后续 RFC 0001 registry update 后才可使用。
 
-提议的内建 audio change 为：
+已接受的内建 audio change set 为：
 
 ```python
 class AudioChange:
@@ -408,7 +412,7 @@ interval，否则 sample coordinate 为 null。Digest 是带 algorithm prefix �
 
 ### Audio metric 与 policy
 
-首批 audio metric registry 提议为：
+已接受的首批 audio metric registry 为：
 
 | Metric name | 含义 | Unit | Direction | Aggregation | Empty population |
 | --- | --- | --- | --- | --- | --- |
@@ -469,7 +473,7 @@ class AudioResourceLimits:
     max_change_payload_bytes: int = 4 * 1024 * 1024
 ```
 
-对于使用 `stdlib_wave_pcm` 的 P7-A1，这些是 proposed normative default value。Implementation 仍需
+对于使用 `stdlib_wave_pcm` 的 P7-A1，这些是 accepted normative default value。Implementation 仍需
 benchmark gate 证明它们 deterministic、bounded 且 practical，但接受 P7-S0/audio decision 不再延后
 这些 default value 本身。Limit check 必须在 allocation、decode、packet expansion、metadata
 materialization、comparison work 或 temp-file write 之前执行。Limit 值为 `0` 表示该资源没有预算：
@@ -490,8 +494,9 @@ unsupported codec 或 profile 是 `unavailable/capability_unavailable`，除非�
 
 ### Public intent
 
-提议的 video shape 仍只是 schema proposal。P7-S0 窄化 candidate first public field，但 P7-V1 在
-后续 review 冻结 video backend 与 worker protocol 前不授权实现。
+已接受的 video roadmap shape 仍是 documentation-only，且不属于 schema v6。P7-S0 窄化了
+candidate first public field，但 P7-V1 在后续 backend/worker amendment 冻结 video backend、
+worker protocol、compatibility fixture 与下一个全局 schema successor 前不授权实现。
 
 ```python
 class VideoCompareSpec:
@@ -591,7 +596,7 @@ Ambiguity、unsupported timestamp structure 或 alignment 超预算对 budget ex
 `failed/compare_resource_limit`，对无法使用的 decoded timing fact 使用 `failed/decode_error`，不是隐藏的
 内容差异。Media-specific `alignment_failed` problem code 需要后续 RFC 0001 registry update 后才可使用。
 
-提议的内建 video change 为：
+已接受 roadmap 的内建 video change set 为：
 
 ```python
 class VideoChange:
@@ -634,7 +639,7 @@ coordinate 可为 null。
 
 ### Video metric 与 policy
 
-首批 video metric registry 提议为：
+已接受 roadmap 的首批 video metric registry 为：
 
 | Metric name | 含义 | Unit | Direction | Aggregation | Empty population |
 | --- | --- | --- | --- | --- | --- |
@@ -804,7 +809,10 @@ thumbnail、打开文件、获取 remote resource 或重新解释 relation/verdi
 
 ## 交付门禁、commit 与测试
 
-以下 gate 是提议计划，不是实现授权。
+以下 gate 是已接受的交付计划，不是实现授权。P7-A1、P7-A2 与 P7-A3 需要基于更新后的
+`main` 获得单独人工授权。P7-A1 尤其必须在实现已接受 audio schema-v6 allocation 前，重新验证
+实际合并的 v3/v4/v5 前驱链。P7-V1、P7-V2 与 P7-V3 只是已接受的 roadmap direction，并在后续
+video backend/worker amendment 接受下一个 schema successor 前保持 pending。
 
 ### P7-A1：audio schema 与 exact decoded PCM relation
 
@@ -844,8 +852,8 @@ CPU/GPU variance、score semantics、unavailable/failure behavior 与不 fallbac
 
 ### P7-V1：video schema、stream structure 与 decoded frame
 
-P7-S0 之后，P7-V1 有意保持 pending。本 RFC revision 没有冻结 video backend 或 worker profile，
-因此不授权任何 video implementation commit。
+P7-V1 只是已接受的 roadmap direction，且在 P7-S0 后有意保持 pending。本 RFC revision 没有冻结
+video backend、worker profile 或 schema successor，因此不授权任何 video implementation commit。
 
 1. `docs: freeze video backend and worker conformance profile`
 2. `feat(core): add video schema successor contracts`

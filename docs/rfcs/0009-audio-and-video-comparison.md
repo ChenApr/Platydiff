@@ -2,23 +2,26 @@
 
 [Chinese documentation](0009-audio-and-video-comparison_zh.md)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-10
 - Owners: Platydiff maintainers
 - Implementation owner: unassigned pending separate implementation authorization
 
 ## Summary and authorization boundary
 
-This RFC proposes Phase 7 contracts for explicit audio and video comparison.
-It is design work only. It does not authorize audio or video implementation,
-dependency changes, FFmpeg or model installation, SDK v2, automatic detection,
-UI work, artifact generation, plugin execution for new media modalities, or any
-backend integration.
+This RFC accepts Phase 7 contracts for explicit audio comparison and accepts
+the Phase 7 video direction as roadmap-only design. It does not authorize audio
+or video implementation, dependency changes, FFmpeg or model installation, SDK
+v2, automatic detection, UI work, artifact generation, plugin execution for new
+media modalities, or any backend integration.
 
 Audio and video are grouped as Phase 7 roadmap work because both are time-based
 media, but they are not one implementation gate. Audio and video have separate
 equivalence relations, IRs, codecs, timing models, metrics, artifacts, backend
-risks, and dependency reviews. Each gate below requires a later explicit human
+risks, and dependency reviews. P7X1-P7X8 and A1-A7 are accepted decisions.
+V1-V6 are accepted roadmap direction only: they do not freeze video
+implementation, video backend selection, worker protocol, schema membership, or
+public fixture shape. Each delivery gate below requires a later explicit human
 authorization from updated `main`; accepting or merging this RFC text alone
 does not start implementation.
 
@@ -29,17 +32,18 @@ and provenance.
 
 ## P7-S0 review-revision gate
 
-P7-S0 is the documentation-only review gate introduced after PR #14. Its goal
-is to close Phase 7 contract gaps before any implementation authorization. Its
-outputs are this RFC revision, the aligned architecture/index references, and
-compatibility-fixture requirements for later gates. It does not authorize code,
-dependency changes, backend installation, schema acceptance, video workers,
-SDK v2, auto detection, artifacts, UI, or Accepted status.
+P7-S0 is the completed documentation-only review gate introduced after PR #14.
+It closed Phase 7 contract gaps before any implementation authorization. Its
+outputs are this accepted RFC revision, the aligned architecture/index
+references, and compatibility-fixture requirements for later gates. It does not
+authorize code, dependency changes, backend installation, video workers, SDK v2,
+auto detection, artifacts, UI, or implementation of the accepted audio schema
+allocation.
 
 P7-S0 prerequisites are the current `main` contracts plus review evidence from
 RFC 0007 and RFC 0008. RFC 0008 remains Proposed on `main`; therefore its
 schema-v5 reservation is pending an RFC 0008 amendment and acceptance. Phase 7
-may propose dependent allocations and backend designs concurrently, but public
+may accept dependent allocations and backend designs concurrently, but public
 schema implementation and merge must wait for the predecessor decisions and
 their fixtures.
 
@@ -48,14 +52,14 @@ their fixtures.
 | Current evidence at `origin/main` `fde2bd4` | Phase 7 constraint |
 | --- | --- |
 | RFC 0001 separates failed/unavailable execution outcomes from completed `DiffResult` facts. | Decode, backend, timeout, resource, sandbox, model, and rendering failures must not become empty or synthetic media differences. |
-| RFC 0002 requires every new modality to define spec, change, metric, artifact, equivalence relation, policy, failures, and gates before implementation. | This RFC records contracts and gates only; no audio/video code may start from it. |
+| RFC 0002 requires every new modality to define spec, change, metric, artifact, equivalence relation, policy, failures, and gates before implementation. | This RFC records accepted contracts and gates only; no audio/video code may start from it. |
 | RFC 0003 keeps automatic detection bounded and closed to text/binary. | Audio/video do not participate in auto detection; extension, MIME, magic bytes, stream probes, or codec probes must not change existing auto behavior. |
 | RFC 0003 snapshot paths own bounded replay, hashes, mutation checks, and safe labels for path/bytes/text sources. | Media gates must revalidate snapshot behavior before depending on it for large or mutable media. |
 | RFC 0004 makes renderers and UI consume validated outcomes without rereading sources or recomputing facts. | Media thumbnails, waveforms, heatmaps, and frame previews require explicit bounded artifact contracts; UI work remains unauthorized. |
 | RFC 0005 implements SDK v1.1 for text/binary detector, comparator, and renderer handles only. | Audio/video plugins require an SDK-v2 successor RFC; SDK v1.1 cannot introduce media specs or built-in media change kinds. |
 | RFC 0006 accepts schema v3 for structured data, but its implementation state must be revalidated when a later gate starts. | Audio/video schema decisions must migrate from implemented v1/v2 and accepted v3 without assuming unmerged P4-A1 behavior. |
 | RFC 0007 proposes schema v4 for the first image slice, subject to an actual merged schema-v3 predecessor audit. | Phase 7 must not race Phase 5 for v4 or reopen a frozen predecessor; media needs its own globally allocated schema successor. |
-| RFC 0008 proposes source-code/PDF contracts and keeps heavyweight backends, artifacts, auto detection, and SDK v2 separate. | A schema-v5 source/PDF reservation is pending RFC 0008 amendment and acceptance; Phase 7 audio's proposed v6 allocation depends on that predecessor decision. |
+| RFC 0008 proposes source-code/PDF contracts and keeps heavyweight backends, artifacts, auto detection, and SDK v2 separate. | A schema-v5 source/PDF reservation is pending RFC 0008 amendment and acceptance; Phase 7 audio's accepted v6 allocation depends on that predecessor decision. |
 | Runtime dependencies are currently empty; audio/video backends are architecture-level plans. | Codec, model, patent, export, and FFmpeg build/license impact must be reviewed before any dependency or subprocess path is added. |
 | P4-A1 and Phase 5 implementation work may still be absent or divergent from `main`. | Treat that work as design evidence only; every code-dependent assumption below is a later revalidation gate. |
 
@@ -98,12 +102,15 @@ Phase 7 does not include:
 - HTML, TUI, desktop, local-web, or review UI work;
 - media artifact writing except behind the optional artifact gates below.
 
-## Proposed decisions
+## Accepted decisions and roadmap direction
 
-The following stable IDs are the human decision list for this proposal. They are
-recommendations, not accepted decisions, until explicitly approved.
+The following stable IDs are the accepted human decision list. P7X1-P7X8 and
+A1-A7 are accepted as Phase 7 audio and cross-media contract decisions. V1-V6
+are accepted roadmap direction only; they do not authorize or freeze video
+implementation until a later backend/worker amendment accepts P7-V1 and assigns
+the next global schema successor.
 
-| ID | Proposed decision | Alternative not selected |
+| ID | Accepted decision or roadmap direction | Alternative not selected |
 | --- | --- | --- |
 | P7X1 | Keep audio/video comparison explicit-only; existing auto remains text/binary. | Add media candidates to RFC 0003 without defining expensive probes and ambiguity. |
 | P7X2 | Split audio and video into independently authorized gates. | Treat all time-based media as one implementation batch. |
@@ -129,17 +136,17 @@ recommendations, not accepted decisions, until explicitly approved.
 
 ## Schema and compatibility contract
 
-Phase 7 proposes globally allocated schema v6 for audio only. The allocation
+Phase 7 accepts globally allocated schema v6 for audio only. The allocation
 order is a stable human decision if the pending Phase 6 amendment is accepted:
 P4 structured data uses schema v3, P5 image uses schema v4, P6 source/PDF uses
 schema v5, and P7 audio uses schema v6. Design, backend, dependency, and
 fixture research may proceed concurrently across phases, but public schema
 implementation and merge must respect this predecessor order and its
-compatibility fixtures. A later implementation gate must revalidate the state
-of `main` and record the final schema number in the repository-wide schema
-ledger before adding code. It may not reopen schema v3, consume schema v4 or
-v5, put pending video types into audio v6, or allocate a competing successor in
-parallel with another modality.
+compatibility fixtures. P7-A1 still requires a later implementation gate to
+revalidate the actual merged v3/v4/v5 predecessor chain and record the final
+schema number in the repository-wide schema ledger before adding code. It may
+not reopen schema v3, consume schema v4 or v5, put pending video types into
+audio v6, or allocate a competing successor in parallel with another modality.
 
 The audio successor is an additive semantic successor to the actually merged
 predecessor chain:
@@ -199,8 +206,8 @@ detection RFC is separately accepted.
 | Merged Phase 4 path | v3 | explicit json/yaml/table/array | none | Actual v3 models, migrations, and fixtures are the predecessor. |
 | Proposed Phase 5 image path | v4 | explicit static PNG image | none | Media must not reuse v4 or require image implementation to change. |
 | Proposed Phase 6 source/PDF path | v5 pending RFC 0008 amendment/acceptance | source-code/PDF | none until separately authorized | Predecessor schema reservation is not a fact on `main`; audio v6 merge waits for accepted v5 fixtures. |
-| Proposed Phase 7 audio path | v6, dependent on pending v5 predecessor | explicit audio | none in first gates | Produces validated audio specs, changes, metrics, transformations, and failures. |
-| Proposed Phase 7 video path | next global successor after v6 | explicit video | none in first gates | Remains pending until backend and worker contracts are frozen; no video type is added to audio v6. |
+| Accepted Phase 7 audio path | v6, dependent on pending v5 predecessor | explicit audio | none in first gates | Produces validated audio specs, changes, metrics, transformations, and failures after separate implementation authorization. |
+| Accepted Phase 7 video roadmap path | next global successor after v6 | explicit video | none in first gates | Remains pending until backend and worker contracts are frozen in a later amendment; no video type is added to audio v6. |
 | Existing auto on media-looking bytes | v1 | text or binary only | existing rules | Detection evidence and result do not change. |
 | Future SDK v2 or media auto | unspecified | unspecified | unspecified | Requires successor RFCs. |
 
@@ -284,7 +291,7 @@ Examples are part of the contract:
 
 ### Public intent
 
-The proposed first public shape is a stable schema family, but P7-A1 exposes
+The accepted first public shape is a stable schema family, but P7-A1 exposes
 only the exact relations listed as first-gate values. Later gates may activate
 the retained fields only after their own review.
 
@@ -432,7 +439,7 @@ outcome is `failed/compare_resource_limit` for budget exhaustion or
 completed equality claim. A media-specific `alignment_failed` problem code
 requires a later RFC 0001 registry update before use.
 
-The proposed built-in audio change is:
+The accepted built-in audio change set is:
 
 ```python
 class AudioChange:
@@ -483,7 +490,7 @@ operation has no byte/sample payload.
 
 ### Audio metrics and policy
 
-The first audio metric registry is proposed as:
+The accepted first audio metric registry is:
 
 | Metric name | Meaning | Unit | Direction | Aggregation | Empty population |
 | --- | --- | --- | --- | --- | --- |
@@ -550,7 +557,7 @@ class AudioResourceLimits:
     max_change_payload_bytes: int = 4 * 1024 * 1024
 ```
 
-For P7-A1 with `stdlib_wave_pcm`, these are proposed normative default values.
+For P7-A1 with `stdlib_wave_pcm`, these are accepted normative default values.
 Implementation still needs a benchmark gate to prove they are deterministic,
 bounded, and practical, but acceptance of P7-S0/audio decisions does not defer
 the default values themselves. Limit checks happen before allocation, decode,
@@ -577,9 +584,11 @@ fails, in which case the observed failure is `failed`.
 
 ### Public intent
 
-The proposed video shape remains a schema proposal only. P7-S0 narrows the
-candidate first public fields, but P7-V1 is not implementation-authorized until
-the video backend and worker protocol are frozen in a later review.
+The accepted video roadmap shape remains documentation-only and is not part of
+schema v6. P7-S0 narrowed the candidate first public fields, but P7-V1 is not
+implementation-authorized until a later backend/worker amendment freezes the
+video backend, worker protocol, compatibility fixtures, and next global schema
+successor.
 
 ```python
 class VideoCompareSpec:
@@ -694,7 +703,7 @@ for unusable decoded timing facts, not a hidden content difference. A
 media-specific `alignment_failed` problem code requires a later RFC 0001
 registry update before use.
 
-The proposed built-in video change is:
+The accepted roadmap built-in video change set is:
 
 ```python
 class VideoChange:
@@ -743,7 +752,7 @@ frame coordinates.
 
 ### Video metrics and policy
 
-The first video metric registry is proposed as:
+The accepted roadmap video metric registry is:
 
 | Metric name | Meaning | Unit | Direction | Aggregation | Empty population |
 | --- | --- | --- | --- | --- | --- |
@@ -946,7 +955,12 @@ resources, or reinterpret relation/verdict. UI work remains unauthorized.
 
 ## Delivery gates, commits, and tests
 
-These gates are proposed plans, not implementation authorization.
+These gates are accepted delivery plans, not implementation authorization.
+P7-A1, P7-A2, and P7-A3 require separate human authorization from updated
+`main`. P7-A1 in particular must revalidate the actual merged v3/v4/v5
+predecessor chain before implementing the accepted audio schema-v6 allocation.
+P7-V1, P7-V2, and P7-V3 are accepted roadmap direction only and remain pending
+until a later video backend/worker amendment accepts the next schema successor.
 
 ### P7-A1: audio schema and exact decoded PCM relation
 
@@ -990,9 +1004,9 @@ and not implied by P7-A1 or P7-A2.
 
 ### P7-V1: video schema, stream structure, and decoded frames
 
-P7-V1 is intentionally pending after P7-S0. This RFC revision does not freeze a
-video backend or worker profile, so it does not authorize any video
-implementation commits.
+P7-V1 is accepted roadmap direction only and remains intentionally pending
+after P7-S0. This RFC revision does not freeze a video backend, worker profile,
+or schema successor, so it does not authorize any video implementation commits.
 
 1. `docs: freeze video backend and worker conformance profile`
 2. `feat(core): add video schema successor contracts`

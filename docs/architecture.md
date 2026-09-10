@@ -247,19 +247,20 @@ Proposed and does not authorize implementation.
 
 Audio comparison records explicit sample-rate, channel, and sample-format facts before applying any selected alignment policy. It can compare PCM waveforms, STFT or Mel spectra, SNR, or perceptual quality only under explicit contracts. Millisecond delays, gain changes, and resampling can all break exact sample comparison, so the system must distinguish “identical signal” from “perceptually similar.” ViSQOL, PESQ/POLQA, and comparable systems belong in optional backends rather than core dependencies.
 
-[RFC 0009](rfcs/0009-audio-and-video-comparison.md) proposes explicit audio
+[RFC 0009](rfcs/0009-audio-and-video-comparison.md) accepts explicit audio
 contracts for encoded bytes, decoded samples, waveform/numeric, spectral, and
-perceptual relations. It remains proposed and does not authorize
-implementation.
+perceptual relations, including audio-only schema v6. It remains unimplemented
+and requires separate gate authorization before code.
 
 ### 6.6 Video
 
 Video comparison records demuxing, decoding, timeline, frame-rate, resolution, color, HDR, orientation, and interlacing facts before computing any selected per-frame metric such as PSNR, SSIM, or VMAF. Resize, crop, frame-rate conversion, color conversion, tone mapping, deinterlacing, and synchronization shifts must be explicit transformations, not hidden metric setup. Detecting edits, inserted frames, and reordered shots requires shot segmentation, frame fingerprints, or feature-sequence matching; quality metrics alone are insufficient. Audio tracks should be compared as a separate modality and associated with the video timeline.
 
-[RFC 0009](rfcs/0009-audio-and-video-comparison.md) also proposes explicit
-video contracts for stream structure, decoded frames, frame metrics,
-perceptual video, and audio-track association. It remains proposed and does not
-authorize implementation.
+[RFC 0009](rfcs/0009-audio-and-video-comparison.md) also accepts video
+contracts for stream structure, decoded frames, frame metrics, perceptual
+video, and audio-track association as roadmap direction only. Video remains
+unimplemented and must wait for a later backend/worker amendment and the next
+schema successor before code.
 
 ### 6.7 PDF
 
@@ -297,10 +298,10 @@ authorization and require the actual merged schema-v3 predecessor to be
 revalidated first. Phase 6 source/PDF contracts are proposed in
 [RFC 0008](rfcs/0008-source-code-and-pdf-comparison.md); a schema-v5
 reservation depends on a future RFC 0008 amendment and acceptance. Phase 7
-audio/video contracts are proposed in
-[RFC 0009](rfcs/0009-audio-and-video-comparison.md); it proposes schema v6 for
-audio only, while video waits for a later successor after backend/worker
-review. They are not implemented, and public schema merges must respect
+audio contracts and video roadmap direction are accepted in
+[RFC 0009](rfcs/0009-audio-and-video-comparison.md); it accepts schema v6 for
+audio only, while video waits for a later backend/worker amendment and the next
+successor. They are not implemented, and public schema merges must respect
 predecessor order even when design and backend research proceed concurrently.
 
 ### v0.1: Core loop
