@@ -248,7 +248,7 @@ schema-v6 实现把 v3 视为稳定前驱前的 Phase 4 correction gate。RFC 00
 static 8-bit PNG 的 decoded sample；encoded identity 继续由 binary comparator 负责，且不提供
 隐式 orientation、color、alpha、resize、crop、artifact、plugin 或 detection 行为。接受该 RFC
 不授权实现。Proposed
-[RFC 0011](rfcs/0011-p5a1-image-wire-contract-amendment_zh.md) 闭合 contract-only P5-A1 的
+[RFC 0013](rfcs/0013-p5a1-image-wire-contract-amendment_zh.md) 闭合 contract-only P5-A1 的
 enum、transformation、canonical-fixture provenance、problem-code、terminal 与 downgrade
 decision；它尚未获接受，也不授予实现权限。
 

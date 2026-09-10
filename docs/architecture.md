@@ -258,7 +258,7 @@ image slice: an explicit built-in comparison of static 8-bit PNG decoded
 samples, with encoded identity left to the binary comparator and no implicit
 orientation, color, alpha, resize, crop, artifact, plugin, or detection behavior. Acceptance
 does not authorize implementation. Proposed
-[RFC 0011](rfcs/0011-p5a1-image-wire-contract-amendment.md) closes the
+[RFC 0013](rfcs/0013-p5a1-image-wire-contract-amendment.md) closes the
 contract-only P5-A1 enum, transformation, canonical-fixture provenance,
 problem-code, terminal, and downgrade decisions. It is not accepted and grants
 no implementation authority.

@@ -1,6 +1,6 @@
-# RFC 0011：P5-A1 图片 Wire Contract 修订
+# RFC 0013：P5-A1 图片 Wire Contract 修订
 
-[English documentation](0011-p5a1-image-wire-contract-amendment.md)
+[English documentation](0013-p5a1-image-wire-contract-amendment.md)
 
 - 状态：Proposed
 - 日期：2026-09-10

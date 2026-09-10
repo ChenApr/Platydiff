@@ -1,6 +1,6 @@
-# RFC 0011: P5-A1 Image Wire-Contract Amendment
+# RFC 0013: P5-A1 Image Wire-Contract Amendment
 
-[Chinese documentation](0011-p5a1-image-wire-contract-amendment_zh.md)
+[Chinese documentation](0013-p5a1-image-wire-contract-amendment_zh.md)
 
 - Status: Proposed
 - Date: 2026-09-10

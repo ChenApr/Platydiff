@@ -11,7 +11,7 @@
   通过后才能派发
 - Predecessor amendment：RFC 0010 记录 P5-A1 的条件授权；只有 RFC 0010、P4-C1/schema-v3
   与 predecessor compatibility fixture 都合并到 `main` 后才能派发；P5-A1 不会自动启动
-- Proposed P5-A1 wire amendment：[RFC 0011](0011-p5a1-image-wire-contract-amendment_zh.md)
+- Proposed P5-A1 wire amendment：[RFC 0013](0013-p5a1-image-wire-contract-amendment_zh.md)
   闭合 enum、transformation、fixture、problem、terminal 与 downgrade 选择；只有单独获接受后
   才有效
 
