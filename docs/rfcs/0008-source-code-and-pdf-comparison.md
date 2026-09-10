@@ -9,7 +9,12 @@
 - Approved decisions: P6X1-P6X11, SC1-SC10, PDF1-PDF10
 - Approved contract gate definition: P6-C0
 - Owners: Platydiff maintainers
-- Implementation owner: unassigned pending separate implementation authorization
+- Implementation owner: unassigned; conditional authorization recorded for
+  coordinator dispatch after the actual predecessor merge gates pass
+- Predecessor and contract amendment: RFC 0010 accepts Option A/P4-C1 and
+  P6C0-1-P6C0-10; P6-C0 has recorded conditional authorization, but
+  coordinator dispatch waits for RFC 0010, P4-C1, P5-A1/schema-v4, and
+  compatibility fixtures to merge to `main`
 
 ## Summary and authorization boundary
 
@@ -26,8 +31,10 @@ relations, backends, security profiles, artifacts, and dependency risks, so this
 RFC splits them into independently authorized delivery gates. Human approval on
 2026-09-10 accepts decisions P6X1-P6X11, SC1-SC10, PDF1-PDF10, and the P6-C0
 contract gate definition. It authorizes this documentation PR only. P6-C0
-implementation and every later source/PDF code gate still require separate
-implementation authorization from updated `main`.
+has recorded conditional authorization, but coordinator dispatch waits for RFC
+0010, P4-C1, P5-A1/schema-v4, and compatibility fixtures to merge to `main`.
+Every later source/PDF code gate still requires explicit dispatch from updated
+`main`.
 
 All behavior remains explicit-only. A caller must choose a source-code or PDF
 spec directly. Existing `AutoCompareSpec` remains text/binary-only unless a
