@@ -9,8 +9,9 @@ comparison through a typed Python API or CLI. Phase 3 adds immutable plugin
 hosts, explicitly selected text/binary detector, comparator, and bounded
 renderer execution, schema-v2 provider provenance, CLI opt-in flags, and a
 compatibility receipt profile. The existing three-argument API and default CLI
-remain built-in-only and keep their schema-v1 contract. The implementation
-remains unreleased.
+remain built-in-only; legacy text/binary/auto calls keep schema v1, while the
+explicit Phase 4 P4-A1 JSON path returns schema v3. The implementation remains
+unreleased.
 
 ## Install for development
 
@@ -90,6 +91,27 @@ Detection inspects only a bounded prefix; binary comparison streams bounded
 chunks and compares actual bytes. See the
 [automatic and binary guide](docs/binary-comparison.md).
 
+## Compare JSON explicitly
+
+```bash
+platydiff json before.json after.json
+platydiff compare --type json --format json before.json after.json
+```
+
+JSON comparison is strict RFC 8259 and semantic: object member order and string
+escape spelling are ignored, arrays remain positional, and the default
+`--number-mode value` makes `1`, `1.0`, and `1e0` equal. Select
+`--number-mode lexical` to compare valid number tokens exactly. Returned
+schema-v3 changes use canonical JSON Pointers and typed facts. Use
+`--detail digest_only` before comparison to omit value facts; paths, input
+hashes, counts, and reproducible evidence digests remain pseudonymous metadata,
+not confidential redaction.
+
+JSON is explicit-only and built-in-only. It is not selected by `auto`, and JSON
+commands reject plugin, detector, comparator, and plugin-renderer flags before
+discovery. See [the JSON comparison guide](docs/json-comparison.md) for the full
+contract, limits, schema migration, and failure behavior.
+
 ## Enable a plugin explicitly
 
 Plugins are never loaded by default. Repeat `--plugin` to allowlist exact
@@ -115,14 +137,14 @@ message on stderr, and exits `3`.
 
 ## Implemented and planned capabilities
 
-Implemented in Phases 1, 2, and the P3-A/P3-B/P3-C plugin gates:
+Implemented in Phases 1, 2, the P3-A/P3-B/P3-C plugin gates, and P4-A1:
 
 - Python 3.12+ library and `platydiff` CLI;
 - schema-v1 `CompareOutcome` and `DiffResult` JSON serialization;
 - strict line-oriented text comparison;
 - deterministic linear-space Myers insert/delete edit scripts;
 - terminal and JSON renderers with bounded change details;
-- terminal and JSON renderers for both schema-v1 and schema-v2 outcomes;
+- terminal and JSON renderers for schema-v1, schema-v2, and schema-v3 outcomes;
 - bounded deterministic text/binary detection and internal capability resolution;
 - collision-safe exact binary comparison with payload-free change spans;
 - immutable SDK-v1 manifests and capability/dependency/platform inventory;
@@ -133,14 +155,18 @@ Implemented in Phases 1, 2, and the P3-A/P3-B/P3-C plugin gates:
   for automatic comparisons, strict declared-backend provenance, and host-side
   output-limit/exact-semantics validation;
 - schema-v2 provider, attempt, and plugin-host provenance plus a typed v1-to-v2
-  upgrader. `PluginHost.compare()` always returns schema v2;
+  upgrader. Legacy `PluginHost.compare()` calls return schema v2; schema-v3 JSON
+  intent is rejected at resolution because SDK v1.1 remains text/binary-only;
 - bounded third-party renderer handles, explicit CLI plugin/capability flags,
   deterministic compatibility receipts, and a cross-boundary failure-isolation
   profile.
+- schema-v3 outcomes, explicit v1/v2-to-v3 migration, typed structured changes,
+  strict bounded JSON decoding, value/lexical number semantics, JSON Pointer
+  alignment, deterministic evidence digests, and explicit Python/CLI JSON routes.
 
 Planned, not implemented:
 
-- JSON/YAML, tables, arrays, images, source code, PDF, audio, and video;
+- YAML, tables, arrays, images, source code, PDF, audio, and video;
 - stdin, directories, recursive comparison, and configuration files;
 - color, HTML, JUnit, and patch artifacts.
 

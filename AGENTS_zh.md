@@ -21,8 +21,9 @@ Platydiff 是面向科研数据、实验回归和竞赛工作流的可扩展多�
 仓库现已包含已实现的 Phase 1 显式文本、Phase 2 自动/二进制 Python 库和 CLI，以及
 Phase 3 P3-A/P3-B/P3-C 公共插件 SDK、discovery、execution host、schema-v2
 provenance、有界 renderer、显式 CLI selection 与 compatibility receipt；当前仍未发布。
-新模态、配置文件、自动安装、任意 artifact、HTML 与 review UI 仍处于计划阶段；不得
-描述为已实现，且只报告实际运行过的验证命令。
+Phase 4 门禁 P4-A1 另加入 schema-v3 contract 与显式内建 semantic JSON comparison。
+YAML、table、array、其他新模态、配置文件、自动安装、任意 artifact、HTML 与 review UI
+仍处于计划阶段；不得描述为已实现，且只报告实际运行过的验证命令。
 
 ## 仓库结构
 
@@ -31,7 +32,7 @@ provenance、有界 renderer、显式 CLI selection 与 compatibility receipt；
 - `README.md`：英文权威版，说明项目目标、覆盖范围和设计原则；`README_zh.md` 为中文翻译。
 - `docs/architecture.md`：英文权威架构文档；`docs/architecture_zh.md` 为中文翻译。
 - `pyproject.toml`：Python 打包元数据与标准开发工具配置。
-- `platydiff/`：已实现的 Phase 1/2 库与 CLI，以及 Phase 3 SDK、discovery、execution host、renderer boundary 与 CLI opt-in。
+- `platydiff/`：已实现的 Phase 1/2 库与 CLI、Phase 3 plugin boundary，以及 Phase 4 P4-A1 schema-v3/JSON 路径。
 - `tests/`：单元、集成、契约、算法、CLI 与打包回归测试。
 
 目标结构：

@@ -1,4 +1,4 @@
-"""Exact schema-v1 and schema-v2 JSON outcome rendering."""
+"""Exact schema-v1, schema-v2, and schema-v3 JSON outcome rendering."""
 
 from __future__ import annotations
 

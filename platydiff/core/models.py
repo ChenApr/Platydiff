@@ -17,11 +17,13 @@ type JsonObject = dict[str, JsonValue]
 
 SCHEMA_VERSION: Literal[1] = 1
 SCHEMA_VERSION_V2: Literal[2] = 2
+SCHEMA_VERSION_V3: Literal[3] = 3
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$")
 _DISTRIBUTION_NAME = re.compile(
     r"^(?:[A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9])\Z"
 )
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_JSON_NUMBER = re.compile(r"^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$")
 _PERCENT_ESCAPE = re.compile(r"%[0-9a-fA-F]{2}")
 _INVALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9a-fA-F]{2})")
 _MAX_EXACT_INTEGER = 2**53
@@ -228,6 +230,26 @@ class MetricDirection(StrEnum):
     NEUTRAL = "neutral"
 
 
+class JsonNumberMode(StrEnum):
+    VALUE = "value"
+    LEXICAL = "lexical"
+
+
+class StructuredDetailMode(StrEnum):
+    VALUES = "values"
+    DIGEST_ONLY = "digest_only"
+
+
+class StructuredType(StrEnum):
+    NULL = "null"
+    BOOLEAN = "boolean"
+    INTEGER = "integer"
+    DECIMAL = "decimal"
+    STRING = "string"
+    SEQUENCE = "sequence"
+    MAPPING = "mapping"
+
+
 @dataclass(frozen=True, slots=True)
 class PathSource:
     """One filesystem path source."""
@@ -385,7 +407,48 @@ class AutoCompareSpec:
         _bounded_integer(self.ambiguity_margin, "ambiguity_margin", 0, 1000)
 
 
+@dataclass(frozen=True, slots=True)
+class StructuredResourceLimits:
+    """Deterministic resource limits shared by structured tree comparators."""
+
+    max_input_bytes: int = 16 * 1024 * 1024
+    max_scalar_bytes: int = 1024 * 1024
+    max_depth: int = 256
+    max_nodes: int = 1_000_000
+    max_number_digits: int = 10_000
+    max_abs_exponent: int = 1_000_000
+    max_compare_work: int = 5_000_000
+    max_change_items: int = 10_000
+    max_change_payload_bytes: int = 4 * 1024 * 1024
+
+    def __post_init__(self) -> None:
+        for name in self.__dataclass_fields__:
+            _bounded_integer(getattr(self, name), name, 0, _MAX_EXACT_INTEGER)
+
+
+@dataclass(frozen=True, slots=True)
+class JsonCompareSpec:
+    """Explicit intent for strict RFC 8259 semantic comparison."""
+
+    kind: Literal["json"] = field(default="json", init=False)
+    encoding: TextEncoding = TextEncoding.UTF8
+    number_mode: JsonNumberMode = JsonNumberMode.VALUE
+    detail_mode: StructuredDetailMode = StructuredDetailMode.VALUES
+    limits: StructuredResourceLimits = field(default_factory=StructuredResourceLimits)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.encoding, TextEncoding):
+            raise ValueError("JSON encoding must be a TextEncoding")
+        if not isinstance(self.number_mode, JsonNumberMode):
+            raise ValueError("number_mode must be a JsonNumberMode")
+        if not isinstance(self.detail_mode, StructuredDetailMode):
+            raise ValueError("detail_mode must be a StructuredDetailMode")
+        if not isinstance(self.limits, StructuredResourceLimits):
+            raise ValueError("JSON limits must be StructuredResourceLimits")
+
+
 type CompareSpec = AutoCompareSpec | TextCompareSpec | BinaryCompareSpec
+type CompareSpecV3 = CompareSpec | JsonCompareSpec
 
 
 @dataclass(frozen=True, slots=True)
@@ -1261,7 +1324,152 @@ class ExtensionChange:
         _json_safe(self.payload)
 
 
-type Change = TextHunk | BinarySpan | ExtensionChange
+@dataclass(frozen=True, slots=True)
+class ScalarFact:
+    """Bounded typed evidence for one structured scalar."""
+
+    kind: Literal[
+        "null",
+        "boolean",
+        "integer",
+        "decimal",
+        "string",
+        "missing",
+        "float64",
+        "nan",
+        "positive_infinity",
+        "negative_infinity",
+    ]
+    value: bool | str | None
+    lexical: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.kind in (
+            "null",
+            "missing",
+            "nan",
+            "positive_infinity",
+            "negative_infinity",
+        ):
+            if self.value is not None:
+                raise ValueError(f"{self.kind} fact requires a null value")
+        elif self.kind == "boolean":
+            if not isinstance(self.value, bool):
+                raise ValueError("boolean fact requires a boolean value")
+        elif self.kind in ("integer", "decimal", "string", "float64"):
+            if not isinstance(self.value, str):
+                raise ValueError(f"{self.kind} fact requires a string value")
+            _unicode_scalar(self.value, "scalar fact value")
+        else:
+            raise ValueError("unknown scalar fact kind")
+        if self.kind == "integer" and (
+            not isinstance(self.value, str)
+            or re.fullmatch(r"0|-?[1-9][0-9]*", self.value) is None
+        ):
+            raise ValueError("integer fact value must be canonical base-10 text")
+        if self.kind == "decimal" and (
+            not isinstance(self.value, str)
+            or re.fullmatch(
+                r"-?(?:0|[1-9](?:[0-9]*[1-9])?)E(?:0|-?[1-9][0-9]*)",
+                self.value,
+            )
+            is None
+            or self.value.startswith("-0E")
+        ):
+            raise ValueError(
+                "decimal fact value must be canonical coefficient/exponent text"
+            )
+        if self.lexical is not None:
+            if self.kind not in ("integer", "decimal"):
+                raise ValueError("lexical text is allowed only for JSON number facts")
+            _unicode_scalar(self.lexical, "scalar fact lexical token")
+            if _JSON_NUMBER.fullmatch(self.lexical) is None:
+                raise ValueError("lexical fact text must be a valid JSON number")
+            lexical_is_decimal = "." in self.lexical or "e" in self.lexical.lower()
+            if lexical_is_decimal != (self.kind == "decimal"):
+                raise ValueError("lexical number spelling must match the fact kind")
+
+
+@dataclass(frozen=True, slots=True)
+class SubtreeFact:
+    """Non-recursive evidence for one structured container."""
+
+    kind: Literal["sequence", "mapping"]
+    descendant_count: int
+    scalar_count: int
+
+    def __post_init__(self) -> None:
+        if self.kind not in ("sequence", "mapping"):
+            raise ValueError("unknown subtree fact kind")
+        _bounded_integer(
+            self.descendant_count, "descendant_count", 0, _MAX_EXACT_INTEGER
+        )
+        _bounded_integer(self.scalar_count, "scalar_count", 0, _MAX_EXACT_INTEGER)
+        if self.scalar_count > self.descendant_count:
+            raise ValueError("scalar_count must not exceed descendant_count")
+
+
+type StructuredFact = ScalarFact | SubtreeFact
+
+
+@dataclass(frozen=True, slots=True)
+class StructuredChange:
+    """One deterministic JSON-Pointer observation, not a patch operation."""
+
+    kind: Literal["structured_change"] = field(default="structured_change", init=False)
+    operation: Literal["add", "remove", "replace"] = "replace"
+    path: str = ""
+    before_type: StructuredType | None = None
+    after_type: StructuredType | None = None
+    before_digest: str | None = None
+    after_digest: str | None = None
+    before_fact: StructuredFact | None = None
+    after_fact: StructuredFact | None = None
+
+    def __post_init__(self) -> None:
+        if self.operation not in ("add", "remove", "replace"):
+            raise ValueError("unknown structured change operation")
+        _unicode_scalar(self.path, "structured change path")
+        if self.path and not self.path.startswith("/"):
+            raise ValueError("structured change path must be an RFC 6901 pointer")
+        cursor = 0
+        while cursor < len(self.path):
+            if self.path[cursor] == "~":
+                if cursor + 1 >= len(self.path) or self.path[cursor + 1] not in "01":
+                    raise ValueError(
+                        "structured change path must be canonical RFC 6901"
+                    )
+                cursor += 2
+            else:
+                cursor += 1
+        before_present = self.before_type is not None
+        after_present = self.after_type is not None
+        expected = {
+            "add": (False, True),
+            "remove": (True, False),
+            "replace": (True, True),
+        }[self.operation]
+        if (before_present, after_present) != expected:
+            raise ValueError("structured change sides do not match its operation")
+        for side, value_type, digest, fact in (
+            ("before", self.before_type, self.before_digest, self.before_fact),
+            ("after", self.after_type, self.after_digest, self.after_fact),
+        ):
+            if value_type is None:
+                if digest is not None or fact is not None:
+                    raise ValueError(f"absent {side} side must not carry evidence")
+                continue
+            if not isinstance(value_type, StructuredType):
+                raise ValueError(f"{side} type must be a StructuredType")
+            if digest is None or not _SHA256.fullmatch(digest):
+                raise ValueError(f"present {side} side requires a SHA-256 digest")
+            if fact is not None:
+                expected_kind = value_type.value
+                if fact.kind != expected_kind:
+                    raise ValueError(f"{side} fact kind must match its structured type")
+
+
+type Change = TextHunk | BinarySpan | StructuredChange | ExtensionChange
 
 
 @dataclass(frozen=True, slots=True)
@@ -1321,6 +1529,11 @@ class ChangeSet:
             raise ValueError("built-in change kinds must not be mixed")
         if binary_items:
             _validate_binary_spans(tuple(binary_items))
+        structured_items = [
+            item for item in self.items if isinstance(item, StructuredChange)
+        ]
+        if structured_items and len(structured_items) != len(self.items):
+            raise ValueError("built-in change kinds must not be mixed")
 
 
 def _validate_binary_spans(spans: tuple[BinarySpan, ...]) -> None:
@@ -1598,4 +1811,64 @@ class FailedOutcomeV2:
 
 
 type CompareOutcomeV2 = CompletedOutcomeV2 | UnavailableOutcomeV2 | FailedOutcomeV2
-type AnyCompareOutcome = CompareOutcome | CompareOutcomeV2
+
+
+@dataclass(frozen=True, slots=True)
+class CompletedOutcomeV3:
+    schema_version: Literal[3] = field(default=SCHEMA_VERSION_V3, init=False)
+    kind: Literal["completed"] = field(default="completed", init=False)
+    execution: ExecutionRecordV2 = field(kw_only=True)
+    result: DiffResult = field(kw_only=True)
+
+    def __post_init__(self) -> None:
+        if type(self.execution) is not ExecutionRecordV2:
+            raise ValueError("schema-v3 outcome requires provider-aware execution")
+        if self.execution.last_completed_stage is not PipelineStage.AGGREGATING:
+            raise ValueError("completed outcome must finish aggregation")
+        if type(self.result.provenance) is not ComparisonProvenanceV2:
+            raise ValueError("schema-v3 outcome requires provider-aware provenance")
+        _validate_completed_v2_provenance(self.execution, self.result.provenance)
+
+
+@dataclass(frozen=True, slots=True)
+class UnavailableOutcomeV3:
+    schema_version: Literal[3] = field(default=SCHEMA_VERSION_V3, init=False)
+    kind: Literal["unavailable"] = field(default="unavailable", init=False)
+    execution: ExecutionRecordV2 = field(kw_only=True)
+    problem: CapabilityProblemV2 = field(kw_only=True)
+
+    def __post_init__(self) -> None:
+        if type(self.execution) is not ExecutionRecordV2:
+            raise ValueError("schema-v3 outcome requires provider-aware execution")
+        if type(self.problem) is not CapabilityProblemV2:
+            raise ValueError("schema-v3 outcome requires a provider-aware problem")
+        if (
+            not self.execution.stages
+            or self.execution.stages[-1].stage is not self.problem.stage
+            or self.execution.stages[-1].disposition is not StageDisposition.UNAVAILABLE
+        ):
+            raise ValueError("unavailable outcome must match its terminal stage")
+
+
+@dataclass(frozen=True, slots=True)
+class FailedOutcomeV3:
+    schema_version: Literal[3] = field(default=SCHEMA_VERSION_V3, init=False)
+    kind: Literal["failed"] = field(default="failed", init=False)
+    execution: ExecutionRecordV2 = field(kw_only=True)
+    problem: ExecutionProblemV2 = field(kw_only=True)
+
+    def __post_init__(self) -> None:
+        if type(self.execution) is not ExecutionRecordV2:
+            raise ValueError("schema-v3 outcome requires provider-aware execution")
+        if type(self.problem) is not ExecutionProblemV2:
+            raise ValueError("schema-v3 outcome requires a provider-aware problem")
+        if (
+            not self.execution.stages
+            or self.execution.stages[-1].stage is not self.problem.stage
+            or self.execution.stages[-1].disposition is not StageDisposition.FAILED
+        ):
+            raise ValueError("failed outcome must match its terminal stage")
+
+
+type CompareOutcomeV3 = CompletedOutcomeV3 | UnavailableOutcomeV3 | FailedOutcomeV3
+type AnyCompareOutcome = CompareOutcome | CompareOutcomeV2 | CompareOutcomeV3

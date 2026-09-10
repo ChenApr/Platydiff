@@ -8,7 +8,7 @@
 - Review revision: 2026-09-10
 - Approved decisions: S1-S13
 - Owners: Platydiff maintainers
-- Implementation owner: unassigned pending separate implementation authorization
+- Implementation: P4-A1 implemented; P4-A2, P4-B1, and P4-B2 remain gated
 
 ## Summary and authorization boundary
 
@@ -19,10 +19,11 @@ implementation, dependency changes, a new plugin SDK, structured-data automatic
 detection, or UI work. Each implementation gate requires a separate dispatch
 from updated `main`; later gates do not start automatically.
 
-Human approval on 2026-09-10 accepts decisions S1-S13 and authorizes this RFC
-documentation PR only. P4-A1, P4-A2, P4-B1, and P4-B2 remain unimplemented and
-independently gated. Acceptance does not authorize starting, delegating, or
-implying any Phase 4 implementation.
+Human approval on 2026-09-10 accepted decisions S1-S13 and initially authorized
+the RFC documentation PR only. A later explicit dispatch authorized P4-A1,
+which now implements schema v3 and built-in JSON comparison. P4-A2, P4-B1, and
+P4-B2 remain unimplemented and independently gated; completing P4-A1 does not
+authorize starting or delegating them.
 
 ## Evidence ledger
 

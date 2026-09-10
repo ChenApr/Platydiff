@@ -129,18 +129,21 @@ Comparator run object 必须支持 Python weak reference。这个 SDK-v1.1 run �
 host 能拒绝复用同一个 live run，同时不永久保留所有 completed run。结构完整但无法 weakly
 reference 的 run 会在任何 lifecycle method 调用前，于 resolving stage 安全拒绝。
 
-每次 host comparison 都返回 schema v2，包括最终选择内建能力的情况。schema v2 记录
-enabled/loaded provider snapshot、带版本的 attempt 与 selected-provider provenance。
-现有三参数 `compare()` 和不含 plugin/capability 参数的 CLI 命令仍返回 schema v1；
-启用或 pin 插件 capability 的 CLI 命令经 host 返回 schema v2。若 CLI 在 discovery 后出现
-非预期失败，failure outcome 会保留精确的 loaded provider snapshot；若 discovery 本身失败，
-则只记录 enabled ID，loaded provider 为空。reader 同时接受两个版本；
+每次受 SDK-v1.1 支持的 host comparison 都返回 schema v2，包括最终选择内建 text/binary
+能力的情况。schema v2 记录 enabled/loaded provider snapshot、带版本的 attempt 与
+selected-provider provenance。Phase 4 JSON intent 位于 SDK v1.1 边界之外，会返回 schema-v3
+resolving-stage `capability_unavailable`；JSON CLI 路径会在 discovery 前拒绝 plugin 参数。
+现有三参数 text/binary/auto `compare()` 和不含 plugin/capability 参数的 legacy CLI 命令仍
+返回 schema v1；启用或 pin 插件 capability 的 legacy CLI 命令经 host 返回 schema v2。
+若 CLI 在 discovery 后出现非预期失败，failure outcome 会保留精确的 loaded provider
+snapshot；若 discovery 本身失败，则只记录 enabled ID，loaded provider 为空。reader 接受
+schema v1、v2 与 v3；
 `upgrade_outcome_v1_to_v2()` 在不改变 v1 result 含义的前提下添加空 host context。
 Schema-v1 model 与 encoder 拒绝嵌套 schema-v2 value；schema-v2 构造与读取会将
 provider-backed attempt 与 loaded host snapshot、selected comparator/detector provenance
 进行交叉校验，要求 selected comparator version 与 result provenance 一致，并对
-distribution/version identity 执行 SDK 同级校验。内建 terminal 与 JSON renderer 同时
-接受两个 outcome schema 版本，且不会重算 result 语义。
+distribution/version identity 执行 SDK 同级校验。内建 terminal 与 JSON renderer 接受
+全部三个 outcome schema 版本，且不会重算 result 语义。
 
 ## 编写有界 renderer
 

@@ -9,7 +9,7 @@ from contextlib import ExitStack
 from dataclasses import dataclass, field, replace
 from functools import partial
 from hashlib import sha256
-from typing import Literal, cast
+from typing import Literal, cast, overload
 
 from platydiff.api import _CATALOG
 from platydiff.api import compare as compare_builtin
@@ -31,7 +31,9 @@ from platydiff.core.models import (
     CapabilityProblemV2,
     ChangeCompleteness,
     CompareOutcomeV2,
+    CompareOutcomeV3,
     CompareSpec,
+    CompareSpecV3,
     ComparisonProvenance,
     ComparisonProvenanceV2,
     CompletedOutcomeV2,
@@ -46,6 +48,7 @@ from platydiff.core.models import (
     FailedOutcomeV2,
     Fidelity,
     InputProvenance,
+    JsonCompareSpec,
     PairDetectionCandidate,
     PathSource,
     PipelineStage,
@@ -63,7 +66,11 @@ from platydiff.core.models import (
     UnavailableOutcomeV2,
     Verdict,
 )
-from platydiff.core.pipeline import StageRunner, _system_clock
+from platydiff.core.pipeline import (
+    StageRunner,
+    _system_clock,
+    reject_json_plugin_comparison,
+)
 from platydiff.core.problems import (
     CapabilityUnavailableError,
     DetectionUnavailableError,
@@ -250,6 +257,7 @@ class PluginHost:
             options=options,
         )
 
+    @overload
     def compare(
         self,
         before: Source,
@@ -258,8 +266,31 @@ class PluginHost:
         *,
         detector_id: str | None = None,
         comparator_id: str | None = None,
-    ) -> CompareOutcomeV2:
-        """Compare with this fixed provider snapshot and always return schema v2."""
+    ) -> CompareOutcomeV2: ...
+
+    @overload
+    def compare(
+        self,
+        before: Source,
+        after: Source,
+        spec: JsonCompareSpec,
+        *,
+        detector_id: str | None = None,
+        comparator_id: str | None = None,
+    ) -> CompareOutcomeV3: ...
+
+    def compare(
+        self,
+        before: Source,
+        after: Source,
+        spec: CompareSpecV3,
+        *,
+        detector_id: str | None = None,
+        comparator_id: str | None = None,
+    ) -> CompareOutcomeV2 | CompareOutcomeV3:
+        """Compare legacy intent or reject structured intent at the SDK-v1 edge."""
+        if isinstance(spec, JsonCompareSpec):
+            return reject_json_plugin_comparison(before, after, spec)
         if detector_id is None and (
             comparator_id is None
             or (

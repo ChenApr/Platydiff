@@ -6,6 +6,10 @@ All notable changes to Platydiff are documented in this file.
 
 ### Added
 
+- Implemented Phase 4 gate P4-A1 with additive schema-v3 outcomes and migration
+  helpers, strict bounded semantic JSON comparison, value/lexical number modes,
+  canonical JSON Pointer changes, typed value/digest-only detail, deterministic
+  evidence digests, safe terminal/JSON rendering, and explicit Python/CLI routes.
 - Implemented the Phase 2 bounded automatic text/binary detector, deterministic
   built-in capability resolution, exact streaming binary comparator, Python
   contracts, and CLI routes.
@@ -62,8 +66,8 @@ All notable changes to Platydiff are documented in this file.
 - Safe separation of rendered outcomes on stdout from parser and renderer
   failures on stderr.
 
-Later modalities, HTML/UI rendering, configuration files, and automatic plugin
-installation remain planned.
+YAML, tables, arrays, later modalities, HTML/UI rendering, configuration files,
+and automatic plugin installation remain planned.
 
 ### Changed
 
