@@ -396,6 +396,48 @@ invariant。Predecessor spec kind 不得出现 image change 或 `image`/`image.*
 Private serializer boundary 显式接收 version，绝不从 item 推断 schema：
 
 ```python
+def _attempt_to_data(
+    attempt: CapabilityAttempt | CapabilityAttemptV2 | CapabilityAttemptV4,
+    *,
+    schema_version: Literal[1, 2, 3, 4],
+) -> JsonObject: ...
+
+@overload
+def _attempt_from_data(
+    value: JsonValue, *, schema_version: Literal[1]
+) -> CapabilityAttempt: ...
+
+@overload
+def _attempt_from_data(
+    value: JsonValue, *, schema_version: Literal[2, 3]
+) -> CapabilityAttemptV2: ...
+
+@overload
+def _attempt_from_data(
+    value: JsonValue, *, schema_version: Literal[4]
+) -> CapabilityAttemptV4: ...
+
+def _execution_to_data(
+    record: ExecutionRecord | ExecutionRecordV2 | ExecutionRecordV4,
+    *,
+    schema_version: Literal[1, 2, 3, 4],
+) -> JsonObject: ...
+
+@overload
+def _execution_from_data(
+    value: JsonValue, *, schema_version: Literal[1]
+) -> ExecutionRecord: ...
+
+@overload
+def _execution_from_data(
+    value: JsonValue, *, schema_version: Literal[2, 3]
+) -> ExecutionRecordV2: ...
+
+@overload
+def _execution_from_data(
+    value: JsonValue, *, schema_version: Literal[4]
+) -> ExecutionRecordV4: ...
+
 def _change_to_data(
     change: ChangeV4, *, schema_version: Literal[1, 2, 3, 4]
 ) -> JsonObject: ...
@@ -425,12 +467,37 @@ def _result_from_data(
 def _result_from_data(
     value: JsonValue, *, schema_version: Literal[4]
 ) -> DiffResultV4: ...
+
+def serialized_change_size(
+    change: ChangeV4, *, schema_version: Literal[1, 2, 3, 4]
+) -> int: ...
 ```
 
-Outer outcome encoder/decoder 始终传入 envelope version。V4 reader 即使读取 legacy-only upgraded
-payload，也构造 v4 set/result type。V1-v3 reader 拒绝 `image_change`；v1-v3 encoder 在
-serialization 前拒绝 v4 set/result instance 与 image spec。V4 set/result class 不增加 JSON key——
-既有 `changes`/result object shape 保持 closed——`backend_components` 是唯一新增 attempt member。
+Outer outcome encoder/decoder 始终把 envelope version 显式传给 execution、attempt、result 与
+change serializer。Schema v1 要求 exact `ExecutionRecord`/`CapabilityAttempt`；schema v2/v3
+要求 exact `ExecutionRecordV2`/`CapabilityAttemptV2`；schema v4 要求 exact
+`ExecutionRecordV4`/`CapabilityAttemptV4`。因此既有
+`isinstance(attempt, CapabilityAttemptV2)` writer branch 不是有效 v4 dispatch，必须换成
+上方 versioned helper。V4 reader 要求每条 attempt 都存在 `backend_components`，先构造
+component object 再构造 attempt；即使读取 legacy-only upgraded payload，也构造 v4
+execution/set/result type。V1-v3 reader 拒绝额外 attempt member 与 `image_change`；v1-v3 encoder
+在 serialization 前拒绝 v4 execution/attempt/set/result instance 与 image spec。V4
+set/result/execution class 不增加 JSON key——既有 execution/result object shape 保持 closed——
+`backend_components` 是唯一新增 attempt member。
+
+Attempt reader 按 envelope 选择 exact key set：schema v1 的四个 field，schema v2/v3 的七个
+field，或这七个 field 加 schema v4 required `backend_components`。Execution reader 应用 inherited
+conditional `detection` key 与 schema-v2+ `plugin_host` key rule，再对每个 item 调用
+`_attempt_from_data(..., schema_version=envelope_version)`。V4 缺少 `backend_components`、v1-v3
+出现该 key、unknown member 或 cross-version runtime instance 都必须失败，不得隐式 upgrade/downgrade。
+
+`serialized_change_size` 是 internal 且 version-required 的 helper，先使用同一显式 version
+调用 `_change_to_data`，再使用 canonical compact JSON encoding；不提供 default schema。每个
+payload-budget producer/validator 都传入 enclosing outcome version。V4 result（包括 predecessor
+upgrade 而来的 result）的 `image.changes.payload_bytes.used` 等于 retained item 的
+`serialized_change_size(item, schema_version=4)` 之和。V4 对 predecessor change 的 encoding 与
+predecessor object encoding byte-identical；image change 对 version 1–3 被拒绝。因此 truncation
+selection、recorded resource usage、detached validation 与 canonical fixture byte 测量同一 payload。
 
 Subclassing 不削弱 version gate。Direct construction/encoding 使用 exact-type rule：exact
 `ExecutionRecordV2` 只包含 exact `CapabilityAttemptV2` item；`ExecutionRecordV4` 先执行全部
@@ -536,9 +603,13 @@ provenance.detector_provider == null
 execution.plugin_host == null
 ```
 
-`image` 是 built-in comparator/capability identifier；dotted string
-`image.decoded_samples.tiles.v1` 仅是 algorithm identifier。根据 inherited P4-C1 provider
-invariant，provider 为 null 的 dotted comparator identifier 无效，必须拒绝。
+`image` 是 schema contract 与所有未来 runtime implementation 唯一的 built-in
+comparator/capability identifier。本 amendment 全局 supersede RFC 0007 较早的
+`image.decoded_samples` comparator 名称；该 dotted value 在 P5-A1、P5-A2、P5-A3 或任何
+migration 中都不是第二个合法 comparator/capability ID。Dotted string
+`image.decoded_samples.tiles.v1` 仍只是 algorithm identifier。根据 inherited P4-C1 provider
+invariant，provider 为 null 的 dotted comparator identifier（包括 `image.decoded_samples`）无效，
+必须拒绝。
 
 Completed specimen 必须 `artifacts=[]`、full fidelity、complete `ChangeSet` 且无 diagnostic；只使用
 RFC 0007 已接受的 image metric/evaluation/change/summary/resource/digest invariant。所有
@@ -547,9 +618,11 @@ order 出现。Failed specimen 不含 `DiffResult`、artifact、metric、change�
 transformation；execution 终止于 failed `decoding` stage，并携带下述精确 problem。
 
 P5-A1 只可在 schema validation 中 reserve `image` 与 `image.decoded_samples.tiles.v1`；
-runtime registry 继续拒绝它们。后续 P5-A2/P5-A3 runtime 必须记录
-实际 selected backend 与 Platydiff implementation version，不得把
-`implementation_version="contract-only"` 复制到 runtime outcome。
+runtime registry 继续拒绝它们。P5-A2 可在 decoder contract evidence 中使用 `image`，
+但不得注册 executable public comparison route；P5-A3 是首个可注册 built-in `image`
+comparator/capability 的 gate。后续 runtime 必须记录实际 selected backend 与 Platydiff
+implementation version，不得把 `implementation_version="contract-only"` 复制到 runtime outcome，
+也不得 emit 已 superseded 的 `image.decoded_samples` comparator value。
 
 ### Cross-object bindings
 
@@ -566,7 +639,7 @@ object member order 的 semantic reader invariant：
 | Mode/alpha | 每个 role 的 decode `mode` 等于 alpha `mode`；bands/`has_alpha` 匹配 mode；IHDR color type 与 decoded-byte arithmetic 也匹配。 |
 | Dimensions/alignment | Decode dimensions 建立 coordinate bound；coordinate policy/tile size 等于 normalized spec。Descriptor 相等要求 role dimensions、mode/bands/alpha 与 color-description digest 相等。 |
 | Comparison work | `image.compare.sample_pairs.used == image.compared_samples`；limit 等于 `max_compare_work`。 |
-| Changes/resources | `image.changes.items.used == changes.returned_count`；`image.changes.payload_bytes.used` 等于 retained change canonical payload byte count；limit 等于两个 spec change limit。 |
+| Changes/resources | `image.changes.items.used == changes.returned_count`；`image.changes.payload_bytes.used` 等于 `sum(serialized_change_size(item, schema_version=4) for item in changes.items)`；limit 等于两个 spec change limit。 |
 | Summary/changes | `summary.change_count == changes.total_count == image.changed_items`；summary `changed_tiles` 等于 full tile-change count，`descriptor_changes` 等于 full descriptor-change count。 |
 | Metrics | Equal specimen 的 compared/equal/changed pixels 为 `1/1/0`，compared samples `4`，changed items `0`，MAE/RMSE `0.0`，PSNR 是 tagged positive infinity，并遵守 RFC 0007 metric order。 |
 | Evaluation | 唯一的 `image.decoded_sample_equality` evaluation observe `image.changed_items`，使用 `eq 0`，verdict 等于 result verdict；changed items 为零当且仅当 relation 为 equal。 |
@@ -591,6 +664,12 @@ payload hex 独立重算 RFC 0007 的四个 digest vector。该 oracle 不得调
 comparator、decoder、Pillow 或 production digest helper。测试逐 byte 对比重算 digest 与 published
 constant，并单独测试 detached-reader check。Canonical equal specimen 不含 `ImageChange`，因此这些
 vector test 与其 byte-stable fixture round trip 彼此独立。
+
+这些 obligation 归属于首次拥有相应 runtime data 的 gate。P5-A1 只测试 detached
+validation 与四个独立 literal domain/payload digest oracle；不使用 image source、decoder 或
+comparator。P5-A2 负责 owned input byte、scanner/decode fact 与 canonical color-description byte
+的 producer test。P5-A3 负责 actual tile sample、tile digest、changed-pixel/error calculation 与
+comparison resource accounting 的 producer test。两组后续 test 都不是 P5-A1 merge gate。
 
 对所有 schema-v4 image outcome（不只 canonical specimen），descriptor change 禁止 tile change，
 并把 compared/equal/changed pixel 与 compared-sample metric 全部置零。Descriptor 相同时，每个 tile
@@ -709,8 +788,8 @@ structural validation。即使已观察到 unsupported feature，任何 malforme
 
 `wrong_codec` 不会与 valid PNG signature 后才解析的 feature 共存，但仍占 rank 1，使 classification
 function 对所有 input 都为 total。若 resource breach 阻止完成 bounded scan，则保持
-`resource_limit_exceeded`，不选择 partial reason。以下 generated、CRC/order-valid classification vector
-为 mandatory：
+`resource_limit_exceeded`，不选择 partial reason。以下 classification case 是 normative gate
+vector：
 
 | Vector | Supported/unsupported facts | Expected classification |
 | --- | --- | --- |
@@ -721,9 +800,13 @@ function 对所有 input 都为 total。若 resource breach 阻止完成 bounded
 | `grey_16bit_trns` | Greyscale 16-bit sample 与 `tRNS` | `unsupported_image_profile/unsupported_bit_depth` |
 | `rgb_8bit_trns` | 其他方面 supported 的 RGB 8-bit PNG，且含 `tRNS` | `unsupported_image_profile/transparency_expansion_required` |
 
-每个 vector 另有在 unsupported fact 后加入 bad CRC 的 malformed twin；所有 twin 都必须产生
-`decode_error`，证明 malformed precedence。在不改变 PNG validity 的前提下调整 ancillary/eligible
-chunk discovery order，不得改变 selected reason。
+P5-A1 把这些 row 冻结为 contract metadata，并为每个 reason 直接构造一个 schema-v4
+failed-problem specimen。其 test 只证明 enum、problem tuple、stage、detail、reader/writer 与
+v1-v3 rejection behavior；vector 名称不代表 P5-A1 image file，P5-A1 不创建 PNG byte、
+scanner、decoder、corpus 或 reason-selection implementation。P5-A2 负责 generated CRC/order-valid
+PNG input、total-priority scanner test、discovery-order permutation 与每个 malformed bad-CRC twin。
+所有 P5-A2 twin 都必须产生 `decode_error`；保持 PNG validity 的 permutation 不得改变
+selected reason。P5-A3 复用 P5-A2 classification suite，但不在 comparator 内重新分类 decode failure。
 
 `internal_error` 记录 `stage="validating"`，这是 synthetic CLI failure 使用的既有真实
 `PipelineStage`。“Outer CLI handler”只描述 exception 捕获位置，不是 serialized stage value。
@@ -795,6 +878,12 @@ V3-to-v4 step 把每条 attempt 替换为保留七个 inherited field 并新增 
 result 重构为 `ChangeSetV4`/`DiffResultV4`，保留全部 wire fact；不会把 predecessor outcome relabel
 为 image。
 
+Predecessor schema 不含 image comparator，因此 upgrade helper 不 rename comparator；也不存在已接受
+的更早 schema-v4 writer 需要 migration。使用 RFC 0007 已 superseded
+`comparator_id="image.decoded_samples"` 或同名 capability-attempt ID 的 v4 payload 必须拒绝，
+不得 migration；有效 image fixture 与未来 runtime outcome 在两处都使用 `image`，并保留
+`algorithm_id="image.decoded_samples.tiles.v1"`。
+
 Renderer、CLI、JSON writer 或 reader 均不得自动 downgrade。P5-A1 只定义一个新 downgrade helper：
 
 ```python
@@ -830,7 +919,10 @@ v2-to-v1 downgrade helper，因此 P5-A1 不承诺或新增它；若出现用例
    export set；不 export decoder/backend implementation。
 3. Exact predecessor/v4 constructor、reader、encoder 拒绝跨版本 attempt、change-set、result、
    provenance、problem 与 outcome mixing，且 v4 subclass 可证明先运行全部 inherited validation。
-   所有新 object 拒绝 missing/extra key、boolean-as-integer、invalid enum、invalid mode/IHDR/band
+   Outer envelope version 显式传入 execution、attempt、result 与 change serializer；v4 attempt
+   要求 `backend_components`，v1-v3 拒绝它；`serialized_change_size` 要求 enclosing
+   version，且测量 payload truncation/validation 使用的同一 canonical change byte。所有新
+   object 拒绝 missing/extra key、boolean-as-integer、invalid enum、invalid mode/IHDR/band
    combination、invalid role order/digest 与 cross-field invariant violation。
 4. 五条 transformation record 各自接受 canonical payload，并拒绝错误 stage、ID、key、type、
    nesting、value 或 sequence position。
@@ -849,10 +941,14 @@ v2-to-v1 downgrade helper，因此 P5-A1 不承诺或新增它；若出现用例
 9. Migration test 证明三个 lossless predecessor-to-v4 upgrade、精确 representable v4-to-v3 downgrade、
    后续使用既有 v3-to-v2 helper，以及所有 image-bearing、component-bearing 或
    `unsupported_image_profile` downgrade 的 hard rejection；不新增 v2-to-v1 helper。
-10. 全部 priority classification vector、malformed twin 与 discovery-order permutation 产生上方精确
-    problem/reason/stage fact，包括位于 `validating` 的 `internal_error`。
-11. Detached-reader test 只覆盖 wire-verifiable digest syntax/domain/role binding；producer test 覆盖
-    content correctness；独立 standard-library oracle 不使用 production helper 重算 RFC 0007 四个 vector。
+10. P5-A1 直接构造并 round-trip 六个 schema problem reason，验证 exact tuple/detail/stage
+    gate，包括位于 `validating` 的 `internal_error`，但不包含 PNG 或 scanner test。P5-A2
+    而非 P5-A1 负责 generated classification vector、malformed twin、total-priority selection 与
+    discovery-order permutation。
+11. P5-A1 detached-reader test 只覆盖 wire-verifiable digest syntax/domain/role binding；独立
+    standard-library oracle 不使用 production helper 重算 RFC 0007 四个 vector。P5-A2 负责
+    input/decode/color-description producer correctness；P5-A3 负责 tile-sample、change-metric 与
+    comparison-resource producer correctness。这些 runtime producer test 不是 P5-A1 acceptance criteria。
 12. Problem message 保持 predecessor wire behavior，不声称 length bound；terminal test 独立证明 v4
     rendering bound。
 13. Ruff format/check、strict mypy、完整 pytest、build/wheel/sdist inspection、`git diff --check` 与
@@ -872,13 +968,19 @@ Proposed P5-A1 commit boundary 为：
 
 ## 与后续门禁的关系
 
-P5-A2 仍是首个 optional-backend/decode gate；P5-A3 仍是首个 comparator、capability-registration、
-terminal command 与 executable image-result gate，二者独立派发。本 amendment 不改变或授权
-P5-C/P5-P/P5-F/P5-M/P5-H/P5-S callback。
+P5-A2 仍是首个 optional-backend/decode gate；它负责 actual source snapshot、generated scanner
+vector/malformed twin、support-profile priority selection、decoded fact 与对应 producer evidence。P5-A3
+仍是首个 comparator、capability-registration、terminal command 与 executable image-result gate；它负责
+actual sample/tile comparison、change/metric/resource producer evidence，并注册唯一 built-in
+comparator/capability ID `image`。二者独立派发，都不是隐藏的 P5-A1 acceptance gate。本
+amendment 不改变或授权 P5-C/P5-P/P5-F/P5-M/P5-H/P5-S callback。
 
-若获接受，本 RFC 只 supersede RFC 0007 中仍开放的 P5-A1 enum representation、transformation JSON
-shape、schema-only fixture identity、schema-v4 problem gate/signature classification、terminal
-projection 与 downgrade mechanics；其余 I1-I16 decision 和 RFC 0007 语义继续有效。
+若获接受，本 RFC 全局 supersede RFC 0007 的 built-in comparator identity：`image` 在 schema
+fixture、attempt、provenance、migration 与所有未来 runtime gate 中取代
+`image.decoded_samples`，`image.decoded_samples.tiles.v1` 仍是 algorithm ID。本 RFC 也
+supersede RFC 0007 中仍开放的 P5-A1 enum representation、transformation JSON shape、schema-only
+fixture identity、schema-v4 problem gate/signature classification、terminal projection 与 downgrade mechanics；
+其余 I1-I16 decision 和 RFC 0007 语义继续有效。
 
 ## 参考
 

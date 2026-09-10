@@ -435,6 +435,48 @@ The private serializer boundary is version-explicit; it never infers schema
 from an item:
 
 ```python
+def _attempt_to_data(
+    attempt: CapabilityAttempt | CapabilityAttemptV2 | CapabilityAttemptV4,
+    *,
+    schema_version: Literal[1, 2, 3, 4],
+) -> JsonObject: ...
+
+@overload
+def _attempt_from_data(
+    value: JsonValue, *, schema_version: Literal[1]
+) -> CapabilityAttempt: ...
+
+@overload
+def _attempt_from_data(
+    value: JsonValue, *, schema_version: Literal[2, 3]
+) -> CapabilityAttemptV2: ...
+
+@overload
+def _attempt_from_data(
+    value: JsonValue, *, schema_version: Literal[4]
+) -> CapabilityAttemptV4: ...
+
+def _execution_to_data(
+    record: ExecutionRecord | ExecutionRecordV2 | ExecutionRecordV4,
+    *,
+    schema_version: Literal[1, 2, 3, 4],
+) -> JsonObject: ...
+
+@overload
+def _execution_from_data(
+    value: JsonValue, *, schema_version: Literal[1]
+) -> ExecutionRecord: ...
+
+@overload
+def _execution_from_data(
+    value: JsonValue, *, schema_version: Literal[2, 3]
+) -> ExecutionRecordV2: ...
+
+@overload
+def _execution_from_data(
+    value: JsonValue, *, schema_version: Literal[4]
+) -> ExecutionRecordV4: ...
+
 def _change_to_data(
     change: ChangeV4, *, schema_version: Literal[1, 2, 3, 4]
 ) -> JsonObject: ...
@@ -464,14 +506,46 @@ def _result_from_data(
 def _result_from_data(
     value: JsonValue, *, schema_version: Literal[4]
 ) -> DiffResultV4: ...
+
+def serialized_change_size(
+    change: ChangeV4, *, schema_version: Literal[1, 2, 3, 4]
+) -> int: ...
 ```
 
-The outer outcome encoder/decoder always passes the envelope version. A v4
-reader constructs the v4 set/result types even for a legacy-only upgraded
-payload. V1-v3 readers reject `image_change`; v1-v3 encoders reject v4
-set/result instances and image specs before serialization. The v4 set/result
-classes add no JSON keys—the existing `changes` and result object shapes stay
+The outer outcome encoder/decoder always passes the envelope version through
+execution, attempt, result, and change serialization. Schema v1 requires exact
+`ExecutionRecord`/`CapabilityAttempt`; schema v2 and v3 require exact
+`ExecutionRecordV2`/`CapabilityAttemptV2`; schema v4 requires exact
+`ExecutionRecordV4`/`CapabilityAttemptV4`. Consequently the existing
+`isinstance(attempt, CapabilityAttemptV2)` writer branch is not a valid v4
+dispatch: it must be replaced by the explicit versioned helper above. A v4
+reader requires `backend_components` on every attempt, constructs the component
+objects before the attempt, and constructs v4 execution/set/result types even
+for a legacy-only upgraded payload. V1-v3 readers reject the additional attempt
+member and `image_change`; v1-v3 encoders reject v4 execution/attempt/set/result
+instances and image specs before serialization. The v4 set/result/execution
+classes add no JSON keys—the existing execution and result shapes stay
 closed—while `backend_components` is the sole new attempt member.
+
+The attempt reader applies exact key sets selected by the envelope: the four
+schema-v1 fields, the seven schema-v2/v3 fields, or those seven plus required
+`backend_components` for schema v4. The execution reader applies the inherited
+conditional `detection` key and schema-v2+ `plugin_host` key rules, then calls
+`_attempt_from_data(..., schema_version=envelope_version)` for every item.
+Missing `backend_components` in v4, its presence in v1-v3, an unknown member,
+or any cross-version runtime instance is an error rather than an implicit
+upgrade or downgrade.
+
+`serialized_change_size` is an internal, version-required helper and calls
+`_change_to_data` with the same explicit version before applying the canonical
+compact JSON encoding. It has no default schema. Every payload-budget producer
+and validator passes its enclosing outcome version. In a v4 result, including
+one upgraded from a predecessor, `image.changes.payload_bytes.used` is the sum
+of `serialized_change_size(item, schema_version=4)` over retained items. The v4
+encoding of every predecessor change remains byte-identical to its predecessor
+object encoding; an image change is rejected for versions 1–3. Thus truncation
+selection, recorded resource usage, detached validation, and canonical fixture
+bytes all measure the same payload.
 
 Subclassing does not weaken version gates. Direct construction and encoding
 apply exact-type rules: an exact `ExecutionRecordV2` contains only exact
@@ -596,10 +670,15 @@ provenance.detector_provider == null
 execution.plugin_host == null
 ```
 
-`image` is the built-in comparator/capability identifier. The dotted string
-`image.decoded_samples.tiles.v1` is only the algorithm identifier. A dotted
-comparator identifier with null provider is invalid under the inherited P4-C1
-provider invariant and must be rejected.
+`image` is the single built-in comparator/capability identifier for both the
+schema contract and every future runtime implementation. This amendment
+globally supersedes RFC 0007's earlier `image.decoded_samples` comparator name;
+that dotted value is not a second legal comparator or capability ID in P5-A1,
+P5-A2, P5-A3, or any migration. The dotted string
+`image.decoded_samples.tiles.v1` remains only the algorithm identifier. A
+dotted comparator identifier with null provider, including
+`image.decoded_samples`, is invalid under the inherited P4-C1 provider
+invariant and must be rejected.
 
 The completed specimen has `artifacts=[]`, full fidelity, a complete
 `ChangeSet`, and no diagnostic. It uses only the image metric, evaluation,
@@ -611,11 +690,13 @@ changes, comparison provenance, or transformations; its execution ends with a
 failed `decoding` stage and carries the exact problem below.
 
 P5-A1 may reserve `image` and `image.decoded_samples.tiles.v1` in schema
-validation only. The runtime
-registry continues to reject them. A later P5-A2/P5-A3 implementation must
-replace runtime identity with the actual selected backend and Platydiff
-implementation version; it must not copy `implementation_version="contract-only"`
-into a runtime outcome.
+validation only. The runtime registry continues to reject them. P5-A2 may use
+`image` in decoder contract evidence without registering an executable public
+comparison route; P5-A3 is the first gate allowed to register the built-in
+`image` comparator/capability. A later runtime must record the actual selected
+backend and Platydiff implementation version; it must not copy
+`implementation_version="contract-only"` into a runtime outcome or emit the
+superseded `image.decoded_samples` comparator value.
 
 ### Cross-object bindings
 
@@ -633,7 +714,7 @@ invariants, independent of object-member order:
 | Mode/alpha | Per role, decode `mode` equals alpha `mode`; bands and `has_alpha` match that mode; IHDR color type and decoded-byte arithmetic match it. |
 | Dimensions/alignment | Decode dimensions establish coordinate bounds; coordinate policy and tile size equal the normalized spec. Equal descriptors require equal role dimensions, mode/bands/alpha, and color-description digest. |
 | Comparison work | `image.compare.sample_pairs.used == image.compared_samples`; its limit equals `max_compare_work`. |
-| Changes/resources | `image.changes.items.used == changes.returned_count`; `image.changes.payload_bytes.used` equals the canonical retained-change payload byte count; their limits equal the two spec change limits. |
+| Changes/resources | `image.changes.items.used == changes.returned_count`; `image.changes.payload_bytes.used` equals `sum(serialized_change_size(item, schema_version=4) for item in changes.items)`; their limits equal the two spec change limits. |
 | Summary/changes | `summary.change_count == changes.total_count == image.changed_items`; summary `changed_tiles` equals the full tile-change count and `descriptor_changes` equals the full descriptor-change count. |
 | Metrics | The equal specimen has compared/equal/changed pixels `1/1/0`, compared samples `4`, changed items `0`, MAE/RMSE `0.0`, and tagged positive-infinity PSNR, in RFC 0007 metric order. |
 | Evaluation | The single `image.decoded_sample_equality` evaluation observes `image.changed_items`, uses `eq 0`, and its verdict equals the result verdict. Relation is equal iff changed items is zero. |
@@ -667,6 +748,14 @@ helper. Tests compare each recomputed digest byte-for-byte with the published
 constant and separately test detached-reader checks. The canonical equal
 specimen contains no `ImageChange`, so these vector tests remain distinct from
 its byte-stable fixture round trip.
+
+Those obligations are assigned to the gate that first owns the corresponding
+runtime data. P5-A1 tests only detached validation and the four independent
+literal domain/payload digest oracles; they use no image source, decoder, or
+comparator. P5-A2 owns producer tests for owned input bytes, scanner/decode
+facts, and canonical color-description bytes. P5-A3 owns producer tests for
+actual tile samples, tile digests, changed-pixel/error calculations, and
+comparison resource accounting. Neither later test set is a P5-A1 merge gate.
 
 For every schema-v4 image outcome, not only the canonical specimen, a
 descriptor change forbids tile changes and forces compared/equal/changed pixel
@@ -809,7 +898,7 @@ chunk discovery order:
 but occupies rank 1 so the classification function is total for every input.
 A resource breach that prevents the complete bounded scan remains
 `resource_limit_exceeded`, not a partially selected reason. The following
-generated, CRC/order-valid classification vectors are mandatory:
+classification cases are normative gate vectors:
 
 | Vector | Supported/unsupported facts | Expected classification |
 | --- | --- | --- |
@@ -820,10 +909,16 @@ generated, CRC/order-valid classification vectors are mandatory:
 | `grey_16bit_trns` | Greyscale 16-bit samples and `tRNS` | `unsupported_image_profile/unsupported_bit_depth` |
 | `rgb_8bit_trns` | Otherwise supported RGB 8-bit PNG with `tRNS` | `unsupported_image_profile/transparency_expansion_required` |
 
-Each vector also has a malformed twin with a bad CRC after the unsupported
-fact; every twin must produce `decode_error`, proving malformed precedence.
-Permuting ancillary/eligible chunk discovery without changing PNG validity
-must not change the selected reason.
+P5-A1 freezes these rows as contract metadata and directly constructs one
+schema-v4 failed-problem specimen for each reason. Its tests prove enum,
+problem-tuple, stage, detail, reader/writer, and v1-v3 rejection behavior only;
+the vector names do not name P5-A1 image files, and P5-A1 creates no PNG bytes,
+scanner, decoder, corpus, or reason-selection implementation. P5-A2 owns the
+generated CRC/order-valid PNG inputs, total-priority scanner test, discovery-
+order permutations, and each malformed bad-CRC twin. Every P5-A2 twin must
+produce `decode_error`; permutations that preserve PNG validity must not change
+the selected reason. P5-A3 reuses the P5-A2 classification suite but does not
+reclassify decode failures in the comparator.
 
 `internal_error` records `stage="validating"`, the existing real
 `PipelineStage` used for synthetic CLI failures. “Outer CLI handler” describes
@@ -910,6 +1005,14 @@ execution/provenance/problem wrapper with its exact v4 type, and reconstructs
 completed results as `ChangeSetV4` plus `DiffResultV4`, preserving all wire
 facts. It does not relabel a predecessor outcome as image.
 
+No predecessor schema contains an image comparator, so no upgrade helper
+renames a comparator. There is also no accepted earlier schema-v4 writer to
+migrate. A v4 payload that uses RFC 0007's superseded
+`comparator_id="image.decoded_samples"` or the same capability-attempt ID is
+invalid rather than migrated; valid image fixtures and future runtime outcomes
+use `image` in both locations and retain
+`algorithm_id="image.decoded_samples.tiles.v1"`.
+
 There is no automatic downgrade in a renderer, CLI, JSON writer, or reader.
 P5-A1 defines exactly one new downgrade helper:
 
@@ -955,9 +1058,15 @@ all of the following before merge:
    decoder/backend implementation is exported.
 3. Exact predecessor/v4 constructors, readers, and encoders reject cross-version
    attempt, change-set, result, provenance, problem, and outcome mixing while
-   v4 subclasses demonstrably run all inherited validation first. Every new object rejects missing/extra keys, booleans-as-integers, invalid
-   enum values, invalid mode/IHDR/band combinations, invalid role ordering,
-   invalid digests, and violated cross-field invariants.
+   v4 subclasses demonstrably run all inherited validation first. The outer
+   envelope version is passed explicitly through execution, attempt, result,
+   and change serializers; v4 attempts require `backend_components`, v1-v3
+   reject it, and `serialized_change_size` requires the enclosing version and
+   measures the same canonical change bytes used for payload truncation and
+   validation. Every new object rejects missing/extra keys,
+   booleans-as-integers, invalid enum values, invalid mode/IHDR/band
+   combinations, invalid role ordering, invalid digests, and violated
+   cross-field invariants.
 4. Each of the five transformation records accepts its canonical payload and
    rejects a wrong stage, ID, key, type, nesting, value, or sequence position.
 5. v1/v2/v3 canonical files remain byte-identical; all predecessor round trips,
@@ -979,12 +1088,17 @@ all of the following before merge:
    representable v4-to-v3 downgrade, subsequent use of the existing v3-to-v2
    helper, and hard rejection of image-bearing, component-bearing, or
    `unsupported_image_profile` downgrade. No v2-to-v1 helper is added.
-10. All priority classification vectors, their malformed twins, and discovery-order
-    permutations produce the exact problem/reason/stage facts above, including
-    `internal_error` at `validating`.
-11. Detached-reader tests cover only wire-verifiable digest syntax/domain/role
-    bindings; producer tests cover content correctness; a separate standard-library
-    oracle recomputes all four RFC 0007 vectors without production helpers.
+10. P5-A1 directly constructs and round-trips all six schema problem reasons
+    with their exact tuple/detail/stage gates, including `internal_error` at
+    `validating`, but contains no PNG or scanner test. P5-A2, not P5-A1, owns
+    the generated classification vectors, malformed twins, total-priority
+    selection, and discovery-order permutations.
+11. P5-A1 detached-reader tests cover only wire-verifiable digest
+    syntax/domain/role bindings, and a separate standard-library oracle
+    recomputes all four RFC 0007 vectors without production helpers. P5-A2 owns
+    input/decode/color-description producer correctness; P5-A3 owns tile-sample,
+    change-metric, and comparison-resource producer correctness. Those runtime
+    producer tests are not P5-A1 acceptance criteria.
 12. Problem messages retain predecessor wire behavior without a claimed length
     bound, while terminal tests independently prove the v4 rendering bounds.
 13. Ruff format/check, strict mypy, the complete pytest suite, build and
@@ -1007,16 +1121,24 @@ gate commit and must prove the complete mechanical criteria above.
 
 ## Relationship to later gates
 
-P5-A2 remains the first optional-backend and decode gate. P5-A3 remains the
-first comparator, capability-registration, terminal command, and executable
-image result gate. Their dispatches are independent. This amendment does not
-alter the P5-C/P5-P/P5-F/P5-M/P5-H/P5-S callbacks or authorize any of them.
+P5-A2 remains the first optional-backend and decode gate. It owns actual source
+snapshots, generated scanner vectors and malformed twins, support-profile
+priority selection, decoded facts, and the corresponding producer evidence.
+P5-A3 remains the first comparator, capability-registration, terminal command,
+and executable image-result gate. It owns actual sample/tile comparison,
+change/metric/resource producer evidence, and registration of the sole built-in
+comparator/capability ID `image`. Their dispatches are independent; neither is
+a hidden P5-A1 acceptance gate. This amendment does not alter the
+P5-C/P5-P/P5-F/P5-M/P5-H/P5-S callbacks or authorize any of them.
 
-If accepted, this RFC supersedes only RFC 0007's open choices about P5-A1 enum
-representation, transformation JSON shape, schema-only fixture identity,
-schema-v4 problem gating and signature classification, terminal projection,
-and downgrade mechanics. All other I1-I16 decisions and RFC 0007 semantics
-remain authoritative.
+If accepted, this RFC supersedes RFC 0007's built-in comparator identity
+globally: `image` replaces `image.decoded_samples` in schema fixtures, attempts,
+provenance, migrations, and every future runtime gate, while
+`image.decoded_samples.tiles.v1` remains the algorithm ID. It also supersedes
+RFC 0007's open choices about P5-A1 enum representation, transformation JSON
+shape, schema-only fixture identity, schema-v4 problem gating and signature
+classification, terminal projection, and downgrade mechanics. All other
+I1-I16 decisions and RFC 0007 semantics remain authoritative.
 
 ## References
 
