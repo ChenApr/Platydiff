@@ -234,9 +234,9 @@ It selects Option A/P4-C1 as a Phase 4 correction gate before any schema-v4,
 schema-v5, or schema-v6 implementation treats v3 as a stable predecessor.
 RFC 0010 acceptance itself does not start code. Conditional human authorization
 has been recorded, and coordinator dispatch may occur only after RFC 0010
-merges and the stated merge gates pass. RFC 0010 also tracks proposed
-P4C1-1-P4C1-5 reader and fixture clarifications; they are not approved, and
-P4-C1 remains blocked until they are accepted or replaced.
+merges and the stated merge gates pass. RFC 0010 also accepts P4C1-1-P4C1-5
+reader and fixture clarifications, approved on 2026-09-10. P4-C1 still waits
+for RFC 0010 to merge and for coordinator dispatch.
 
 Syntactic equality does not imply runtime semantic equality. AST comparison must state its parser version, error-recovery behavior, and macro or preprocessing boundaries.
 

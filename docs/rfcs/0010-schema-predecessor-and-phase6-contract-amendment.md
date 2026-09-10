@@ -6,13 +6,12 @@
 - Date: 2026-09-10
 - Accepted: 2026-09-10
 - Approved decisions: SP1-SP6; Option A/P4-C1; P6C0-1-P6C0-10
-- Open P4-C1 clarifications: P4C1-1-P4C1-5 proposed only; not approved
+- Approved P4-C1 clarifications: P4C1-1-P4C1-5
+- P4-C1 clarification approval date: 2026-09-10
 - Owners: Platydiff maintainers
 - Implementation dispatch: conditional human authorization recorded; coordinator
   dispatch only after RFC 0010 merges and the stated merge and clarification
   gates pass
-- Merge status: the accepted decisions above remain unchanged, but this PR must
-  not merge while P4C1-1-P4C1-5 remain unapproved or unresolved
 
 ## Summary and authorization boundary
 
@@ -28,21 +27,19 @@ audio, video, SDK v2, backend workers, artifacts, automatic detection, or UI
 work.
 
 A P4-C1 pre-implementation read-only check found additional schema-v3 reader and
-fixture ambiguities. The proposed clarifications P4C1-1 through P4C1-5 below
-are not approved decisions and do not alter SP1-SP6, Option A/P4-C1, or
-P6C0-1 through P6C0-10. P4-C1 remains blocked until these clarifications are
-accepted or replaced by an accepted alternative. No code starts from this
-clarification proposal.
+fixture ambiguities. The clarifications P4C1-1 through P4C1-5 below were
+approved on 2026-09-10. They supplement but do not alter SP1-SP6,
+Option A/P4-C1, or P6C0-1 through P6C0-10. No code starts from this
+clarification approval.
 
 The accepted decision is to treat the missing YAML, table, and array
 schema-v3 contract surface on `main` as a Phase 4 code defect, not as proof that
 the accepted RFC 0006 contract was wrong. A correction gate must land before
 schema v4 image, schema v5 source/PDF, schema v6 audio, or any later video
-successor can use v3 as a stable predecessor. P4-C1 code remains blocked while
-P4C1-1 through P4C1-5 are unresolved, and may start only after this RFC is
-merged to `main`, the clarifications are accepted or replaced, and the
-coordinator dispatches it. P5-A1, P6-C0, P7-A1, and later video schema work
-remain conditional on the actual predecessor merges and compatibility fixtures.
+successor can use v3 as a stable predecessor. P4-C1 code may start only after
+this RFC is merged to `main` and the coordinator dispatches it. P5-A1, P6-C0,
+P7-A1, and later video schema work remain conditional on the actual predecessor
+merges and compatibility fixtures.
 
 ## Evidence
 
@@ -155,10 +152,10 @@ unknown-kind rejection, and public-export checks pass. P5-A1, P6-C0, P7-A1, and
 later video schema gates must wait for P4-C1 or for an accepted alternative in
 this RFC.
 
-## Proposed P4-C1 pre-implementation clarifications
+## Accepted P4-C1 pre-implementation clarifications
 
-These P4C1 IDs are proposed only. They are not approved, and P4-C1 remains
-blocked until a human explicitly accepts these decisions or replaces them.
+These P4C1 IDs were approved on 2026-09-10. They clarify P4-C1's schema-v3
+reader and fixture contract without starting implementation.
 
 ### P4C1-1: table encoding field
 
@@ -590,8 +587,7 @@ Human reviewers accepted:
 
 RFC acceptance itself does not start code. Conditional human authorization has
 been recorded; coordinator dispatch may occur only after the stated merge
-gates. P4-C1 implementation remains blocked while P4C1-1 through P4C1-5 are
-unresolved, and then requires coordinator dispatch after this RFC is merged.
-P5-A1, P6-C0, P7-A1, and later video schema implementation remain blocked until
-their actual predecessor merges and compatibility fixtures are present on
-`main`.
+gates. P4-C1 implementation still requires coordinator dispatch after this RFC
+is merged. P5-A1, P6-C0, P7-A1, and later video schema implementation remain
+blocked until their actual predecessor merges and compatibility fixtures are
+present on `main`.

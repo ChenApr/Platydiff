@@ -6,12 +6,11 @@
 - Date: 2026-09-10
 - Accepted: 2026-09-10
 - Approved decisions: SP1-SP6; Option A/P4-C1; P6C0-1-P6C0-10
-- Open P4-C1 clarifications：P4C1-1-P4C1-5 仅为提案；尚未批准
+- Approved P4-C1 clarifications：P4C1-1-P4C1-5
+- P4-C1 clarification approval date：2026-09-10
 - Owners: Platydiff 维护者
 - Implementation dispatch：已记录条件人工授权；只有在 RFC 0010 合并且指定 merge 与
   clarification gate 通过后，coordinator 才能派发
-- Merge status：上方已接受决策保持不变，但 P4C1-1-P4C1-5 未获批准或替代解决前，本 PR
-  不可合并
 
 ## 摘要与授权边界
 
@@ -23,17 +22,15 @@ P6C0-1 到 P6C0-10 作为 Phase 6 contract decision。RFC acceptance 本身不�
 video、SDK v2、backend worker、artifact、automatic detection 或 UI 实现。
 
 一次 P4-C1 pre-implementation 只读检查发现了额外的 schema-v3 reader 与 fixture 歧义。
-下方 P4C1-1 到 P4C1-5 只是提案，不是已批准决策，也不修改 SP1-SP6、Option A/P4-C1 或
-P6C0-1 到 P6C0-10。P4-C1 在这些 clarification 被接受或被已接受替代方案取代前仍然
-blocked。本 clarification proposal 不启动任何代码。
+下方 P4C1-1 到 P4C1-5 已于 2026-09-10 获批。它们补充但不修改 SP1-SP6、
+Option A/P4-C1 或 P6C0-1 到 P6C0-10。本 clarification approval 不启动任何代码。
 
 已接受决策是：将 `main` 上缺失的 YAML、table、array schema-v3 contract surface 视为
 Phase 4 代码缺陷，而不是把它当作 RFC 0006 已接受契约错误的证据。必须先落地一个
 correction gate，然后 schema v4 image、schema v5 source/PDF、schema v6 audio 或后续
-video successor 才能把 v3 当作稳定前驱。P4-C1 code 在 P4C1-1 到 P4C1-5 未解决期间仍
-blocked；只有在本 RFC 合并到 `main`、clarification 获批或被替代、且 coordinator 派发后
-才能启动。P5-A1、P6-C0、P7-A1 与后续 video schema work 仍取决于实际 predecessor merge
-与 compatibility fixture。
+video successor 才能把 v3 当作稳定前驱。P4-C1 code 只有在本 RFC 合并到 `main` 且
+coordinator 派发后才能启动。P5-A1、P6-C0、P7-A1 与后续 video schema work 仍取决于实际
+predecessor merge 与 compatibility fixture。
 
 ## 证据
 
@@ -127,10 +124,10 @@ strict type checking、完整测试、schema-v1/v2/v3 compatibility fixture、un
 与 public-export check 全部通过。P5-A1、P6-C0、P7-A1 与后续 video schema gate 必须等待
 P4-C1，或者等待本 RFC 中另一个方案被接受。
 
-## Proposed P4-C1 pre-implementation clarifications
+## Accepted P4-C1 pre-implementation clarifications
 
-这些 P4C1 ID 仅为提案。它们尚未获批；P4-C1 必须等人工明确接受这些 decision 或用已接受
-替代方案取代后才解除 blocked。
+这些 P4C1 ID 已于 2026-09-10 获批。它们只澄清 P4-C1 的 schema-v3 reader 与 fixture
+contract，不启动 implementation。
 
 ### P4C1-1：table encoding field
 
@@ -506,6 +503,6 @@ Option B 与 C 未被选择。如果后续 RFC supersede Option A，其 migratio
 5. P6C0-1 到 P6C0-10 已作为 P6-C0 implementation 前的 contract decision 接受。
 
 RFC acceptance 本身不启动代码。已记录条件人工授权；coordinator 只有在指定 merge gate 之后
-才能派发。P4-C1 implementation 在 P4C1-1 到 P4C1-5 未解决期间仍 blocked；之后仍需要在
-本 RFC 合并后由 coordinator 派发。P5-A1、P6-C0、P7-A1 与后续 video schema implementation
-仍被阻塞，直到其实际 predecessor merge 与 compatibility fixture 已存在于 `main`。
+才能派发。P4-C1 implementation 在本 RFC 合并后仍需要由 coordinator 派发。P5-A1、P6-C0、
+P7-A1 与后续 video schema implementation 仍被阻塞，直到其实际 predecessor merge 与
+compatibility fixture 已存在于 `main`。

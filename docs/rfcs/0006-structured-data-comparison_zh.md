@@ -11,8 +11,8 @@
 - Implementation：P4-A1 已实现；P4-A2、P4-B1 与 P4-B2 仍设门禁
 - Amendment：RFC 0010 接受 Option A/P4-C1，作为缺失 schema-v3 YAML/table/array
   public contract surface 的必需 pre-release correction
-- Open clarification：RFC 0010 提出尚未批准的 P4C1-1-P4C1-5 reader 与 fixture
-  clarification；P4-C1 在其获批或被替代前仍 blocked
+- Approved clarification：RFC 0010 接受 P4C1-1-P4C1-5，作为 P4-C1 reader 与 fixture
+  clarification
 
 ## 摘要与授权边界
 
