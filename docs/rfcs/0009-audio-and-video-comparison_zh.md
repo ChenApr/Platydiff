@@ -4,6 +4,8 @@
 
 - Status: Accepted
 - Date: 2026-09-10
+- Accepted: 2026-09-10
+- 已批准决策：P7X1-P7X8、A1-A7；V1-V6 仅为路线方向
 - Owners: Platydiff 维护者
 - Implementation owner: 尚未指派，等待单独的实现授权
 

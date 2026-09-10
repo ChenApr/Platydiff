@@ -4,6 +4,8 @@
 
 - Status: Accepted
 - Date: 2026-09-10
+- Accepted: 2026-09-10
+- Approved decisions: P7X1-P7X8, A1-A7; V1-V6 roadmap-only
 - Owners: Platydiff maintainers
 - Implementation owner: unassigned pending separate implementation authorization
 
