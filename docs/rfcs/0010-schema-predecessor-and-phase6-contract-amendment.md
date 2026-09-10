@@ -7,18 +7,21 @@
 - Accepted: 2026-09-10
 - Approved decisions: SP1-SP6; Option A/P4-C1; P6C0-1-P6C0-10
 - Owners: Platydiff maintainers
-- Implementation owner: unassigned pending human approval
+- Implementation dispatch: conditional human authorization recorded; coordinator
+  dispatch only after RFC 0010 merges and the stated merge gates pass
 
 ## Summary and authorization boundary
 
 This RFC is the accepted cross-RFC amendment for a schema predecessor
 contradiction found before Phase 5, Phase 6, or Phase 7 schema implementation
 starts. It accepts decisions SP1-SP6, selects Option A/P4-C1, and accepts
-P6C0-1 through P6C0-10 as Phase 6 contract decisions. It authorizes this
-documentation acceptance PR only. It does not authorize code, dependency
-changes, public schema implementation, or implementation of structured data,
-image, source-code, PDF, audio, video, SDK v2, backend workers, artifacts,
-automatic detection, or UI work.
+P6C0-1 through P6C0-10 as Phase 6 contract decisions. RFC acceptance itself
+does not start code. Conditional human authorization has been recorded, and
+coordinator dispatch may occur only after the stated merge gates. This
+documentation acceptance PR does not authorize dependency changes, public schema
+implementation, or implementation of structured data, image, source-code, PDF,
+audio, video, SDK v2, backend workers, artifacts, automatic detection, or UI
+work.
 
 The accepted decision is to treat the missing YAML, table, and array
 schema-v3 contract surface on `main` as a Phase 4 code defect, not as proof that
@@ -406,7 +409,9 @@ Human reviewers accepted:
 5. P6C0-1 through P6C0-10 are accepted contract decisions before P6-C0
    implementation starts.
 
-This accepted RFC still does not authorize code. P4-C1 implementation requires
-a separate dispatch after this RFC is merged. P5-A1, P6-C0, P7-A1, and later
-video schema implementation remain blocked until their actual predecessor
-merges and compatibility fixtures are present on `main`.
+RFC acceptance itself does not start code. Conditional human authorization has
+been recorded; coordinator dispatch may occur only after the stated merge
+gates. P4-C1 implementation requires a separate dispatch after this RFC is
+merged. P5-A1, P6-C0, P7-A1, and later video schema implementation remain
+blocked until their actual predecessor merges and compatibility fixtures are
+present on `main`.

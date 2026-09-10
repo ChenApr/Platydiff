@@ -232,8 +232,9 @@ Accepted amendment that resolves the mismatch between the accepted RFC 0006
 schema-v3 closed union and the JSON-only schema-v3 surface currently on `main`.
 It selects Option A/P4-C1 as a Phase 4 correction gate before any schema-v4,
 schema-v5, or schema-v6 implementation treats v3 as a stable predecessor.
-RFC 0010 authorizes documentation only; P4-C1 code still requires separate
-dispatch after RFC 0010 merges.
+RFC 0010 acceptance itself does not start code. Conditional human authorization
+has been recorded, and coordinator dispatch may occur only after RFC 0010
+merges and the stated merge gates pass.
 
 Syntactic equality does not imply runtime semantic equality. AST comparison must state its parser version, error-recovery behavior, and macro or preprocessing boundaries.
 

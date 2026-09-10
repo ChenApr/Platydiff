@@ -7,15 +7,17 @@
 - Accepted: 2026-09-10
 - Approved decisions: SP1-SP6; Option A/P4-C1; P6C0-1-P6C0-10
 - Owners: Platydiff 维护者
-- Implementation owner: 尚未指派，等待人工批准
+- Implementation dispatch：已记录条件人工授权；只有在 RFC 0010 合并且指定 merge gate
+  通过后，coordinator 才能派发
 
 ## 摘要与授权边界
 
 本 RFC 是已接受的 cross-RFC amendment，用于处理在 Phase 5、Phase 6 或 Phase 7 schema
 实现开始前发现的 schema 前驱矛盾。它接受 SP1-SP6，选择 Option A/P4-C1，并接受
-P6C0-1 到 P6C0-10 作为 Phase 6 contract decision。它只授权本文档接受 PR，不授权代码、
-依赖变更、public schema implementation，也不启动 structured data、image、source-code、PDF、
-audio、video、SDK v2、backend worker、artifact、automatic detection 或 UI 实现。
+P6C0-1 到 P6C0-10 作为 Phase 6 contract decision。RFC acceptance 本身不启动代码。已记录
+条件人工授权，coordinator 只有在指定 merge gate 之后才能派发。本文档接受 PR 不授权依赖
+变更、public schema implementation，也不启动 structured data、image、source-code、PDF、audio、
+video、SDK v2、backend worker、artifact、automatic detection 或 UI 实现。
 
 已接受决策是：将 `main` 上缺失的 YAML、table、array schema-v3 contract surface 视为
 Phase 4 代码缺陷，而不是把它当作 RFC 0006 已接受契约错误的证据。必须先落地一个
@@ -354,6 +356,7 @@ Option B 与 C 未被选择。如果后续 RFC supersede Option A，其 migratio
 4. v4 image、v5 source/PDF、v6 audio 与后续 video successor 的全局 allocation 仍正确。
 5. P6C0-1 到 P6C0-10 已作为 P6-C0 implementation 前的 contract decision 接受。
 
-本已接受 RFC 仍不授权代码。P4-C1 implementation 需要在本 RFC 合并后单独派发。P5-A1、
-P6-C0、P7-A1 与后续 video schema implementation 仍被阻塞，直到其实际 predecessor merge 与
-compatibility fixture 已存在于 `main`。
+RFC acceptance 本身不启动代码。已记录条件人工授权；coordinator 只有在指定 merge gate 之后
+才能派发。P4-C1 implementation 需要在本 RFC 合并后单独派发。P5-A1、P6-C0、P7-A1 与后续
+video schema implementation 仍被阻塞，直到其实际 predecessor merge 与 compatibility fixture
+已存在于 `main`。
