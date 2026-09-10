@@ -158,47 +158,54 @@ These shapes are part of the Proposed amendment. They are intentionally exact
 enough for a later P6-C0 implementation review, but they remain unauthorized
 until this RFC or a successor is Accepted.
 
-Source lexical changes use discriminator `kind="source_lexical_text_hunk"` and
-the stable field order below:
+Source lexical changes use the existing schema-v5 closed-union member
+`kind="source_code_change"` with lexical discriminator
+`change_variant="lexical_text"`. This does not add a new built-in change kind.
+The stable field order is:
 
 ```text
 kind
-source_id
+change_variant
 language
 relation
 coordinate_encoding
+column_unit
 before_range
 after_range
-text
+lexical_text
 payload_digest
 ```
 
-`source_id` is a safe source label from the snapshot layer. `language` is the
-explicit spec language. `relation` is `lexical_text`. `coordinate_encoding` is
-`utf-8`. `before_range` and `after_range` are nullable range objects with
-`start_byte`, `end_byte`, `start_line`, `start_column`, `end_line`, and
-`end_column`. Byte offsets are zero-based half-open offsets in the decoded byte
-sequence. Lines are one-based. Columns are one-based Unicode scalar value
-columns unless `column_unit="utf8_byte"` is explicitly present. `text` contains
-the RFC 0002 hunk payload fields `before_lines`, `after_lines`, and
-`line_ending`, not raw source bytes.
+`language` is the explicit spec language. `relation` is `lexical_text`.
+`coordinate_encoding` is `utf-8`. `column_unit` is exactly `unicode_scalar` or
+`utf8_byte`; the default serialized value is `unicode_scalar`. `before_range`
+and `after_range` are nullable range objects with `start_byte`, `end_byte`,
+`start_line`, `start_column`, `end_line`, `end_column`, and `column_unit`.
+Byte offsets are zero-based half-open offsets in the decoded byte sequence.
+Lines are one-based. Columns use the range object's `column_unit`.
+`lexical_text` is either null or an object with `before_lines`, `after_lines`,
+and `line_ending`. In `detail_mode="facts"`, these line arrays may contain only
+bounded UTF-8 text already permitted by the source fact limit. In
+`detail_mode="digest_only"`, `lexical_text` is null and only coordinates,
+counts, discriminators, and digests remain.
 
-PDF binary changes use discriminator `kind="pdf_binary_span"` and stable field
-order:
+PDF binary changes use the existing schema-v5 closed-union member
+`kind="pdf_change"` with `view="binary"` and
+`binary_variant="byte_range"`. The stable field order is:
 
 ```text
 kind
 view
-document_id
+binary_variant
 ranges
 payload_digest
 ```
 
-`view` is exactly `binary`. `document_id` is `before`, `after`, or `both` when
-the span maps to both sides. Each range has `side`, `start_byte`, and
-`end_byte`; byte offsets are zero-based half-open offsets over original PDF
-bytes before parsing, decryption, repair, or decompression. This is distinct
-from generic `BinarySpan` even when the same byte ranges are reported.
+`view` is exactly `binary`. Each range has `side`, `start_byte`, and
+`end_byte`; `side` is `before` or `after`. Byte offsets are zero-based
+half-open offsets over original PDF bytes before parsing, decryption, repair,
+or decompression. This is distinct from generic `BinarySpan` even when the same
+byte ranges are reported.
 
 Coordinate grammars are:
 
@@ -219,28 +226,33 @@ after present coordinates.
 
 ### Digest framing and vectors
 
-Schema-v5 digest framing is:
+Schema-v5 preserves RFC 0008's accepted evidence-digest framing. Changing this
+frame is a separate human decision and is not recommended by this proposal.
+The frame is:
 
 ```text
-sha256(
-  b"platydiff\0schema-v5\0"
-  + ascii_domain
-  + b"\0"
-  + canonical_json_bytes
-)
+SHA256(UTF8("platydiff/v5/" + domain) || 0x00 || U64BE(payload_length) || payload)
 ```
 
-`canonical_json_bytes` are UTF-8 JSON bytes with sorted object keys, no
-insignificant whitespace, and checked integer formatting. The normative empty
-object vectors are:
+`payload` is a tagged byte sequence:
 
-| Domain | Framed bytes shown with `\0` escapes | SHA-256 |
+```text
+U64BE(field_count)
+for each field in stable field order:
+  U64BE(tag_length) || UTF8(tag) || U64BE(value_length) || value_bytes
+```
+
+`value_bytes` for strings are strict UTF-8. `value_bytes` for integers are the
+shortest unsigned base-10 ASCII representation. Booleans are `true` or `false`.
+Null is a zero-length value with tag suffix `?null`, so null and empty string do
+not share an encoding. The normative non-empty vectors are:
+
+| Domain | Tagged fields | Payload hex | SHA-256 |
 | --- | --- | --- |
-| `source.fact` | `platydiff\0schema-v5\0source.fact\0{}` | `1883c8b8971db03c909ca8c27569afe787ccf17a11cf1e1c1e9d22b5c0e57c4a` |
-| `source.change_payload` | `platydiff\0schema-v5\0source.change_payload\0{}` | `40b2ec6b43958055c88ef2be025bef108bc8ba233cd2035d42135970dd94ebfa` |
-| `pdf.fact` | `platydiff\0schema-v5\0pdf.fact\0{}` | `9089cd53f93ba5548178bfd7cc85cd568392498f1a6ce22bd33353335855134d` |
-| `pdf.rendered_page.fact` | `platydiff\0schema-v5\0pdf.rendered_page.fact\0{}` | `ad3d89a46b566d702239423b52d6f8de0bdcb33e8de56e0a79abca17b1c0db79` |
-| `pdf.change_payload` | `platydiff\0schema-v5\0pdf.change_payload\0{}` | `07b1d508a7ec6dd7c4f1dde06ae52322d4c9298ffadd9bff8113cc78d0fc9bb9` |
+| `source/decoded_text_line` | `language=python`, `line=1`, `terminator=lf`, `text=pass` | `000000000000000400000000000000086c616e67756167650000000000000006707974686f6e00000000000000046c696e65000000000000000131000000000000000a7465726d696e61746f7200000000000000026c66000000000000000474657874000000000000000470617373` | `e700a16bc1f2b8703cbaaae345390c507d031261c13ccf31ece00cbac9e11b6e` |
+| `source/change_payload` | `kind=source_code_change`, `range_variant=lexical_text`, `before_start_byte=0`, `before_end_byte=4` | `000000000000000400000000000000046b696e640000000000000012736f757263655f636f64655f6368616e6765000000000000000d72616e67655f76617269616e74000000000000000c6c65786963616c5f7465787400000000000000116265666f72655f73746172745f62797465000000000000000130000000000000000f6265666f72655f656e645f62797465000000000000000134` | `07127b46e29dd63562d20877c7d3d52872b2a943a209ad71436a937f5bfaac3d` |
+| `pdf/binary/span` | `kind=pdf_change`, `view=binary`, `span_variant=byte_range`, `side=before`, `start_byte=0`, `end_byte=4` | `000000000000000600000000000000046b696e64000000000000000a7064665f6368616e6765000000000000000476696577000000000000000662696e617279000000000000000c7370616e5f76617269616e74000000000000000a627974655f72616e676500000000000000047369646500000000000000066265666f7265000000000000000a73746172745f627974650000000000000001300000000000000008656e645f62797465000000000000000134` | `a95731a041d328d0d9f350ac4c9a45b49761e96103efa7b2fdf544f3411b91f9` |
+| `pdf/render/page` | `page=1`, `width_px=2`, `height_px=2`, `dpi=72`, `colorspace=srgb` | `0000000000000005000000000000000470616765000000000000000131000000000000000877696474685f707800000000000000013200000000000000096865696768745f7078000000000000000132000000000000000364706900000000000000023732000000000000000a636f6c6f727370616365000000000000000473726762` | `b9f9fef8b2493372b76f5ae8abf4166aae2a37e9ec8f3134a6b19c838ff1e81f` |
 
 ### Stable IDs and counters
 
@@ -256,6 +268,10 @@ P6-C0 reserves these stable lowercase ASCII IDs:
 - metric IDs: `source.changed_hunks`, `source.changed_ranges`,
   `pdf.binary_changed_spans`, `pdf.text_changed_runs`,
   `pdf.object_changed_records`, `pdf.render_changed_pixels`;
+- algorithm IDs: `source.lexical_line_myers.v1`,
+  `source.syntax_tree_exact_digest.v1`, `pdf.binary_byte_scan.v1`,
+  `pdf.text_run_sequence_lcs.v1`, `pdf.object_key_ordered_match.v1`,
+  `pdf.raster_exact_pixel.v1`, `sha256_tagged_payload.v1`;
 - summary keys: `changed_items`, `added_items`, `removed_items`,
   `modified_items`, `moved_items`, `truncated`, `selected_views`;
 - resource counters: `input_bytes`, `fact_text_bytes`, `fact_value_bytes`,
@@ -274,17 +290,24 @@ code. P6-C0 reserves:
 | Registry ID | Serialized status/code | Stage | Detail keys |
 | --- | --- | --- | --- |
 | `schema-v5/pdf_encrypted` | `failed/pdf_encrypted` | `decoding` | `input_side`, `view`, `encryption_detected=true` |
-| `schema-v5/pdf_worker_timeout` | `failed/pdf_worker_timeout` | observed worker stage | `view`, `limit`, `elapsed_seconds` |
-| `schema-v5/pdf_worker_resource_exhausted` | `failed/pdf_worker_resource_exhausted` | observed worker stage | `view`, `resource`, `limit`, `actual` |
-| `schema-v5/pdf_worker_crash` | `failed/pdf_worker_crash` | observed worker stage | `view`, `exit_status` |
-| `schema-v5/pdf_worker_protocol_violation` | `failed/pdf_worker_protocol_violation` | `decoding` or `rendering` | `view`, `message_kind` |
-| `schema-v5/pdf_worker_invalid_output` | `failed/pdf_worker_invalid_output` | `decoding` or `rendering` | `view`, `field` |
-| `schema-v5/source_coordinate_invalid` | `failed/source_coordinate_invalid` | `serializing` | `field`, `reason` |
-| `schema-v5/pdf_coordinate_invalid` | `failed/pdf_coordinate_invalid` | `serializing` | `field`, `reason` |
+| `schema-v5/pdf_worker_timeout` | `failed/pdf_worker_timeout` | `decoding` | `view`, `limit_seconds`, `elapsed_seconds` |
+| `schema-v5/pdf_worker_resource_exhausted` | `failed/pdf_worker_resource_exhausted` | `decoding` | `view`, `resource`, `limit`, `actual` |
+| `schema-v5/pdf_worker_crash` | `failed/pdf_worker_crash` | `decoding` | `view`, `exit_status` |
+| `schema-v5/pdf_worker_protocol_violation` | `failed/pdf_worker_protocol_violation` | `decoding` | `view`, `message_kind` |
+| `schema-v5/pdf_worker_invalid_output` | `failed/pdf_worker_invalid_output` | `decoding` | `view`, `field` |
 
 `pdf_encrypted` is not used for pure binary view. Any selected nonbinary view on
 either encrypted input fails the whole all-or-nothing PDF invocation with no
 `DiffResult` and no fallback to binary.
+
+Problem detail value types are closed: `input_side` is `before` or `after`;
+`view` is one of the canonical PDF view names; `encryption_detected` is boolean
+`true`; `limit_seconds`, `elapsed_seconds`, `limit`, and `actual` are
+non-negative JSON numbers; `resource`, `message_kind`, and `field` are stable
+lowercase ASCII identifiers; `exit_status` is a signed integer or null when the
+process was terminated without an exit status. Invalid wire coordinates,
+unknown problem registry IDs, and malformed tagged payloads raise
+`SerializationError`; they do not fabricate runtime failed outcomes.
 
 ### Fact presence and ordering
 

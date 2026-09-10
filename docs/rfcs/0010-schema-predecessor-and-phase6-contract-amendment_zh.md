@@ -134,42 +134,49 @@ P4-C1，或者等待本 RFC 中另一个方案被接受。
 这些 shape 属于 Proposed amendment。它们刻意具体到足以支持后续 P6-C0 implementation review，
 但在本 RFC 或后继 RFC 被 Accepted 前仍未授权。
 
-Source lexical change 使用 discriminator `kind="source_lexical_text_hunk"`，稳定 field order 为：
+Source lexical change 使用既有 schema-v5 closed-union member
+`kind="source_code_change"`，并使用 lexical discriminator
+`change_variant="lexical_text"`。这不会增加新的 built-in change kind。稳定 field order 为：
 
 ```text
 kind
-source_id
+change_variant
 language
 relation
 coordinate_encoding
+column_unit
 before_range
 after_range
-text
+lexical_text
 payload_digest
 ```
 
-`source_id` 是 snapshot 层提供的安全 source label。`language` 是显式 spec language。
-`relation` 是 `lexical_text`。`coordinate_encoding` 是 `utf-8`。`before_range` 与
-`after_range` 是 nullable range object，字段为 `start_byte`、`end_byte`、`start_line`、
-`start_column`、`end_line`、`end_column`。Byte offset 是 decoded byte sequence 中的
-zero-based half-open offset。Line 是 one-based。Column 默认是 one-based Unicode scalar value
-column，除非显式出现 `column_unit="utf8_byte"`。`text` 包含 RFC 0002 hunk payload field：
-`before_lines`、`after_lines`、`line_ending`，不包含 raw source byte。
+`language` 是显式 spec language。`relation` 是 `lexical_text`。`coordinate_encoding` 是
+`utf-8`。`column_unit` 只能是 `unicode_scalar` 或 `utf8_byte`；默认序列化值是
+`unicode_scalar`。`before_range` 与 `after_range` 是 nullable range object，字段为
+`start_byte`、`end_byte`、`start_line`、`start_column`、`end_line`、`end_column`、
+`column_unit`。Byte offset 是 decoded byte sequence 中的 zero-based half-open offset。
+Line 是 one-based。Column 使用 range object 的 `column_unit`。`lexical_text` 要么是 null，
+要么是包含 `before_lines`、`after_lines`、`line_ending` 的 object。在
+`detail_mode="facts"` 下，这些 line array 只能包含 source fact limit 允许的有界 UTF-8 text。
+在 `detail_mode="digest_only"` 下，`lexical_text` 为 null，只保留 coordinate、count、
+discriminator 与 digest。
 
-PDF binary change 使用 discriminator `kind="pdf_binary_span"`，稳定 field order 为：
+PDF binary change 使用既有 schema-v5 closed-union member `kind="pdf_change"`，并使用
+`view="binary"` 与 `binary_variant="byte_range"`。稳定 field order 为：
 
 ```text
 kind
 view
-document_id
+binary_variant
 ranges
 payload_digest
 ```
 
-`view` 必须是 `binary`。`document_id` 是 `before`、`after`，或当 span 映射到双方时为
-`both`。每个 range 有 `side`、`start_byte`、`end_byte`；byte offset 是 original PDF bytes
-上的 zero-based half-open offset，位于 parsing、decryption、repair 或 decompression 之前。
-即使报告相同 byte range，它也不同于 generic `BinarySpan`。
+`view` 必须是 `binary`。每个 range 有 `side`、`start_byte`、`end_byte`；`side` 是
+`before` 或 `after`。Byte offset 是 original PDF bytes 上的 zero-based half-open offset，
+位于 parsing、decryption、repair 或 decompression 之前。即使报告相同 byte range，它也不同于
+generic `BinarySpan`。
 
 Coordinate grammar 为：
 
@@ -189,27 +196,31 @@ Canonical view ordering 是 `binary`、`extracted_text`、`objects_metadata`、`
 
 ### Digest framing 与 vector
 
-Schema-v5 digest framing 为：
+Schema-v5 保留 RFC 0008 已接受的 evidence-digest framing。改变该 frame 是单独的人工决策，
+且本提案不推荐。Frame 为：
 
 ```text
-sha256(
-  b"platydiff\0schema-v5\0"
-  + ascii_domain
-  + b"\0"
-  + canonical_json_bytes
-)
+SHA256(UTF8("platydiff/v5/" + domain) || 0x00 || U64BE(payload_length) || payload)
 ```
 
-`canonical_json_bytes` 是 UTF-8 JSON bytes，object key 排序、无无意义空白，并使用 checked
-integer formatting。Normative empty object vector 为：
+`payload` 是 tagged byte sequence：
 
-| Domain | 使用 `\0` escape 展示的 framed bytes | SHA-256 |
+```text
+U64BE(field_count)
+for each field in stable field order:
+  U64BE(tag_length) || UTF8(tag) || U64BE(value_length) || value_bytes
+```
+
+String 的 `value_bytes` 是 strict UTF-8。Integer 的 `value_bytes` 是最短 unsigned base-10
+ASCII 表示。Boolean 为 `true` 或 `false`。Null 是 tag suffix `?null` 加 zero-length value，
+因此 null 与 empty string 不共享编码。Normative non-empty vector 为：
+
+| Domain | Tagged fields | Payload hex | SHA-256 |
 | --- | --- | --- |
-| `source.fact` | `platydiff\0schema-v5\0source.fact\0{}` | `1883c8b8971db03c909ca8c27569afe787ccf17a11cf1e1c1e9d22b5c0e57c4a` |
-| `source.change_payload` | `platydiff\0schema-v5\0source.change_payload\0{}` | `40b2ec6b43958055c88ef2be025bef108bc8ba233cd2035d42135970dd94ebfa` |
-| `pdf.fact` | `platydiff\0schema-v5\0pdf.fact\0{}` | `9089cd53f93ba5548178bfd7cc85cd568392498f1a6ce22bd33353335855134d` |
-| `pdf.rendered_page.fact` | `platydiff\0schema-v5\0pdf.rendered_page.fact\0{}` | `ad3d89a46b566d702239423b52d6f8de0bdcb33e8de56e0a79abca17b1c0db79` |
-| `pdf.change_payload` | `platydiff\0schema-v5\0pdf.change_payload\0{}` | `07b1d508a7ec6dd7c4f1dde06ae52322d4c9298ffadd9bff8113cc78d0fc9bb9` |
+| `source/decoded_text_line` | `language=python`, `line=1`, `terminator=lf`, `text=pass` | `000000000000000400000000000000086c616e67756167650000000000000006707974686f6e00000000000000046c696e65000000000000000131000000000000000a7465726d696e61746f7200000000000000026c66000000000000000474657874000000000000000470617373` | `e700a16bc1f2b8703cbaaae345390c507d031261c13ccf31ece00cbac9e11b6e` |
+| `source/change_payload` | `kind=source_code_change`, `range_variant=lexical_text`, `before_start_byte=0`, `before_end_byte=4` | `000000000000000400000000000000046b696e640000000000000012736f757263655f636f64655f6368616e6765000000000000000d72616e67655f76617269616e74000000000000000c6c65786963616c5f7465787400000000000000116265666f72655f73746172745f62797465000000000000000130000000000000000f6265666f72655f656e645f62797465000000000000000134` | `07127b46e29dd63562d20877c7d3d52872b2a943a209ad71436a937f5bfaac3d` |
+| `pdf/binary/span` | `kind=pdf_change`, `view=binary`, `span_variant=byte_range`, `side=before`, `start_byte=0`, `end_byte=4` | `000000000000000600000000000000046b696e64000000000000000a7064665f6368616e6765000000000000000476696577000000000000000662696e617279000000000000000c7370616e5f76617269616e74000000000000000a627974655f72616e676500000000000000047369646500000000000000066265666f7265000000000000000a73746172745f627974650000000000000001300000000000000008656e645f62797465000000000000000134` | `a95731a041d328d0d9f350ac4c9a45b49761e96103efa7b2fdf544f3411b91f9` |
+| `pdf/render/page` | `page=1`, `width_px=2`, `height_px=2`, `dpi=72`, `colorspace=srgb` | `0000000000000005000000000000000470616765000000000000000131000000000000000877696474685f707800000000000000013200000000000000096865696768745f7078000000000000000132000000000000000364706900000000000000023732000000000000000a636f6c6f727370616365000000000000000473726762` | `b9f9fef8b2493372b76f5ae8abf4166aae2a37e9ec8f3134a6b19c838ff1e81f` |
 
 ### Stable ID 与 counter
 
@@ -224,6 +235,10 @@ P6-C0 预留以下 stable lowercase ASCII ID：
 - metric ID：`source.changed_hunks`、`source.changed_ranges`、
   `pdf.binary_changed_spans`、`pdf.text_changed_runs`、
   `pdf.object_changed_records`、`pdf.render_changed_pixels`；
+- algorithm ID：`source.lexical_line_myers.v1`、
+  `source.syntax_tree_exact_digest.v1`、`pdf.binary_byte_scan.v1`、
+  `pdf.text_run_sequence_lcs.v1`、`pdf.object_key_ordered_match.v1`、
+  `pdf.raster_exact_pixel.v1`、`sha256_tagged_payload.v1`；
 - summary key：`changed_items`、`added_items`、`removed_items`、
   `modified_items`、`moved_items`、`truncated`、`selected_views`；
 - resource counter：`input_bytes`、`fact_text_bytes`、`fact_value_bytes`、
@@ -240,16 +255,21 @@ P6-C0 预留以下 stable lowercase ASCII ID：
 | Registry ID | Serialized status/code | Stage | Detail keys |
 | --- | --- | --- | --- |
 | `schema-v5/pdf_encrypted` | `failed/pdf_encrypted` | `decoding` | `input_side`, `view`, `encryption_detected=true` |
-| `schema-v5/pdf_worker_timeout` | `failed/pdf_worker_timeout` | observed worker stage | `view`, `limit`, `elapsed_seconds` |
-| `schema-v5/pdf_worker_resource_exhausted` | `failed/pdf_worker_resource_exhausted` | observed worker stage | `view`, `resource`, `limit`, `actual` |
-| `schema-v5/pdf_worker_crash` | `failed/pdf_worker_crash` | observed worker stage | `view`, `exit_status` |
-| `schema-v5/pdf_worker_protocol_violation` | `failed/pdf_worker_protocol_violation` | `decoding` or `rendering` | `view`, `message_kind` |
-| `schema-v5/pdf_worker_invalid_output` | `failed/pdf_worker_invalid_output` | `decoding` or `rendering` | `view`, `field` |
-| `schema-v5/source_coordinate_invalid` | `failed/source_coordinate_invalid` | `serializing` | `field`, `reason` |
-| `schema-v5/pdf_coordinate_invalid` | `failed/pdf_coordinate_invalid` | `serializing` | `field`, `reason` |
+| `schema-v5/pdf_worker_timeout` | `failed/pdf_worker_timeout` | `decoding` | `view`, `limit_seconds`, `elapsed_seconds` |
+| `schema-v5/pdf_worker_resource_exhausted` | `failed/pdf_worker_resource_exhausted` | `decoding` | `view`, `resource`, `limit`, `actual` |
+| `schema-v5/pdf_worker_crash` | `failed/pdf_worker_crash` | `decoding` | `view`, `exit_status` |
+| `schema-v5/pdf_worker_protocol_violation` | `failed/pdf_worker_protocol_violation` | `decoding` | `view`, `message_kind` |
+| `schema-v5/pdf_worker_invalid_output` | `failed/pdf_worker_invalid_output` | `decoding` | `view`, `field` |
 
 `pdf_encrypted` 不用于 pure binary view。任一 selected nonbinary view 遇到任一 encrypted input
 时，整个 all-or-nothing PDF invocation failed，不产生 `DiffResult`，也不 fallback 到 binary。
+
+Problem detail value type 是 closed：`input_side` 是 `before` 或 `after`；`view` 是 canonical PDF
+view name 之一；`encryption_detected` 是 boolean `true`；`limit_seconds`、`elapsed_seconds`、
+`limit`、`actual` 是 non-negative JSON number；`resource`、`message_kind`、`field` 是 stable
+lowercase ASCII identifier；`exit_status` 是 signed integer，或在 process 被终止且无 exit status
+时为 null。Invalid wire coordinate、unknown problem registry ID 与 malformed tagged payload
+都会 raise `SerializationError`；它们不制造 runtime failed outcome。
 
 ### Fact presence 与 ordering
 
