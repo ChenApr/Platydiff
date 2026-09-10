@@ -42,7 +42,7 @@ and authorization boundary above.
 | P7A-AM7 | Freeze duration and timebase binary64 determinism while preserving exact rational facts. | Allow platform-dependent float formatting or extended precision. |
 | P7A-AM8 | Freeze first-gate CLI flags and require SDK-v1 plugin audio flags to be rejected before plugin execution. | Let generic plugin or media flags reach SDK v1.1 hosts. |
 | P7A-AM9 | Freeze stable problem detail keys, value types, ordering, and omission rules for P7-A1 failures. | Pass through backend-specific detail dictionaries. |
-| P7A-AM10 | Keep the audio schema successor conditional on the pending global predecessor resolution for schema v3/v4/v5/v6 numbering. | Resolve cross-RFC closed-union numbering inside this audio-specific amendment. |
+| P7A-AM10 | Keep audio schema v6 conditional on approved RFC 0010 Option A/SP1-SP6 and the actual P4-C1 -> v4 -> v5 predecessor merges. | Resolve cross-RFC closed-union numbering inside this audio-specific amendment. |
 | P7A-W1 | Keep classic PCM `fmt ` chunk size 16 as the only P7-A1 decodable classic PCM form; valid size-18 chunks with `cbSize=0` are valid but unsupported. | Accept size-18 classic PCM as equivalent to size 16. |
 | P7A-W2 | Keep multiple `data` chunks valid but unsupported for P7-A1. | Concatenate multiple `data` chunks and add explicit chunk-boundary facts. |
 | P7A-W3 | For WAVE_FORMAT_EXTENSIBLE with `valid_bits < container_bits`, require profile-mandated unused padding bits to be zero, retain valid-bits and container-bits facts, and compare the validated stored integer representation exactly with no hidden masking; non-zero padding bits are malformed. | Mask unused bits before sample comparison. |
@@ -422,14 +422,15 @@ and arbitrary dictionaries must not enter problem details.
 
 ## Migration and compatibility impact
 
-If accepted, this amendment updates RFC 0009 before P7-A1 code starts. It does
-not change schema v1-v5 payloads, does not allocate video schema membership,
-does not independently choose the audio successor number, and does not
-authorize implementation. The eventual audio successor fixtures, using the
-number selected by the global predecessor resolution, must cover omitted
-defaults, explicit defaults, unknown-key rejection, encoded-byte changes,
-unsupported valid WAV profiles, corrupt WAV inputs, absent versus unknown facts,
-duration determinism, CLI rejection, and stable problem detail objects.
+This accepted amendment updates RFC 0009 before P7-A1 code starts. It does not
+change schema v1-v5 payloads, does not allocate video schema membership, does
+not independently choose the audio successor number, and does not authorize
+implementation. The eventual audio successor fixtures, using schema v6 only
+after RFC 0010 Option A/SP1-SP6 and the P4-C1 -> v4 -> v5 predecessors merge,
+must cover omitted defaults, explicit defaults, unknown-key rejection,
+encoded-byte changes, unsupported valid WAV profiles, corrupt WAV inputs,
+absent versus unknown facts, duration determinism, CLI rejection, and stable
+problem detail objects.
 
 ## Implementation test matrix
 
