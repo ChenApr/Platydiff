@@ -74,6 +74,40 @@ Equal decoded-sample comparison 的第一个 `media_evaluations` entry 为：
 Backend、profile 与 `stream.index` 记录在 provenance 和 selected spec field 中，不作为替代
 `MediaViewEvaluation` field。
 
+## Result-level audio facts carrier
+
+RFC 0012 在既有 completed-outcome hierarchy 内提出一个新的 schema-v6 audio fact carrier。它不替换
+`CompletedOutcome`、`DiffResult`、`MediaViewEvaluation` 或 `AudioFact`。
+
+Completed outcome hierarchy 保持：
+
+```text
+CompletedOutcomeV6.kind
+CompletedOutcomeV6.result
+DiffResult.relation
+DiffResult.verdict
+DiffResult.fidelity
+DiffResult.summary
+DiffResult.changes
+DiffResult.metrics
+DiffResult.evaluations
+DiffResult.artifacts
+DiffResult.provenance
+DiffResult.media_evaluations
+DiffResult.audio_facts
+```
+
+`DiffResult.audio_facts` 是 accepted `AudioFact` record 的 tuple，按以下顺序排序：
+
+```text
+stream_index, coordinate, name, unit, value
+```
+
+它只出现在 schema-v6 audio result 中。Predecessor upgrader 将其设为空 tuple。它在 result level
+携带 relation-significant audio fact，使 equal decoded-sample result 可以暴露 complete fact，而不
+发明 metadata update change。它不得包含 renderer-only label、backend stderr、host path、source
+filename 或 explanatory prose。
+
 Complete decoded-audio fact 保留 accepted `AudioFact` closed object。RFC 0012 不向
 `AudioFact` 增加 `source`、array 或 nested object。Key order 保持：
 
@@ -116,6 +150,22 @@ provenance 保留在 result provenance 中，不进入 `AudioFact`。
 `AudioChange` item 的数量。Renderer 绝不得缩短 `changes.items`、mutate `change_count`，或 mutate
 overall relation/verdict/fidelity/completeness。Truncation 只是 producer serialization policy，并且在
 full count 已知后通过 accepted completeness/truncation metadata 体现。
+
+Count binding 是精确的：
+
+| Field | Binding |
+| --- | --- |
+| `DiffSummary.change_count` | 非 null 时等于 `ChangeSet.total_count` |
+| `ChangeSet.total_count` | 所有 selected audio relation 的 grouped `AudioChange` 总数 |
+| `ChangeSet.returned_count` | producer-side serialization limit 之后的 `ChangeSet.items` 长度 |
+| `ChangeSet.omitted_count` | 对 `complete` 或 `truncated` change set，为 `total_count - returned_count` |
+| `MediaViewEvaluation.change_count` | 该 evaluation 的 `selector` 对应 grouped `AudioChange` 总数 |
+
+P7-A1 completed result 仍不允许 `partial` change set。因此 `summary.change_count`、
+`changes.total_count` 与 `changes.omitted_count` 均为 non-null。`complete` 时 `total_count`
+等于 `returned_count`，且 `omitted_count` 为 `0`。`truncated` 时 total 与 omitted count 仍已知，
+overall relation/verdict/fidelity 不变。所有 selected audio evaluation 的
+`MediaViewEvaluation.change_count` 之和等于 `ChangeSet.total_count`。
 
 对于 `decoded_samples`，sample change 按以下字段相同的 maximal continuous run 分组：
 
@@ -176,6 +226,30 @@ reader 在 comparison 前插入。RFC 0012 不 rename、remove 或 narrow 任何
 | `max_change_items` | producer-emitted change items | relation scope | `10000` |
 | `max_change_payload_bytes` | producer-emitted change payload bytes | relation scope | `4194304` |
 
+Deterministic counter rule：
+
+| Limit | Increment | Check stage | Zero behavior |
+| --- | --- | --- | --- |
+| `max_input_bytes` | 单个 input acquired immutable source bytes | `sourcing` | 只允许 zero-byte source |
+| `max_streams` | 单个 input discovered stream 数量 | `resolving` | 任何 discovered stream 都失败 |
+| `max_duration_seconds` | exact decoded duration 向上取整到 whole seconds | `resolving` 或 `decoding` | 只允许 zero-duration decoded stream |
+| `max_sample_rate_hz` | declared 或 decoded sample rate | `resolving` 或 `decoding` | 任何 positive sample rate 都失败 |
+| `max_channels` | 单个 stream decoded channel count | `resolving` 或 `decoding` | 任何 channel 都失败 |
+| `max_decoded_samples_per_channel` | 每个 channel decoded sample count | `decoding` | 每个 channel 只允许 zero decoded sample |
+| `max_total_decoded_bytes` | 两个 input 的 materialized decoded PCM bytes | `decoding` | decoded-sample relation 在 payload decode 前失败，除非不需要 decoded byte |
+| `max_resident_buffer_bytes` | live decoded/sample comparison buffer byte peak | `normalizing`、`aligning` 或 `comparing` | 分配 comparison buffer 前失败 |
+| `max_packets` | 两个 input 读取的 packet 或 chunk record | `resolving` 或 `decoding` | 读取任何 packet 或 chunk record 前失败 |
+| `max_metadata_entries` | 单个 input retained metadata entry | `resolving` 或 `decoding` | 任何 retained metadata entry 都失败 |
+| `max_metadata_value_bytes` | 单个 metadata value 的 byte 数 | `resolving` 或 `decoding` | 任何 non-empty metadata value 都失败 |
+| `max_spectral_cells` | generated spectral cell | `normalizing` 或 `comparing` | spectral relation 在生成 cell 前失败 |
+| `max_backend_seconds` | monotonic elapsed backend seconds | backend execution stage | 无 backend runtime budget；若需要 backend，则 backend start 前失败 |
+| `max_stdout_stderr_bytes` | captured backend stdout/stderr bytes | backend execution stage | 任何 captured byte 都失败 |
+| `max_temp_bytes` | comparison 创建的 temporary bytes | 创建 temp data 的任意 stage | 任何 temp byte 都失败 |
+| `max_materialized_bytes` | host-owned snapshot 与 materialized bytes | `sourcing` 或 materialization stage | 任何 materialized byte 都失败 |
+| `max_compare_work` | deterministic relation work units | `comparing` | 只有 zero-work comparison 可以完成 |
+| `max_change_items` | grouped changes selected for serialization | `aggregating` | 计算 relation 与 total count，然后 emit truncated empty change list |
+| `max_change_payload_bytes` | serialized change payload bytes | `aggregating` | relation 与 total count 已知后省略 payload-bearing change |
+
 `max_compare_work=0` 只允许可以用 zero relation work 完成的 comparison：identical empty encoded-byte
 input，或 relation work 开始前的 metadata-only failure。`max_packets=0` 禁止读取任何 packet 或
 WAV chunk record。`max_total_decoded_bytes=0` 对 decoded-sample relation 禁止 decode PCM payload
@@ -205,18 +279,46 @@ decoded-sample alignment。它接受任意 byte stream，包括 empty stream 和
 虽然绕过 WAV probing，source acquisition 仍然适用：unreadable path、missing input、permission
 failure 和 source size policy failure 仍是 `sourcing` problem。
 
+Encoded-byte alignment 是 immutable source snapshot 上的 byte-index alignment。Producer 先比较
+longest common prefix，然后最多 emit 一个 middle run，再比较不与 prefix 重叠的 longest common
+suffix。Tie-break deterministic：
+
+1. 最大化 common prefix length。
+2. 最大化 common suffix length。
+3. before 与 after middle length 相等时，优先使用一个 `encoded_byte_update` run。
+4. 否则按 source order emit 一个 `encoded_byte_delete` 和/或一个 `encoded_byte_insert`。
+
+相同 operation 与 step pattern 的 adjacent encoded-byte operation 分组为一个 maximal run。
+`audio.bytes_changed` 按上文定义计 update position、deleted before byte 与 inserted after byte；
+grouping 不得改变 count。
+
+对于 limit value `0` 的 `encoded_bytes`，stage 与 counter 固定为：
+
+| Limit | Stage when proven | Counter behavior |
+| --- | --- | --- |
+| `max_input_bytes=0` | `sourcing` | non-empty input 在 relation work 前失败 |
+| `max_materialized_bytes=0` | `sourcing` | non-empty materialization 在 relation work 前失败 |
+| `max_compare_work=0` | `comparing` | empty-vs-empty 可以完成；任何 byte comparison work 失败 |
+| `max_change_items=0` | `aggregating` | relation 与 total count 已计算；`returned_count=0`、`omitted_count=total_count` |
+| `max_change_payload_bytes=0` | `aggregating` | relation 与 total count 已知后省略 payload-bearing change |
+
 ## Timestamp, delay, and padding recognition
 
-P7-A1 只识别以下 timing、delay 与 padding source：
+P7-A1 只识别以下 timing、delay 与 padding fact，并在 core format fact 之后按此顺序序列化：
 
-| Chunk or source | Facts |
-| --- | --- |
-| no recognized timestamp source | `timestamp_origin=null`、`timestamp_value=null` |
-| RIFF `bext` time reference | `timestamp_origin="bext.time_reference"`、`timestamp_value` 为 sample count |
-| RIFF `smpl` sample period | `timestamp_origin="smpl.sample_period"`、`timestamp_value` 为 internally consistent 时的 exact rational seconds |
-| no recognized delay source | `encoder_delay_samples=null` |
-| no recognized padding source | `encoder_padding_samples=null` |
-| recognized but unsupported delay/padding metadata | 对应 value 为 `"unknown"` |
+| Fact name | Value type | Unit | Absence value | Unknown value | Recognized source |
+| --- | --- | --- | --- | --- | --- |
+| `timestamp_origin` | string 或 null | `null` | `null` | `"unknown"` | no source、`bext.time_reference`、`smpl.sample_period` |
+| `timestamp_value` | integer、finite number、string 或 null | `samples`、`seconds` 或 `null` | `null` | `"unknown"` | `bext.time_reference` sample count 或 `smpl.sample_period` exact rational seconds |
+| `encoder_delay_samples` | integer、string 或 null | `samples` 或 `null` | `null` | `"unknown"` | recognized delay metadata |
+| `encoder_padding_samples` | integer、string 或 null | `samples` 或 `null` | `null` | `"unknown"` | recognized padding metadata |
+
+Status semantic：
+
+- no recognized source 记录 absence value；
+- recognized and supported metadata 记录 typed value 与 unit；
+- recognized but unsupported metadata 记录 `"unknown"`，unit 使用已知的 documented unit，否则为 `null`；
+- malformed recognized metadata 在证明 malformed 的 stage 失败，不变成 `"unknown"` fact。
 
 所有其他 chunk 只有在 RFC 0011 已允许它们作为 bounded chunk fact 时才是 metadata fact。它们不得静默影响
 sample coordinate、duration、alignment 或 equality。
@@ -227,21 +329,27 @@ sample coordinate、duration、alignment 或 equality。
 Detail value 必须是 string、integer、finite JSON number、boolean 或 `null`；array 与 object 仍非法，
 除非后续 schema revision 明确允许。
 
+RFC 0012 保留 RFC 0011 problem-details allowlist，并只增加上文所需的 resource accounting key。
 本 amendment 允许的 detail key 为：
 
 ```text
-relation
-operation
 stage
+code
+relation
+backend
+profile
 input_side
-fact_name
-chunk_id
 byte_offset
+chunk_id
+field
+value_kind
 limit_name
 limit_value
 limit_unit
 accounting_scope
 measured_value
+operation
+fact_name
 ```
 
 Detail value 不得包含 backend stderr、exception class name、host path、source filename、safe label、
@@ -256,39 +364,66 @@ producer-side serialization truncation 前的 schema-v6 envelope 或 complete ac
 
 ```json
 {
-  "schema_version": 6,
-  "relation": "equal",
-  "verdict": "pass",
-  "fidelity": "full",
-  "completeness": "complete",
-  "media_evaluations": [
-    {
-      "kind": "media_view_evaluation",
-      "media_kind": "audio",
-      "selector": "encoded_bytes",
-      "relation": "equal",
-      "verdict": "pass",
-      "fidelity": "full",
-      "completeness": "complete",
-      "metric_names": [
-        "audio.bytes_changed"
-      ],
-      "policy_rule_ids": [
-        "audio.policy.encoded_bytes.v1"
-      ],
-      "transformation_ids": [],
-      "warning_codes": [],
+  "kind": "completed",
+  "result": {
+    "schema_version": 6,
+    "relation": "equal",
+    "verdict": "pass",
+    "fidelity": "full",
+    "summary": {
       "change_count": 0,
-      "failure_stage": null,
-      "failure_code": null
-    }
-  ],
-  "changes": {
-    "change_count": 0,
-    "items": []
-  },
-  "metrics": {
-    "audio.bytes_changed": 0
+      "counts": []
+    },
+    "changes": {
+      "completeness": "complete",
+      "items": [],
+      "total_count": 0,
+      "returned_count": 0,
+      "omitted_count": 0,
+      "selection": "all",
+      "limit": null,
+      "limit_reason": null
+    },
+    "metrics": [
+      {
+        "name": "audio.bytes_changed",
+        "value": {
+          "kind": "finite",
+          "value": 0
+        },
+        "unit": "bytes",
+        "direction": "lower_is_better",
+        "aggregation": "count"
+      }
+    ],
+    "evaluations": [],
+    "artifacts": [],
+    "provenance": {
+      "comparator_id": "audio.comparator.stdlib_wave_pcm.v1"
+    },
+    "media_evaluations": [
+      {
+        "kind": "media_view_evaluation",
+        "media_kind": "audio",
+        "selector": "encoded_bytes",
+        "relation": "equal",
+        "verdict": "pass",
+        "fidelity": "full",
+        "completeness": "complete",
+        "metric_names": [
+          "audio.bytes_changed"
+        ],
+        "policy_rule_ids": [
+          "audio.policy.encoded_bytes.v1"
+        ],
+        "transformation_ids": [],
+        "warning_codes": [],
+        "change_count": 0,
+        "failure_stage": null,
+        "failure_code": null
+      }
+    ],
+    "audio_facts": []
   }
 }
 ```
@@ -297,68 +432,95 @@ producer-side serialization truncation 前的 schema-v6 envelope 或 complete ac
 
 ```json
 {
-  "schema_version": 6,
-  "relation": "different",
-  "verdict": "fail",
-  "fidelity": "full",
-  "completeness": "complete",
-  "media_evaluations": [
-    {
-      "kind": "media_view_evaluation",
-      "media_kind": "audio",
-      "selector": "decoded_samples",
-      "relation": "different",
-      "verdict": "fail",
-      "fidelity": "full",
-      "completeness": "complete",
-      "metric_names": [
-        "audio.samples_changed"
-      ],
-      "policy_rule_ids": [
-        "audio.policy.exact_decoded_samples.v1"
-      ],
-      "transformation_ids": [],
-      "warning_codes": [],
+  "kind": "completed",
+  "result": {
+    "schema_version": 6,
+    "relation": "different",
+    "verdict": "fail",
+    "fidelity": "full",
+    "summary": {
       "change_count": 1,
-      "failure_stage": null,
-      "failure_code": null
-    }
-  ],
-  "changes": {
-    "change_count": 1,
-    "items": [
+      "counts": []
+    },
+    "changes": {
+      "completeness": "complete",
+      "items": [
+        {
+          "kind": "audio_change",
+          "relation": "decoded_samples",
+          "operation": "sample_update",
+          "before_coordinate": {
+            "stream_index": 0,
+            "channel_index": 0,
+            "channel_label": null,
+            "sample_start": 10,
+            "sample_count": 3,
+            "time_start_seconds": null,
+            "time_duration_seconds": null
+          },
+          "after_coordinate": {
+            "stream_index": 0,
+            "channel_index": 0,
+            "channel_label": null,
+            "sample_start": 10,
+            "sample_count": 3,
+            "time_start_seconds": null,
+            "time_duration_seconds": null
+          },
+          "channel": 0,
+          "before_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+          "after_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
+          "before_fact": null,
+          "after_fact": null
+        }
+      ],
+      "total_count": 1,
+      "returned_count": 1,
+      "omitted_count": 0,
+      "selection": "all",
+      "limit": null,
+      "limit_reason": null
+    },
+    "metrics": [
       {
-        "kind": "audio_change",
-        "relation": "decoded_samples",
-        "operation": "sample_update",
-        "before_coordinate": {
-          "stream_index": 0,
-          "channel_index": 0,
-          "channel_label": null,
-          "sample_start": 10,
-          "sample_count": 3,
-          "time_start_seconds": null,
-          "time_duration_seconds": null
+        "name": "audio.samples_changed",
+        "value": {
+          "kind": "finite",
+          "value": 3
         },
-        "after_coordinate": {
-          "stream_index": 0,
-          "channel_index": 0,
-          "channel_label": null,
-          "sample_start": 10,
-          "sample_count": 3,
-          "time_start_seconds": null,
-          "time_duration_seconds": null
-        },
-        "channel": 0,
-        "before_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-        "after_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
-        "before_fact": null,
-        "after_fact": null
+        "unit": "samples",
+        "direction": "lower_is_better",
+        "aggregation": "count"
       }
-    ]
-  },
-  "metrics": {
-    "audio.samples_changed": 3
+    ],
+    "evaluations": [],
+    "artifacts": [],
+    "provenance": {
+      "comparator_id": "audio.comparator.stdlib_wave_pcm.v1"
+    },
+    "media_evaluations": [
+      {
+        "kind": "media_view_evaluation",
+        "media_kind": "audio",
+        "selector": "decoded_samples",
+        "relation": "different",
+        "verdict": "fail",
+        "fidelity": "full",
+        "completeness": "complete",
+        "metric_names": [
+          "audio.samples_changed"
+        ],
+        "policy_rule_ids": [
+          "audio.policy.exact_decoded_samples.v1"
+        ],
+        "transformation_ids": [],
+        "warning_codes": [],
+        "change_count": 1,
+        "failure_stage": null,
+        "failure_code": null
+      }
+    ],
+    "audio_facts": []
   }
 }
 ```
@@ -367,62 +529,89 @@ producer-side serialization truncation 前的 schema-v6 envelope 或 complete ac
 
 ```json
 {
-  "schema_version": 6,
-  "relation": "different",
-  "verdict": "fail",
-  "fidelity": "full",
-  "completeness": "complete",
-  "media_evaluations": [
-    {
-      "kind": "media_view_evaluation",
-      "media_kind": "audio",
-      "selector": "encoded_bytes",
-      "relation": "different",
-      "verdict": "fail",
-      "fidelity": "full",
-      "completeness": "complete",
-      "metric_names": [
-        "audio.bytes_changed"
-      ],
-      "policy_rule_ids": [
-        "audio.policy.encoded_bytes.v1"
-      ],
-      "transformation_ids": [],
-      "warning_codes": [],
+  "kind": "completed",
+  "result": {
+    "schema_version": 6,
+    "relation": "different",
+    "verdict": "fail",
+    "fidelity": "full",
+    "summary": {
       "change_count": 1,
-      "failure_stage": null,
-      "failure_code": null
-    }
-  ],
-  "changes": {
-    "change_count": 1,
-    "items": [
+      "counts": []
+    },
+    "changes": {
+      "completeness": "complete",
+      "items": [
+        {
+          "kind": "audio_change",
+          "relation": "encoded_bytes",
+          "operation": "encoded_byte_insert",
+          "before_coordinate": null,
+          "after_coordinate": {
+            "stream_index": null,
+            "channel_index": null,
+            "channel_label": null,
+            "sample_start": null,
+            "sample_count": null,
+            "time_start_seconds": null,
+            "time_duration_seconds": null,
+            "byte_start": 4,
+            "byte_count": 2
+          },
+          "channel": null,
+          "before_digest": null,
+          "after_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000003",
+          "before_fact": null,
+          "after_fact": null
+        }
+      ],
+      "total_count": 1,
+      "returned_count": 1,
+      "omitted_count": 0,
+      "selection": "all",
+      "limit": null,
+      "limit_reason": null
+    },
+    "metrics": [
       {
-        "kind": "audio_change",
-        "relation": "encoded_bytes",
-        "operation": "encoded_byte_insert",
-        "before_coordinate": null,
-        "after_coordinate": {
-          "stream_index": null,
-          "channel_index": null,
-          "channel_label": null,
-          "sample_start": null,
-          "sample_count": null,
-          "time_start_seconds": null,
-          "time_duration_seconds": null,
-          "byte_start": 4,
-          "byte_count": 2
+        "name": "audio.bytes_changed",
+        "value": {
+          "kind": "finite",
+          "value": 2
         },
-        "channel": null,
-        "before_digest": null,
-        "after_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000003",
-        "before_fact": null,
-        "after_fact": null
+        "unit": "bytes",
+        "direction": "lower_is_better",
+        "aggregation": "count"
       }
-    ]
-  },
-  "metrics": {
-    "audio.bytes_changed": 2
+    ],
+    "evaluations": [],
+    "artifacts": [],
+    "provenance": {
+      "comparator_id": "audio.comparator.stdlib_wave_pcm.v1"
+    },
+    "media_evaluations": [
+      {
+        "kind": "media_view_evaluation",
+        "media_kind": "audio",
+        "selector": "encoded_bytes",
+        "relation": "different",
+        "verdict": "fail",
+        "fidelity": "full",
+        "completeness": "complete",
+        "metric_names": [
+          "audio.bytes_changed"
+        ],
+        "policy_rule_ids": [
+          "audio.policy.encoded_bytes.v1"
+        ],
+        "transformation_ids": [],
+        "warning_codes": [],
+        "change_count": 1,
+        "failure_stage": null,
+        "failure_code": null
+      }
+    ],
+    "audio_facts": []
   }
 }
 ```

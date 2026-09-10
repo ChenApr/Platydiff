@@ -78,6 +78,42 @@ For equal decoded-sample comparison, the first `media_evaluations` entry has:
 Backend, profile, and `stream.index` are recorded in provenance and selected
 spec fields, not as replacement `MediaViewEvaluation` fields.
 
+## Result-level audio facts carrier
+
+RFC 0012 proposes one new schema-v6 audio fact carrier inside the existing
+completed-outcome hierarchy. It does not replace `CompletedOutcome`,
+`DiffResult`, `MediaViewEvaluation`, or `AudioFact`.
+
+The completed outcome hierarchy remains:
+
+```text
+CompletedOutcomeV6.kind
+CompletedOutcomeV6.result
+DiffResult.relation
+DiffResult.verdict
+DiffResult.fidelity
+DiffResult.summary
+DiffResult.changes
+DiffResult.metrics
+DiffResult.evaluations
+DiffResult.artifacts
+DiffResult.provenance
+DiffResult.media_evaluations
+DiffResult.audio_facts
+```
+
+`DiffResult.audio_facts` is a tuple of accepted `AudioFact` records sorted by:
+
+```text
+stream_index, coordinate, name, unit, value
+```
+
+It is present only for schema-v6 audio results. Predecessor upgraders set it to
+an empty tuple. It carries relation-significant audio facts at result level so
+equal decoded-sample results can expose complete facts without inventing
+metadata update changes. It must not contain renderer-only labels, backend
+stderr, host paths, source filenames, or explanatory prose.
+
 Complete decoded-audio facts preserve the accepted `AudioFact` closed object.
 RFC 0012 does not add `source`, arrays, or nested objects to `AudioFact`.
 Key order remains:
@@ -125,6 +161,24 @@ renderer must never shorten `changes.items`, mutate `change_count`, or mutate
 the overall relation/verdict/fidelity/completeness. Truncation is a producer
 serialization policy only and is reflected by accepted completeness/truncation
 metadata after full counts are known.
+
+Count binding is exact:
+
+| Field | Binding |
+| --- | --- |
+| `DiffSummary.change_count` | equals `ChangeSet.total_count` when non-null |
+| `ChangeSet.total_count` | total grouped `AudioChange` count across all selected audio relations |
+| `ChangeSet.returned_count` | length of `ChangeSet.items` after producer-side serialization limits |
+| `ChangeSet.omitted_count` | `total_count - returned_count` for `complete` or `truncated` change sets |
+| `MediaViewEvaluation.change_count` | total grouped `AudioChange` count for that evaluation's `selector` |
+
+For P7-A1 completed results, `partial` change sets remain unauthorized.
+Therefore `summary.change_count`, `changes.total_count`, and
+`changes.omitted_count` are non-null. For `complete`, `total_count` equals
+`returned_count` and `omitted_count` is `0`. For `truncated`, total and omitted
+counts remain known and the overall relation/verdict/fidelity are unchanged.
+The sum of `MediaViewEvaluation.change_count` across selected audio evaluations
+equals `ChangeSet.total_count`.
 
 For `decoded_samples`, sample changes are grouped into maximal continuous runs
 with the same:
@@ -191,6 +245,30 @@ only clarifies accounting scope and units for the accepted object.
 | `max_change_items` | producer-emitted change items | relation scope | `10000` |
 | `max_change_payload_bytes` | producer-emitted change payload bytes | relation scope | `4194304` |
 
+Deterministic counter rules:
+
+| Limit | Increment | Check stage | Zero behavior |
+| --- | --- | --- | --- |
+| `max_input_bytes` | immutable source bytes acquired for one input | `sourcing` | only zero-byte sources are allowed |
+| `max_streams` | discovered streams in one input | `resolving` | any discovered stream fails |
+| `max_duration_seconds` | exact decoded duration rounded up to whole seconds | `resolving` or `decoding` | only zero-duration decoded streams are allowed |
+| `max_sample_rate_hz` | declared or decoded sample rate | `resolving` or `decoding` | any positive sample rate fails |
+| `max_channels` | decoded channel count for one stream | `resolving` or `decoding` | any channel fails |
+| `max_decoded_samples_per_channel` | decoded sample count for each channel | `decoding` | only zero decoded samples per channel are allowed |
+| `max_total_decoded_bytes` | decoded PCM bytes materialized across both inputs | `decoding` | decoded-sample relations fail before payload decode unless no decoded bytes are needed |
+| `max_resident_buffer_bytes` | peak live decoded/sample comparison buffer bytes | `normalizing`, `aligning`, or `comparing` | fail before allocating comparison buffers |
+| `max_packets` | packet or chunk records read across both inputs | `resolving` or `decoding` | fail before reading any packet or chunk record |
+| `max_metadata_entries` | metadata entries retained per input | `resolving` or `decoding` | any retained metadata entry fails |
+| `max_metadata_value_bytes` | bytes in one metadata value | `resolving` or `decoding` | any non-empty metadata value fails |
+| `max_spectral_cells` | generated spectral cells | `normalizing` or `comparing` | spectral relations fail before producing cells |
+| `max_backend_seconds` | monotonic elapsed backend seconds | backend execution stage | no backend runtime budget; fail before backend start if a backend would be needed |
+| `max_stdout_stderr_bytes` | captured backend stdout/stderr bytes | backend execution stage | any captured byte fails |
+| `max_temp_bytes` | temporary bytes created by the comparison | any stage that creates temp data | any temp byte fails |
+| `max_materialized_bytes` | host-owned snapshot and materialized bytes | `sourcing` or materialization stage | any materialized byte fails |
+| `max_compare_work` | deterministic relation work units | `comparing` | only zero-work comparisons may complete |
+| `max_change_items` | grouped changes selected for serialization | `aggregating` | compute relation and total counts, then emit a truncated empty change list |
+| `max_change_payload_bytes` | serialized change payload bytes | `aggregating` | compute relation and total counts, then omit payload-bearing changes |
+
 `max_compare_work=0` permits only comparisons that can complete with zero
 relation work: identical empty encoded-byte inputs or metadata-only failures
 before relation work begins. `max_packets=0` forbids reading any packet or WAV
@@ -226,18 +304,53 @@ Even though WAV probing is bypassed, source acquisition still applies:
 unreadable paths, missing inputs, permission failures, and source size policy
 failures remain `sourcing` problems.
 
+Encoded-byte alignment is byte-index alignment over immutable source snapshots.
+The producer compares the longest common prefix, then emits at most one middle
+run, then compares the longest common suffix that does not overlap the prefix.
+Tie-breaks are deterministic:
+
+1. Maximize common prefix length.
+2. Maximize common suffix length.
+3. Prefer one `encoded_byte_update` run when before and after middle lengths
+   are equal.
+4. Otherwise emit one `encoded_byte_delete` and/or one `encoded_byte_insert` in
+   source order.
+
+Adjacent encoded-byte operations of the same operation and step pattern are
+grouped into one maximal run. `audio.bytes_changed` counts update positions,
+deleted before bytes, and inserted after bytes as defined above; grouping must
+not change the count.
+
+For `encoded_bytes` with limit value `0`, stage and counters are fixed:
+
+| Limit | Stage when proven | Counter behavior |
+| --- | --- | --- |
+| `max_input_bytes=0` | `sourcing` | non-empty input fails before relation work |
+| `max_materialized_bytes=0` | `sourcing` | non-empty materialization fails before relation work |
+| `max_compare_work=0` | `comparing` | empty-vs-empty may complete; any byte comparison work fails |
+| `max_change_items=0` | `aggregating` | relation and total counts are computed; `returned_count=0`, `omitted_count=total_count` |
+| `max_change_payload_bytes=0` | `aggregating` | payload-bearing changes are omitted after relation and total counts are known |
+
 ## Timestamp, delay, and padding recognition
 
-P7-A1 recognizes only these timing, delay, and padding sources:
+P7-A1 recognizes only these timing, delay, and padding facts, serialized in
+this order after the core format facts:
 
-| Chunk or source | Facts |
-| --- | --- |
-| no recognized timestamp source | `timestamp_origin=null`, `timestamp_value=null` |
-| RIFF `bext` time reference | `timestamp_origin="bext.time_reference"`, `timestamp_value` as sample count |
-| RIFF `smpl` sample period | `timestamp_origin="smpl.sample_period"`, `timestamp_value` as exact rational seconds when internally consistent |
-| no recognized delay source | `encoder_delay_samples=null` |
-| no recognized padding source | `encoder_padding_samples=null` |
-| recognized but unsupported delay/padding metadata | corresponding value `"unknown"` |
+| Fact name | Value type | Unit | Absence value | Unknown value | Recognized source |
+| --- | --- | --- | --- | --- | --- |
+| `timestamp_origin` | string or null | `null` | `null` | `"unknown"` | no source, `bext.time_reference`, `smpl.sample_period` |
+| `timestamp_value` | integer, finite number, string, or null | `samples`, `seconds`, or `null` | `null` | `"unknown"` | `bext.time_reference` sample count or `smpl.sample_period` exact rational seconds |
+| `encoder_delay_samples` | integer, string, or null | `samples` or `null` | `null` | `"unknown"` | recognized delay metadata |
+| `encoder_padding_samples` | integer, string, or null | `samples` or `null` | `null` | `"unknown"` | recognized padding metadata |
+
+Status semantics are:
+
+- no recognized source records the absence value;
+- recognized and supported metadata records the typed value and unit;
+- recognized but unsupported metadata records `"unknown"` with the documented
+  unit when known, otherwise unit `null`;
+- malformed recognized metadata fails at the stage that proves malformation and
+  does not become an `"unknown"` fact.
 
 All other chunks are metadata facts only when RFC 0011 already allows them as
 bounded chunk facts. They must not silently affect sample coordinates,
@@ -250,21 +363,28 @@ duration, alignment, or equality.
 must be strings, integers, finite JSON numbers, booleans, or `null`; arrays and
 objects remain invalid unless a later schema revision explicitly permits them.
 
-Allowed detail keys for this amendment are:
+RFC 0012 keeps the RFC 0011 problem-details allowlist and adds only the
+resource accounting keys needed above. Allowed detail keys for this amendment
+are:
 
 ```text
-relation
-operation
 stage
+code
+relation
+backend
+profile
 input_side
-fact_name
-chunk_id
 byte_offset
+chunk_id
+field
+value_kind
 limit_name
 limit_value
 limit_unit
 accounting_scope
 measured_value
+operation
+fact_name
 ```
 
 Detail values must not contain backend stderr, exception class names, host
@@ -281,39 +401,66 @@ insertion and before any producer-side serialization truncation.
 
 ```json
 {
-  "schema_version": 6,
-  "relation": "equal",
-  "verdict": "pass",
-  "fidelity": "full",
-  "completeness": "complete",
-  "media_evaluations": [
-    {
-      "kind": "media_view_evaluation",
-      "media_kind": "audio",
-      "selector": "encoded_bytes",
-      "relation": "equal",
-      "verdict": "pass",
-      "fidelity": "full",
-      "completeness": "complete",
-      "metric_names": [
-        "audio.bytes_changed"
-      ],
-      "policy_rule_ids": [
-        "audio.policy.encoded_bytes.v1"
-      ],
-      "transformation_ids": [],
-      "warning_codes": [],
+  "kind": "completed",
+  "result": {
+    "schema_version": 6,
+    "relation": "equal",
+    "verdict": "pass",
+    "fidelity": "full",
+    "summary": {
       "change_count": 0,
-      "failure_stage": null,
-      "failure_code": null
-    }
-  ],
-  "changes": {
-    "change_count": 0,
-    "items": []
-  },
-  "metrics": {
-    "audio.bytes_changed": 0
+      "counts": []
+    },
+    "changes": {
+      "completeness": "complete",
+      "items": [],
+      "total_count": 0,
+      "returned_count": 0,
+      "omitted_count": 0,
+      "selection": "all",
+      "limit": null,
+      "limit_reason": null
+    },
+    "metrics": [
+      {
+        "name": "audio.bytes_changed",
+        "value": {
+          "kind": "finite",
+          "value": 0
+        },
+        "unit": "bytes",
+        "direction": "lower_is_better",
+        "aggregation": "count"
+      }
+    ],
+    "evaluations": [],
+    "artifacts": [],
+    "provenance": {
+      "comparator_id": "audio.comparator.stdlib_wave_pcm.v1"
+    },
+    "media_evaluations": [
+      {
+        "kind": "media_view_evaluation",
+        "media_kind": "audio",
+        "selector": "encoded_bytes",
+        "relation": "equal",
+        "verdict": "pass",
+        "fidelity": "full",
+        "completeness": "complete",
+        "metric_names": [
+          "audio.bytes_changed"
+        ],
+        "policy_rule_ids": [
+          "audio.policy.encoded_bytes.v1"
+        ],
+        "transformation_ids": [],
+        "warning_codes": [],
+        "change_count": 0,
+        "failure_stage": null,
+        "failure_code": null
+      }
+    ],
+    "audio_facts": []
   }
 }
 ```
@@ -322,68 +469,95 @@ insertion and before any producer-side serialization truncation.
 
 ```json
 {
-  "schema_version": 6,
-  "relation": "different",
-  "verdict": "fail",
-  "fidelity": "full",
-  "completeness": "complete",
-  "media_evaluations": [
-    {
-      "kind": "media_view_evaluation",
-      "media_kind": "audio",
-      "selector": "decoded_samples",
-      "relation": "different",
-      "verdict": "fail",
-      "fidelity": "full",
-      "completeness": "complete",
-      "metric_names": [
-        "audio.samples_changed"
-      ],
-      "policy_rule_ids": [
-        "audio.policy.exact_decoded_samples.v1"
-      ],
-      "transformation_ids": [],
-      "warning_codes": [],
+  "kind": "completed",
+  "result": {
+    "schema_version": 6,
+    "relation": "different",
+    "verdict": "fail",
+    "fidelity": "full",
+    "summary": {
       "change_count": 1,
-      "failure_stage": null,
-      "failure_code": null
-    }
-  ],
-  "changes": {
-    "change_count": 1,
-    "items": [
+      "counts": []
+    },
+    "changes": {
+      "completeness": "complete",
+      "items": [
+        {
+          "kind": "audio_change",
+          "relation": "decoded_samples",
+          "operation": "sample_update",
+          "before_coordinate": {
+            "stream_index": 0,
+            "channel_index": 0,
+            "channel_label": null,
+            "sample_start": 10,
+            "sample_count": 3,
+            "time_start_seconds": null,
+            "time_duration_seconds": null
+          },
+          "after_coordinate": {
+            "stream_index": 0,
+            "channel_index": 0,
+            "channel_label": null,
+            "sample_start": 10,
+            "sample_count": 3,
+            "time_start_seconds": null,
+            "time_duration_seconds": null
+          },
+          "channel": 0,
+          "before_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+          "after_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
+          "before_fact": null,
+          "after_fact": null
+        }
+      ],
+      "total_count": 1,
+      "returned_count": 1,
+      "omitted_count": 0,
+      "selection": "all",
+      "limit": null,
+      "limit_reason": null
+    },
+    "metrics": [
       {
-        "kind": "audio_change",
-        "relation": "decoded_samples",
-        "operation": "sample_update",
-        "before_coordinate": {
-          "stream_index": 0,
-          "channel_index": 0,
-          "channel_label": null,
-          "sample_start": 10,
-          "sample_count": 3,
-          "time_start_seconds": null,
-          "time_duration_seconds": null
+        "name": "audio.samples_changed",
+        "value": {
+          "kind": "finite",
+          "value": 3
         },
-        "after_coordinate": {
-          "stream_index": 0,
-          "channel_index": 0,
-          "channel_label": null,
-          "sample_start": 10,
-          "sample_count": 3,
-          "time_start_seconds": null,
-          "time_duration_seconds": null
-        },
-        "channel": 0,
-        "before_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-        "after_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
-        "before_fact": null,
-        "after_fact": null
+        "unit": "samples",
+        "direction": "lower_is_better",
+        "aggregation": "count"
       }
-    ]
-  },
-  "metrics": {
-    "audio.samples_changed": 3
+    ],
+    "evaluations": [],
+    "artifacts": [],
+    "provenance": {
+      "comparator_id": "audio.comparator.stdlib_wave_pcm.v1"
+    },
+    "media_evaluations": [
+      {
+        "kind": "media_view_evaluation",
+        "media_kind": "audio",
+        "selector": "decoded_samples",
+        "relation": "different",
+        "verdict": "fail",
+        "fidelity": "full",
+        "completeness": "complete",
+        "metric_names": [
+          "audio.samples_changed"
+        ],
+        "policy_rule_ids": [
+          "audio.policy.exact_decoded_samples.v1"
+        ],
+        "transformation_ids": [],
+        "warning_codes": [],
+        "change_count": 1,
+        "failure_stage": null,
+        "failure_code": null
+      }
+    ],
+    "audio_facts": []
   }
 }
 ```
@@ -392,62 +566,89 @@ insertion and before any producer-side serialization truncation.
 
 ```json
 {
-  "schema_version": 6,
-  "relation": "different",
-  "verdict": "fail",
-  "fidelity": "full",
-  "completeness": "complete",
-  "media_evaluations": [
-    {
-      "kind": "media_view_evaluation",
-      "media_kind": "audio",
-      "selector": "encoded_bytes",
-      "relation": "different",
-      "verdict": "fail",
-      "fidelity": "full",
-      "completeness": "complete",
-      "metric_names": [
-        "audio.bytes_changed"
-      ],
-      "policy_rule_ids": [
-        "audio.policy.encoded_bytes.v1"
-      ],
-      "transformation_ids": [],
-      "warning_codes": [],
+  "kind": "completed",
+  "result": {
+    "schema_version": 6,
+    "relation": "different",
+    "verdict": "fail",
+    "fidelity": "full",
+    "summary": {
       "change_count": 1,
-      "failure_stage": null,
-      "failure_code": null
-    }
-  ],
-  "changes": {
-    "change_count": 1,
-    "items": [
+      "counts": []
+    },
+    "changes": {
+      "completeness": "complete",
+      "items": [
+        {
+          "kind": "audio_change",
+          "relation": "encoded_bytes",
+          "operation": "encoded_byte_insert",
+          "before_coordinate": null,
+          "after_coordinate": {
+            "stream_index": null,
+            "channel_index": null,
+            "channel_label": null,
+            "sample_start": null,
+            "sample_count": null,
+            "time_start_seconds": null,
+            "time_duration_seconds": null,
+            "byte_start": 4,
+            "byte_count": 2
+          },
+          "channel": null,
+          "before_digest": null,
+          "after_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000003",
+          "before_fact": null,
+          "after_fact": null
+        }
+      ],
+      "total_count": 1,
+      "returned_count": 1,
+      "omitted_count": 0,
+      "selection": "all",
+      "limit": null,
+      "limit_reason": null
+    },
+    "metrics": [
       {
-        "kind": "audio_change",
-        "relation": "encoded_bytes",
-        "operation": "encoded_byte_insert",
-        "before_coordinate": null,
-        "after_coordinate": {
-          "stream_index": null,
-          "channel_index": null,
-          "channel_label": null,
-          "sample_start": null,
-          "sample_count": null,
-          "time_start_seconds": null,
-          "time_duration_seconds": null,
-          "byte_start": 4,
-          "byte_count": 2
+        "name": "audio.bytes_changed",
+        "value": {
+          "kind": "finite",
+          "value": 2
         },
-        "channel": null,
-        "before_digest": null,
-        "after_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000003",
-        "before_fact": null,
-        "after_fact": null
+        "unit": "bytes",
+        "direction": "lower_is_better",
+        "aggregation": "count"
       }
-    ]
-  },
-  "metrics": {
-    "audio.bytes_changed": 2
+    ],
+    "evaluations": [],
+    "artifacts": [],
+    "provenance": {
+      "comparator_id": "audio.comparator.stdlib_wave_pcm.v1"
+    },
+    "media_evaluations": [
+      {
+        "kind": "media_view_evaluation",
+        "media_kind": "audio",
+        "selector": "encoded_bytes",
+        "relation": "different",
+        "verdict": "fail",
+        "fidelity": "full",
+        "completeness": "complete",
+        "metric_names": [
+          "audio.bytes_changed"
+        ],
+        "policy_rule_ids": [
+          "audio.policy.encoded_bytes.v1"
+        ],
+        "transformation_ids": [],
+        "warning_codes": [],
+        "change_count": 1,
+        "failure_stage": null,
+        "failure_code": null
+      }
+    ],
+    "audio_facts": []
   }
 }
 ```
