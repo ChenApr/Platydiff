@@ -1129,6 +1129,55 @@ def _array_outcome_with_schema_changes(
     )
 
 
+def _truncated_array_schema_prefix(
+    outcome: CompletedOutcomeV3,
+    returned: tuple[ArrayChange, ...],
+    *,
+    total_count: int,
+    payload_limit: int,
+) -> CompletedOutcomeV3:
+    changed = _array_outcome_with_schema_changes(outcome, returned)
+    metrics = tuple(
+        replace(metric, value=FiniteValue(total_count))
+        if metric.name == "array.changed_items"
+        else metric
+        for metric in changed.result.metrics
+    )
+    counts = tuple(
+        replace(count, value=total_count) if count.name == "changed_items" else count
+        for count in changed.result.summary.counts
+    )
+    truncated = replace(
+        changed,
+        result=replace(
+            changed.result,
+            summary=DiffSummary(total_count, counts),
+            changes=ChangeSet(
+                ChangeCompleteness.TRUNCATED,
+                returned,
+                total_count,
+                len(returned),
+                total_count - len(returned),
+                ChangeSelection.SOURCE_ORDER_PREFIX,
+                payload_limit,
+                "change_payload_bytes",
+            ),
+            metrics=metrics,
+            evaluations=(
+                replace(
+                    changed.result.evaluations[0],
+                    observed=FiniteValue(total_count),
+                ),
+            ),
+        ),
+    )
+    return _with_resource_usage(
+        truncated,
+        change_items=len(returned),
+        change_payload_bytes=sum(serialized_change_size(item) for item in returned),
+    )
+
+
 def test_complete_array_element_results_require_exact_resource_identities() -> None:
     outcome = _contract_outcome(ArrayCompareSpec())
     outcome_to_data(outcome)
@@ -1183,6 +1232,56 @@ def test_complete_array_schema_results_bind_rank_element_and_work_resources() ->
                 compare_work=4,
             )
         )
+
+
+def test_truncated_array_schema_prefix_accepts_payload_boundaries() -> None:
+    shape = ArrayChange("shape_replace", None, "1" * 64, "2" * 64)
+    dtype = ArrayChange("dtype_replace", None, "3" * 64, "4" * 64)
+    shape_size = serialized_change_size(shape)
+    shape_spec = ArrayCompareSpec(
+        limits=replace(
+            ArrayResourceLimits(),
+            max_change_payload_bytes=shape_size,
+        )
+    )
+    shape_outcome = _contract_outcome(shape_spec)
+    outcome_to_data(
+        _truncated_array_schema_prefix(
+            shape_outcome,
+            (shape,),
+            total_count=2,
+            payload_limit=shape_size,
+        )
+    )
+
+    zero_spec = ArrayCompareSpec(
+        limits=replace(ArrayResourceLimits(), max_change_payload_bytes=0)
+    )
+    zero_outcome = _contract_outcome(zero_spec)
+    outcome_to_data(
+        _truncated_array_schema_prefix(
+            zero_outcome,
+            (),
+            total_count=1,
+            payload_limit=0,
+        )
+    )
+
+    dtype_size = serialized_change_size(dtype)
+    dtype_spec = ArrayCompareSpec(
+        limits=replace(
+            ArrayResourceLimits(),
+            max_change_payload_bytes=dtype_size,
+        )
+    )
+    invalid_dtype_prefix = _truncated_array_schema_prefix(
+        _contract_outcome(dtype_spec),
+        (dtype,),
+        total_count=2,
+        payload_limit=dtype_size,
+    )
+    with pytest.raises(SerializationError, match="schema prefix"):
+        outcome_to_data(invalid_dtype_prefix)
 
 
 def test_new_contract_wire_order_and_literal_change_bytes_are_frozen() -> None:

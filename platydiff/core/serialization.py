@@ -3220,19 +3220,39 @@ def _validate_array_result(result: DiffResult, spec: ArrayCompareSpec) -> None:
     )
     if counts["missing_pairs"] != 0:
         raise SerializationError("schema-v3 array missing-pair count must be zero")
-    if schema_operations:
-        if any(
-            counts[name] != 0
-            for name in (
-                "compared_elements",
-                "equal_elements",
-                "changed_elements",
-                "missing_pairs",
-                "nan_pairs",
-                "infinity_pairs",
-                "finite_numeric_pairs",
+    element_count_names = (
+        "compared_elements",
+        "equal_elements",
+        "changed_elements",
+        "missing_pairs",
+        "nan_pairs",
+        "infinity_pairs",
+        "finite_numeric_pairs",
+    )
+    if result.changes.completeness is ChangeCompleteness.TRUNCATED:
+        if schema_operations:
+            valid_prefix = (
+                counts["changed_items"] == 1
+                and schema_operations in (("shape_replace",), ("dtype_replace",))
+            ) or (
+                counts["changed_items"] == 2 and schema_operations == ("shape_replace",)
             )
-        ) or counts["changed_items"] != len(schema_operations):
+            if not valid_prefix:
+                raise SerializationError(
+                    "schema-v3 array truncated schema prefix is inconsistent"
+                )
+            if any(counts[name] != 0 for name in element_count_names):
+                raise SerializationError(
+                    "schema-v3 array schema-replacement counts are inconsistent"
+                )
+        elif operations and counts["changed_items"] != counts["changed_elements"]:
+            raise SerializationError(
+                "schema-v3 array element-change counts are inconsistent"
+            )
+    elif schema_operations:
+        if any(counts[name] != 0 for name in element_count_names) or counts[
+            "changed_items"
+        ] != len(schema_operations):
             raise SerializationError(
                 "schema-v3 array schema-replacement counts are inconsistent"
             )
