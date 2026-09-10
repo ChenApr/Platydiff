@@ -2930,7 +2930,7 @@ def _validate_table_result(result: DiffResult, spec: TableCompareSpec) -> None:
         ("infinity_pairs", MetricDirection.NEUTRAL),
         ("finite_numeric_pairs", MetricDirection.NEUTRAL),
     )
-    _validate_contract_counts(
+    counts = _validate_contract_counts(
         result,
         prefix="table",
         required=required,
@@ -2940,6 +2940,19 @@ def _validate_table_result(result: DiffResult, spec: TableCompareSpec) -> None:
         changed_name="changed_cells",
         change_count_name="changed_items",
     )
+    returned_cell_changes = sum(
+        item.operation == "cell_replace"
+        for item in result.changes.items
+        if isinstance(item, TableChange)
+    )
+    if (
+        result.changes.completeness is ChangeCompleteness.COMPLETE
+        and counts["changed_cells"] != returned_cell_changes
+    ) or (
+        result.changes.completeness is ChangeCompleteness.TRUNCATED
+        and returned_cell_changes > counts["changed_cells"]
+    ):
+        raise SerializationError("schema-v3 table cell-change count is inconsistent")
     expected_resources: dict[str, int] = {}
     for side in ("before", "after"):
         expected_resources.update(

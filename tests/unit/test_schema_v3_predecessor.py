@@ -1236,3 +1236,92 @@ def test_table_key_and_float_facts_enforce_nonlexical_canonical_grammar() -> Non
     _validate_table_fact_against_spec(
         ScalarFact("float64", "0x1.0000000000000p+0"), float_spec
     )
+
+
+def _table_outcome_with_counts(
+    outcome: CompletedOutcomeV3,
+    changes: ChangeSet,
+    *,
+    changed_cells: int,
+    changed_items: int,
+) -> CompletedOutcomeV3:
+    metrics = tuple(
+        replace(metric, value=FiniteValue(changed_cells))
+        if metric.name == "table.changed_cells"
+        else replace(metric, value=FiniteValue(changed_items))
+        if metric.name == "table.changed_items"
+        else metric
+        for metric in outcome.result.metrics
+    )
+    counts = tuple(
+        replace(count, value=changed_cells)
+        if count.name == "changed_cells"
+        else replace(count, value=changed_items)
+        if count.name == "changed_items"
+        else count
+        for count in outcome.result.summary.counts
+    )
+    return replace(
+        outcome,
+        result=replace(
+            outcome.result,
+            relation=Relation.DIFFERENT,
+            verdict=Verdict.FAIL,
+            summary=DiffSummary(changes.total_count, counts),
+            changes=changes,
+            metrics=metrics,
+            evaluations=(
+                replace(
+                    outcome.result.evaluations[0],
+                    verdict=Verdict.FAIL,
+                    observed=FiniteValue(changed_items),
+                ),
+            ),
+        ),
+    )
+
+
+def test_table_changed_cells_matches_complete_and_truncated_cell_evidence() -> None:
+    spec = TableCompareSpec(dialect="csv")
+    outcome = _contract_outcome(spec)
+    cell = TableChange(
+        operation="cell_replace",
+        row=1,
+        column="column_1",
+        before_digest="1" * 64,
+        after_digest="2" * 64,
+        before_fact=ScalarFact("string", "before"),
+        after_fact=ScalarFact("string", "after"),
+    )
+    complete = ChangeSet(
+        ChangeCompleteness.COMPLETE,
+        (cell,),
+        1,
+        1,
+        0,
+        ChangeSelection.ALL,
+        None,
+    )
+    with pytest.raises(SerializationError, match="cell-change count"):
+        outcome_to_data(
+            _table_outcome_with_counts(
+                outcome, complete, changed_cells=0, changed_items=1
+            )
+        )
+
+    truncated = ChangeSet(
+        ChangeCompleteness.TRUNCATED,
+        (cell,),
+        2,
+        1,
+        1,
+        ChangeSelection.SOURCE_ORDER_PREFIX,
+        spec.limits.max_change_items,
+        "change_items",
+    )
+    with pytest.raises(SerializationError, match="cell-change count"):
+        outcome_to_data(
+            _table_outcome_with_counts(
+                outcome, truncated, changed_cells=0, changed_items=2
+            )
+        )
