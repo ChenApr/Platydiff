@@ -26,6 +26,6 @@ This directory contains accepted and proposed design decisions for Platydiff. En
 | [0007](0007-image-comparison.md) | Accepted | Define a schema-v4, explicit static-PNG decoded-sample slice and defer perceptual, artifact, plugin, and detection work |
 | [0008](0008-source-code-and-pdf-comparison.md) | Accepted | Define explicit source-code and PDF comparison contracts; only the P6-C0 gate definition is accepted, and P6-C0 implementation plus later gates need separate authorization |
 | [0009](0009-audio-and-video-comparison.md) | Accepted | Accept explicit audio contracts and audio-only schema-v6 allocation; accept video contracts as roadmap direction only pending a later backend/worker amendment and successor schema |
-| [0011](0011-rfc-0009-audio-preflight-amendment.md) | Proposed | Amend RFC 0009 with P7-A1 audio preflight wire contracts, WAV/PCM profile rules, CLI/plugin rejection, and stable failure details while deferring schema numbering to the cross-RFC predecessor resolution |
+| [0011](0011-rfc-0009-audio-preflight-amendment.md) | Accepted | Amend RFC 0009 with P7-A1 audio preflight wire contracts, WAV/PCM profile rules, CLI/plugin rejection, and stable failure details; audio remains schema v6 only after RFC 0010 Option A/SP1-SP6 and P4-C1 -> v4 -> v5 predecessors merge |
 
 Planned behavior must remain explicitly marked as planned until implementation and verification are complete.

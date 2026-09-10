@@ -2,28 +2,31 @@
 
 [English documentation](0011-rfc-0009-audio-preflight-amendment.md)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-10
+- Accepted: 2026-09-10
 - Amends: [RFC 0009](0009-audio-and-video-comparison_zh.md)
+- Approved decisions: P7A-AM1 到 P7A-AM10；P7A-W1 到 P7A-W5
+- Prerequisites: accepted RFC 0010 Option A/SP1-SP6，以及实际 merge 的 P4-C1 -> v4 -> v5 predecessors
 - Owners: Platydiff 维护者
 - Implementation owner: 尚未指派，等待单独的实现授权
 
 ## 摘要与授权边界
 
 本 RFC 提议为 RFC 0009 增加 P7-A1 audio implementation preflight blocker
-修订。它不是 Accepted，不授权代码、依赖变更、FFmpeg、artifact、UI、SDK v2、自动媒体
-探测、video implementation，或独立 schema renumbering。
+修订，且本修订已被 Accepted。Acceptance 不授权代码、依赖变更、FFmpeg、artifact、UI、SDK v2、
+自动媒体探测、video implementation，或独立 schema renumbering。
 
 本修订保留 RFC 0009 的所有前驱门禁，并把全局 schema numbering 交给 pending human-approved
-predecessor resolution。只有该全局 resolution 仍让 RFC 0009 留在已接受 audio path 上时，audio
-才是首个 media schema successor；本 amendment 不独立选择或重编号 v4、v5 或 v6。必须从当前
-`main` 复验 P4-A1 JSON/schema-v3，且 P7-A1 仍被阻塞，直到全局 predecessor resolution、前驱
-implementation 与 compatibility fixture 可用。Video 仍只是 roadmap-only，并等待单独的
-backend/worker amendment 和下一个 schema successor。
+predecessor resolution，即 RFC 0010 Option A/SP1-SP6。只有 RFC 0010 Option A/SP1-SP6 先被
+accepted，并且 P4-C1 -> v4 -> v5 predecessors 实际 merge 后，audio 才保留 schema v6。必须从当前
+`main` 复验 P4-A1 JSON/schema-v3，且 P7-A1 code 仍被阻塞，直到 predecessor implementation
+与 compatibility fixture 可用。Video 仍只是 roadmap-only，并等待单独的 backend/worker amendment
+和下一个 schema successor。
 
 ## 推荐决策
 
-这些 ID 是提议建议。只有本 amendment 被明确接受后，它们才成为实现契约。
+这些 ID 是已批准的 P7-A1 contract decision，并受上文 prerequisite 与授权边界约束。
 
 | ID | 推荐决策 | 未选择的替代方案 |
 | --- | --- | --- |
@@ -399,7 +402,8 @@ detail object。
 | CLI/SDK | first-gate flag、invalid combination、SDK-v1 plugin rejection before discovery |
 | Problems | key order、value type、omission rule、no backend stderr or host path |
 
-## 需要人工批准的问题
+## 人工批准记录
 
-请整体批准 P7A-W1 到 P7A-W5，或返回需要 revision 的具体 ID，然后本 amendment 才能从
-Proposed 移至 Accepted。
+2026-09-10 已批准：P7A-AM1 到 P7A-AM10，以及 P7A-W1 到 P7A-W5。该 approval 不启动 P7-A1
+implementation，并且仍以 RFC 0010 先按 Option A/SP1-SP6 merge，以及 P4-C1 -> v4 -> v5
+predecessor 实际 merge 为条件。

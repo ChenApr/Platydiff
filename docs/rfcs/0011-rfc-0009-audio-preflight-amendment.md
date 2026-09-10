@@ -2,33 +2,34 @@
 
 [Chinese documentation](0011-rfc-0009-audio-preflight-amendment_zh.md)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-10
+- Accepted: 2026-09-10
 - Amends: [RFC 0009](0009-audio-and-video-comparison.md)
+- Approved decisions: P7A-AM1 through P7A-AM10; P7A-W1 through P7A-W5
+- Prerequisites: accepted RFC 0010 Option A/SP1-SP6 and actual P4-C1 -> v4 -> v5 predecessor merges
 - Owners: Platydiff maintainers
 - Implementation owner: unassigned pending separate implementation authorization
 
 ## Summary and authorization boundary
 
-This RFC proposes a contract amendment to RFC 0009 for P7-A1 audio
-implementation preflight blockers. It is not Accepted and does not authorize
-code, dependency changes, FFmpeg, artifacts, UI, SDK v2, automatic media
-detection, video implementation, or independent schema renumbering.
+This RFC accepts a contract amendment to RFC 0009 for P7-A1 audio
+implementation preflight blockers. Acceptance does not authorize code,
+dependency changes, FFmpeg, artifacts, UI, SDK v2, automatic media detection,
+video implementation, or independent schema renumbering.
 
 The amendment preserves all RFC 0009 predecessor gates and defers global schema
-numbering to the pending human-approved predecessor resolution. Audio remains
-the first media schema successor only if that global resolution leaves RFC 0009
-on the accepted audio path; this amendment does not independently choose or
-renumber v4, v5, or v6. P4-A1 JSON/schema-v3 must be revalidated from current
-`main`, and P7-A1 remains blocked until the global predecessor resolution,
-predecessor implementations, and compatibility fixtures are available. Video
-remains roadmap-only and waits for a separate backend/worker amendment and the
-next schema successor.
+numbering to RFC 0010 Option A/SP1-SP6. Audio remains schema v6 only if RFC
+0010 Option A/SP1-SP6 is accepted first and the P4-C1 -> v4 -> v5 predecessors
+actually merge. P4-A1 JSON/schema-v3 must be revalidated from current `main`,
+and P7-A1 code remains blocked until the predecessor implementations and
+compatibility fixtures are available. Video remains roadmap-only and waits for
+a separate backend/worker amendment and the next schema successor.
 
 ## Recommended decisions
 
-These IDs are proposed recommendations. They are not implementation contracts
-until this amendment is explicitly accepted.
+These IDs are approved P7-A1 contract decisions, subject to the prerequisites
+and authorization boundary above.
 
 | ID | Recommended decision | Alternative not selected |
 | --- | --- | --- |
@@ -444,7 +445,9 @@ duration determinism, CLI rejection, and stable problem detail objects.
 | CLI/SDK | first-gate flags, invalid combinations, SDK-v1 plugin rejection before discovery |
 | Problems | key order, value types, omission rules, no backend stderr or host paths |
 
-## Questions requiring human approval
+## Human approval record
 
-Approve recommendations P7A-W1 through P7A-W5 together, or return specific IDs
-that require revision before this amendment can move from Proposed to Accepted.
+Approved on 2026-09-10: P7A-AM1 through P7A-AM10 and P7A-W1 through P7A-W5.
+This approval does not start P7-A1 implementation and remains conditional on
+RFC 0010 merging first with Option A/SP1-SP6 plus the actual P4-C1 -> v4 -> v5
+predecessor merges.
