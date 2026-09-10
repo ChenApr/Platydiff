@@ -57,7 +57,7 @@ than being repaired opportunistically in code.
 | P5A1-1 | Make P5-A1 strictly contract-only under the boundary above. |
 | P5A1-2 | Use named `StrEnum` types for reusable public image choices; retain `Literal` only for discriminators and the invariant tile-size constant. |
 | P5A1-3 | Freeze the five transformation parameter objects exactly as specified below; reject missing and unknown keys. |
-| P5A1-4 | Treat schema-v4 completed/failed fixtures as direct contract specimens with null provider/backend identity and no Pillow claim. |
+| P5A1-4 | Close the complete schema-v4 type/export lattice and treat completed/failed fixtures as direct contract specimens with exact built-in attempt/provenance bindings, null backend identity, empty backend-component evidence, and no Pillow claim. |
 | P5A1-5 | Add `unsupported_image_profile` only to the schema-v4 failed-problem allowlist, with a closed details object; v1-v3 readers continue to reject it. |
 | P5A1-6 | Add only the bounded terminal projection below and permit downgrade only when every fact is losslessly representable in the target predecessor. |
 
@@ -148,9 +148,10 @@ are non-negative exact integers. Width and height are positive exact integers.
 SHA-256 values are 64 lowercase hexadecimal characters. Arrays are ordered,
 have no duplicates where stated, and retain the displayed capitalization.
 
-The role object keys are always `before` followed by `after` in the public
-model. Canonical JSON byte order remains the existing serializer's order; the
-pretty examples in this RFC add whitespace only for readability.
+Role objects require exactly the `before` and `after` members; their semantic
+meaning comes from the key, not object-member order. Pretty examples are
+semantic illustrations and do not assert canonical writer order. The
+canonical writer and order-insensitive reader rules are frozen below.
 
 ### Shared decode facts
 
@@ -299,7 +300,141 @@ failed specimen contains only records for stages that completed before the
 failed stage; an `unsupported_image_profile` failure at `decoding` therefore
 contains no image transformation record.
 
+## Complete schema-v4 type lattice
+
+P5-A1 adds this complete, closed public lattice. Names not shown are not v4
+public contracts:
+
+```python
+SCHEMA_VERSION_V4: Literal[4] = 4
+
+
+@dataclass(frozen=True, slots=True)
+class BackendComponentVersion:
+    component_id: str
+    component_version: str
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityAttemptV4:
+    capability_id: str
+    backend_id: str | None
+    disposition: Literal[
+        "selected", "rejected", "fallback", "unavailable", "failed"
+    ]
+    reason_code: str | None
+    capability_version: str | None
+    backend_version: str | None
+    provider: ProviderIdentity | None
+    backend_components: tuple[BackendComponentVersion, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionRecordV4(ExecutionRecordV2):
+    attempts: tuple[CapabilityAttemptV4, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ComparisonProvenanceV4(ComparisonProvenanceV2):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionProblemV4:
+    code: str
+    status_code: int
+    stage: PipelineStage
+    message: str
+    details: JsonObject
+    retryable: bool
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityProblemV4:
+    code: str
+    status_code: int
+    stage: PipelineStage
+    message: str
+    details: JsonObject
+    retryable: bool
+
+
+@dataclass(frozen=True, slots=True)
+class CompletedOutcomeV4:
+    schema_version: Literal[4] = field(default=SCHEMA_VERSION_V4, init=False)
+    kind: Literal["completed"] = field(default="completed", init=False)
+    execution: ExecutionRecordV4 = field(kw_only=True)
+    result: DiffResult = field(kw_only=True)
+
+
+@dataclass(frozen=True, slots=True)
+class UnavailableOutcomeV4:
+    schema_version: Literal[4] = field(default=SCHEMA_VERSION_V4, init=False)
+    kind: Literal["unavailable"] = field(default="unavailable", init=False)
+    execution: ExecutionRecordV4 = field(kw_only=True)
+    problem: CapabilityProblemV4 = field(kw_only=True)
+
+
+@dataclass(frozen=True, slots=True)
+class FailedOutcomeV4:
+    schema_version: Literal[4] = field(default=SCHEMA_VERSION_V4, init=False)
+    kind: Literal["failed"] = field(default="failed", init=False)
+    execution: ExecutionRecordV4 = field(kw_only=True)
+    problem: ExecutionProblemV4 = field(kw_only=True)
+
+
+CompareSpecV4 = CompareSpecV3 | ImageCompareSpec
+ChangeV4 = Change | ImageChange
+CompareOutcomeV4 = CompletedOutcomeV4 | UnavailableOutcomeV4 | FailedOutcomeV4
+AnyCompareOutcome = CompareOutcome | CompareOutcomeV2 | CompareOutcomeV3 | CompareOutcomeV4
+```
+
+`ExecutionRecordV4` retains every `ExecutionRecordV2` field and invariant
+unchanged—timestamps, durations, contiguous stages, diagnostics, detection,
+last completed stage, and `plugin_host`—but requires every attempt to be an
+exact `CapabilityAttemptV4`. `ComparisonProvenanceV4` retains every
+`ComparisonProvenanceV2` field and provider invariant unchanged; its distinct
+runtime type prevents a v3 provenance object from being placed directly in a
+v4 completed outcome. `CompletedOutcomeV4.result` remains the existing
+`DiffResult` class, whose provenance must be exactly
+`ComparisonProvenanceV4` and whose spec/change unions are validated as v4.
+
+`BackendComponentVersion.component_id` is a stable lowercase identifier and
+`component_version` is bounded identity text. Components are unique and sorted
+by `component_id`. A v4 attempt with `backend_id=null` requires
+`backend_version=null` and `backend_components=[]`. A non-null backend requires
+a non-null backend version; separately versioned linked components, when the
+backend exposes them, are recorded here rather than in transformations or
+free-form diagnostics. For example, a later runtime may identify `libpng` and
+`zlib`, but P5-A1 names no installed component and its fixtures use an empty
+tuple. This carrier closes RFC 0007's linked-library evidence requirement
+without claiming that a backend exists.
+
+The curated top-level `platydiff` exports add `CompareSpecV4`,
+`CompareOutcomeV4`, the three v4 outcome classes, every image spec/change
+class and named enum, and the four migration helpers below. The foundational
+`SCHEMA_VERSION_V4`, `ChangeV4`, `BackendComponentVersion`, v4 attempt,
+execution, provenance, and problem classes are public from
+`platydiff.core.models`, matching the predecessor's separation of curated and
+foundational contracts; they are not duplicated in the top-level export.
+Neither surface exports a private decoder or backend implementation. The
+serialization exports add `upgrade_outcome_v1_to_v4`,
+`upgrade_outcome_v2_to_v4`, `upgrade_outcome_v3_to_v4`, and
+`downgrade_outcome_v4_to_v3`. `platydiff.core` re-exports those four migration
+helpers with the existing serialization entry points.
+
 ## Contract-only canonical fixtures
+
+### Canonical writer and reader semantics
+
+The canonical schema-v4 writer uses UTF-8 JSON with `ensure_ascii=false`,
+`allow_nan=false`, recursively lexicographic object-key ordering, compact
+separators `,` and `:`, and no trailing newline. This writer order is a
+byte-stability rule only. A reader accepts object members in any order, rejects
+duplicate, missing, and unknown members, and preserves normative array order.
+Changing object-member order alone cannot change meaning; changing the order
+of stages, attempts, inputs, transformations, resources, changes, metrics, or
+evaluations is validated under that array's existing or image-specific rule.
 
 P5-A1 creates exactly these new byte-stable JSON fixtures:
 
@@ -325,6 +460,7 @@ the five exact transformation objects above. Its identity fields are:
       {
         "capability_id": "image",
         "backend_id": null,
+        "backend_components": [],
         "disposition": "selected",
         "reason_code": null,
         "capability_version": "1",
@@ -335,7 +471,7 @@ the five exact transformation objects above. Its identity fields are:
   },
   "result": {
     "provenance": {
-      "comparator_id": "image.decoded_samples",
+      "comparator_id": "image",
       "comparator_version": "1",
       "algorithm_id": "image.decoded_samples.tiles.v1",
       "implementation_version": "contract-only",
@@ -351,8 +487,28 @@ The displayed objects are partial only to avoid repeating inherited stage,
 result, metric, and source-provenance fields; the fixture itself is a complete
 outcome and is decoded with the same reject-unknown-key rules as all other
 fixtures. `plugin_host`, both providers, `backend_id`, and `backend_version`
-must be JSON null. The strings `pillow`, `PIL`, a Pillow version, a distribution
-name, a module path, and a local path must not occur anywhere in either fixture.
+must be JSON null, and `backend_components` must be empty. The strings
+`pillow`, `PIL`, a Pillow version, a distribution name, a module path, and a
+local path must not occur anywhere in either fixture.
+
+The completed specimen has no detection record and exactly one attempt, whose
+disposition is `selected`. The attempt and comparison provenance are bound
+mechanically:
+
+```text
+attempt.capability_id == provenance.comparator_id == "image"
+attempt.capability_version == provenance.comparator_version == "1"
+attempt.provider == provenance.provider == null
+attempt.backend_id == attempt.backend_version == null
+attempt.backend_components == []
+provenance.detector_provider == null
+execution.plugin_host == null
+```
+
+`image` is the built-in comparator/capability identifier. The dotted string
+`image.decoded_samples.tiles.v1` is only the algorithm identifier. A dotted
+comparator identifier with null provider is invalid under the inherited P4-C1
+provider invariant and must be rejected.
 
 The completed specimen has `artifacts=[]`, full fidelity, a complete
 `ChangeSet`, and no diagnostic. It uses only the image metric, evaluation,
@@ -363,12 +519,53 @@ normative order. The failed specimen has no `DiffResult`, artifacts, metrics,
 changes, comparison provenance, or transformations; its execution ends with a
 failed `decoding` stage and carries the exact problem below.
 
-P5-A1 may reserve `image`, `image.decoded_samples`, and
-`image.decoded_samples.tiles.v1` in schema validation only. The runtime
+P5-A1 may reserve `image` and `image.decoded_samples.tiles.v1` in schema
+validation only. The runtime
 registry continues to reject them. A later P5-A2/P5-A3 implementation must
 replace runtime identity with the actual selected backend and Platydiff
 implementation version; it must not copy `implementation_version="contract-only"`
 into a runtime outcome.
+
+### Cross-object bindings
+
+The canonical completed specimen is an equal one-by-one RGBA specimen: both
+roles use the RFC 0007 sample vector `00 7f ff 80`, all three descriptor
+digests are equal, no change item is present, relation/verdict/fidelity are
+`equal`/`pass`/`full`, and `artifacts=[]`. These bindings are semantic reader
+invariants, independent of object-member order:
+
+| Fact | Required binding |
+| --- | --- |
+| Inputs | `provenance.inputs` has exactly `before`, then `after`; each decode role's `input_bytes` equals that input's `size_bytes`, and its input digest is a valid SHA-256 evidence value. The specimen does not claim those bytes are a runnable PNG fixture. |
+| Spec/profile | `spec.kind=image`; each transformation policy/profile/tile value equals the corresponding normalized spec value. |
+| Decode/resources | Per role, decode `input_bytes`, metadata counters, `pixels`, and `decoded_bytes` equal the `used` value of the correspondingly named `ResourceUsage`; each resource `limit` equals the normalized spec limit. |
+| Mode/alpha | Per role, decode `mode` equals alpha `mode`; bands and `has_alpha` match that mode; IHDR color type and decoded-byte arithmetic match it. |
+| Dimensions/alignment | The decode dimensions bind the descriptor digest inputs; coordinate policy and tile size equal the normalized spec. Equal descriptors require equal role dimensions, mode/bands/alpha, and color-description digest. |
+| Comparison work | `image.compare.sample_pairs.used == image.compared_samples`; its limit equals `max_compare_work`. |
+| Changes/resources | `image.changes.items.used == changes.returned_count`; `image.changes.payload_bytes.used` equals the canonical retained-change payload byte count; their limits equal the two spec change limits. |
+| Summary/changes | `summary.change_count == changes.total_count == image.changed_items`; summary `changed_tiles` equals the full tile-change count and `descriptor_changes` equals the full descriptor-change count. |
+| Metrics | The equal specimen has compared/equal/changed pixels `1/1/0`, compared samples `4`, changed items `0`, MAE/RMSE `0.0`, and tagged positive-infinity PSNR, in RFC 0007 metric order. |
+| Evaluation | The single `image.decoded_sample_equality` evaluation observes `image.changed_items`, uses `eq 0`, and its verdict equals the result verdict. Relation is equal iff changed items is zero. |
+
+For every schema-v4 image outcome, not only the canonical specimen, a
+descriptor change forbids tile changes and forces compared/equal/changed pixel
+and compared-sample metrics to zero. If descriptors match, every tile is within
+both role dimensions, has `1 <= width,height <= 64`, and edge geometry follows
+the fixed grid. A tile change has `1 <= changed_pixels <= width * height` and a
+finite `maximum_absolute_error` in the inclusive range `1.0..255.0`; NaN,
+positive/negative infinity, zero, and negative error are invalid. For a
+complete change set, the sum of tile `changed_pixels` equals the full
+`image.changed_pixels` metric. For a truncated set, the retained sum must not
+exceed that metric; the producer computes the full metric before truncation,
+while the reader does not invent omitted tile facts. Each before/after digest
+must bind to the appropriate role and RFC 0007 digest domain.
+
+The canonical failed specimen has no detection record and exactly one attempt,
+whose disposition is `selected`, with capability/version `image`/`1`, null
+provider/backend identities, empty `backend_components`, and null
+`plugin_host`. It has no comparison
+provenance because a failed outcome has no `DiffResult`; the selected attempt
+is still required to explain why execution reached `decoding`.
 
 ## Schema-v4 problem model
 
@@ -426,24 +623,91 @@ Changing only the outer `schema_version` of a v4 fixture to `1`, `2`, or `3`
 must fail decoding; readers must not silently reinterpret, drop, or rename the
 code.
 
+### Complete scenario classification
+
+Classification is based on the explicit PNG profile, not a filename or MIME
+label. For the eight-byte PNG signature, a short input that is an exact proper
+prefix is truncated/malformed and therefore `decode_error`; a short or full
+prefix that already differs from the PNG signature is a wrong codec and
+therefore `unsupported_image_profile/wrong_codec`. This rule resolves the
+previous ambiguity between an unsupported codec and a damaged PNG.
+
+| Input/execution scenario | Outcome and code | Stage | `reason` when applicable |
+| --- | --- | --- | --- |
+| Backend absent or outside the accepted version range | unavailable / `backend_unavailable` (503) | resolving | — |
+| No built-in image capability is registered, including all P5-A1 runtime calls | unavailable / `capability_unavailable` (501) | resolving | — |
+| Invalid `ImageCompareSpec` field, type, or limit | failed / `invalid_spec` (400) | validating | — |
+| Missing path source | failed / `source_not_found` (404) | sourcing | — |
+| Source read is denied | failed / `permission_denied` (403) | sourcing | — |
+| Source mutates during the owned snapshot | failed / `source_changed` (409) | sourcing | — |
+| Directory, special file, `TextSource`, or another unsupported source kind | failed / `source_type_unsupported` (415) | sourcing | — |
+| Other source read failure | failed / `io_error` (500) | sourcing | — |
+| Bytes diverge from the PNG signature before the available prefix ends | failed / `unsupported_image_profile` (415) | decoding | `wrong_codec` |
+| Exact proper prefix of the PNG signature ends early | failed / `decode_error` (422) | decoding | — |
+| Valid PNG uses 1/2/4-bit greyscale or any 16-bit sample pair | failed / `unsupported_image_profile` (415) | decoding | `unsupported_bit_depth` |
+| Valid PNG uses indexed color or another legal unsupported color type | failed / `unsupported_image_profile` (415) | decoding | `unsupported_color_type` |
+| Valid PNG contains `tRNS` and needs implicit transparency expansion | failed / `unsupported_image_profile` (415) | decoding | `transparency_expansion_required` |
+| Valid PNG contains `acTL`, `fcTL`, or `fdAT`, or otherwise proves multiple frames | failed / `unsupported_image_profile` (415) | decoding | `multiple_frames` |
+| Structurally valid PNG contains an unknown critical chunk | failed / `unsupported_image_profile` (415) | decoding | `unknown_critical_chunk` |
+| Signature is PNG but framing, CRC, ordering, multiplicity, chunk value, compressed metadata, `IEND`, or stream termination is malformed | failed / `decode_error` (422) | decoding | — |
+| Scanner accepts the profile but a later backend reports a different codec, mode, dimensions, frame state, or malformed decode | failed / `decode_error` (422) | decoding | — |
+| Input, metadata, ICC, dimension, pixel, decoded-byte, or decompression-bomb limit is crossed | failed / `resource_limit_exceeded` (413) | observed sourcing/decoding stage | — |
+| Complete sample comparison would cross its work budget | failed / `compare_resource_limit` (413) | comparing | — |
+| Selected built-in comparator fails outside classified decode/resource conditions | failed / `comparator_failure` (502) | comparing | — |
+| Unexpected exception mapped only at the CLI outer boundary | failed / `internal_error` (500) | outer CLI boundary | — |
+| Dimensions, pixel format, or color description differ after successful decode | completed / different / fail | aggregating | — |
+| Supported descriptors and all samples match/differ | completed / equal/pass or different/fail | aggregating | — |
+
+An `unsupported_image_profile` object must use the reason in the matching row;
+the six reasons are exhaustive for schema v4. `decode_error` and every inherited
+problem retain their inherited details policy and must not acquire a profile
+`reason`. A condition that is both malformed and outside the supported profile
+is `decode_error`: structural validity is established before support-profile
+classification, except for the explicit signature-prefix rule above.
+
 ## Minimal safe terminal projection
 
 P5-A1 may extend the terminal renderer only to consume an already validated
 v4 outcome. It receives no source service or artifact root and performs no
 metric, digest, image, or verdict computation. The inherited header, fidelity,
-summary counts, and diagnostics remain unchanged.
+summary counts, and diagnostics retain their meaning, but the whole schema-v4
+projection is subject to these exact bounds:
+
+```text
+TERMINAL_V4_MAX_LINES = 512
+TERMINAL_V4_MAX_UNICODE_SCALARS = 65_536
+TERMINAL_V4_MAX_UTF8_BYTES = 65_536
+TERMINAL_V4_OVERFLOW_LINE = ... terminal output truncated by schema-v4 limits
+```
+
+The renderer produces a stream of complete logical lines in existing order,
+escapes untrusted text first, and joins retained lines with one ASCII LF and no
+trailing LF. Line count includes the overflow line; scalar and byte counts
+include separators. It retains the longest prefix for which, when more logical
+lines remain, the exact overflow line and its separator also fit all three
+limits. If anything is omitted it emits that overflow line exactly once and
+stops; it never emits a partial logical line. If even the first logical line
+plus the overflow line cannot fit, the output is the overflow line alone. The
+algorithm is independent of terminal width, locale, color, and environment.
 
 For `ImageChange`, it appends exactly one bounded line per retained change:
 
 ```text
 descriptor <component> changed
-tile x=<x> y=<y> width=<width> height=<height> changed_pixels=<count> maximum_absolute_error=<tagged-number>
+tile x=<x> y=<y> width=<width> height=<height> changed_pixels=<count> maximum_absolute_error=<decimal>
 ```
 
 The descriptor form uses only the validated component wire value. The tile
-form uses only validated non-negative/positive integer fields and the existing
-tagged numeric rendering; finite values use the existing locale-independent
-float representation and infinities/NaN use their existing explicit tags.
+form uses only validated integers and a validated finite error. Coordinates
+use grammar `0|[1-9][0-9]{0,15}` and remain within the existing exact-integer
+bound; width, height, and changed pixels use `[1-9][0-9]{0,15}` plus their
+model bounds. `maximum_absolute_error` must also be mathematically integral
+and is rendered with Python's locale-independent `repr(float(value))`; after
+the required `1.0..255.0` validation its grammar is
+`(?:[1-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.0`.
+An image tile never renders a tagged NaN or infinity. In addition to the
+general image invariant, terminal input validation requires
+`changed_pixels <= width * height` before any line is produced.
 Digests, pixels, paths, labels, metadata, profiles, and source excerpts are not
 printed. A truncated result renders only retained items and the inherited
 complete total; it never implies that omitted tiles are absent.
@@ -459,28 +723,55 @@ rejected by the reader before rendering. The renderer does not guess a generic
 image meaning. Namespaced `ExtensionChange` retains the existing explicit
 generic presentation.
 
+Golden tests cover output at exactly 512 lines, 65,536 scalars, and 65,536
+UTF-8 bytes; one-line/one-scalar/one-byte overflow; a multibyte diagnostic; an
+individual overbound line; and deterministic repetition. They also reject tile
+errors `0`, `NaN`, both infinities, and values above `255`, and reject zero or
+over-64 dimensions, zero changed pixels, and changed pixels above tile area.
+
 ## Upgrade, downgrade, and reader boundaries
 
-The v4 reader accepts and preserves valid v1, v2, v3, and v4 envelopes. Explicit
-v1/v2/v3-to-v4 helpers add only the same neutral defaults already accepted for
-predecessor migration; they do not relabel a legacy outcome as image.
+The v4 reader accepts and preserves valid v1, v2, v3, and v4 envelopes. The
+three explicit upgrade helpers are exact compositions:
 
-There is no automatic downgrade in a renderer, CLI, JSON writer, or reader. A
-requested `downgrade_outcome_v4(outcome, target_version)` succeeds only after
-validation proves that every field is representable by that target. It must
-reject any outcome containing at least one of:
+```text
+upgrade_outcome_v3_to_v4(v3) -> v4
+upgrade_outcome_v2_to_v4(v2) = upgrade_outcome_v3_to_v4(upgrade_outcome_v2_to_v3(v2))
+upgrade_outcome_v1_to_v4(v1) = upgrade_outcome_v2_to_v4(upgrade_outcome_v1_to_v2(v1))
+```
+
+The v3-to-v4 step replaces each attempt with `CapabilityAttemptV4` carrying
+the same seven inherited fields plus `backend_components=[]`, replaces the
+execution/provenance/problem wrapper with its exact v4 type, and preserves all
+wire facts. It does not relabel a predecessor outcome as image.
+
+There is no automatic downgrade in a renderer, CLI, JSON writer, or reader.
+P5-A1 defines exactly one new downgrade helper:
+
+```python
+def downgrade_outcome_v4_to_v3(outcome: CompareOutcomeV4) -> CompareOutcomeV3: ...
+```
+
+It succeeds only after validation proves that every field is representable in
+schema v3 and every attempt has `backend_components=[]`. It must reject any
+outcome containing at least one of:
 
 - an image spec kind or image change;
-- an `image.*` built-in transformation, comparator, algorithm, metric,
+- an `image` or `image.*` built-in transformation, comparator, algorithm, metric,
   evaluation, resource, or capability-attempt identifier;
 - `unsupported_image_profile`; or
-- any schema-v4-only fact, enum value, or problem shape.
+- a non-empty `backend_components` tuple; or
+- any other schema-v4-only fact, enum value, or problem shape.
 
-The helper then applies the existing v3-to-v2 and v2-to-v1 gates rather than
-bypassing them. In particular, every `ImageCompareSpec` outcome and both P5-A1
-canonical fixtures are non-downgradable to v1-v3. An older reader that does not
-know schema v4 must fail with its existing unknown-schema error; it is not
-required to render a lossy approximation.
+On success it converts the exact v4 wrappers and attempts back to their v3
+types without changing any remaining value. A caller may then explicitly use
+the already implemented `downgrade_outcome_v3_to_v2`; P5-A1 does not modify or
+bypass that gate. No v2-to-v1 downgrade helper exists in the reviewed
+predecessor, so P5-A1 does not promise or add one. Such a helper is deferred to
+a separate contract if a use case requires it. Every `ImageCompareSpec`
+outcome and both P5-A1 canonical fixtures are non-downgradable to v3 or below.
+An older reader that does not know schema v4 must fail with its existing
+unknown-schema error; it is not required to render a lossy approximation.
 
 ## Mechanical acceptance criteria
 
@@ -490,10 +781,13 @@ all of the following before merge:
 1. The actual merged P4-C1 commit is an ancestor of the implementation branch,
    its full predecessor suite passes unchanged, and its public v3 types match
    this amendment. Otherwise work stops for an RFC callback.
-2. `ImageCompareSpec`, `ImageResourceLimits`, `ImageChange`, the named enums,
-   v4 outcome aliases/classes, `ExecutionProblemV4`, and explicit migrations
-   are present in the documented public export set; no decoder/backend object
-   is exported.
+2. `SCHEMA_VERSION_V4`, `BackendComponentVersion`, `CapabilityAttemptV4`,
+   `ExecutionRecordV4`, `ComparisonProvenanceV4`, both v4 problem classes,
+   all three v4 outcome classes, `CompareSpecV4`, `ChangeV4`,
+   `CompareOutcomeV4`, the expanded `AnyCompareOutcome`, every documented
+   image spec/change/enum, and exactly four v4 migration helpers are present in
+   the documented top-level versus foundational export sets above; no
+   decoder/backend implementation is exported.
 3. Every new object rejects missing/extra keys, booleans-as-integers, invalid
    enum values, invalid mode/IHDR/band combinations, invalid role ordering,
    invalid digests, and violated cross-field invariants.
@@ -501,18 +795,23 @@ all of the following before merge:
    rejects a wrong stage, ID, key, type, nesting, value, or sequence position.
 5. v1/v2/v3 canonical files remain byte-identical; all predecessor round trips,
    migrations, plugin receipts, CLI outputs, and public exports remain valid.
-6. The two v4 fixtures round-trip byte-identically. Tests prove their direct
-   construction, null provider/backend identities, absence of Pillow strings,
-   absence of an image runtime registration/CLI route/dependency, and rejection
+6. The two v4 fixtures round-trip byte-identically under the canonical writer
+   while permuted object members read identically. Tests prove direct
+   construction, exact `image` attempt/comparator/version/provider binding,
+   null backend identities, empty components, absence of Pillow strings,
+   absence of image runtime registration/CLI route/dependency, and rejection
    by v1-v3 code gates where applicable.
 7. The v4 reader rejects duplicate keys, unknown schemas, unknown built-in
    kinds/transformations/problems, and invalid image change combinations before
    terminal rendering.
 8. Terminal golden tests cover descriptor, tile, truncated, failed, unsafe
-   message, and unknown-kind behavior without source or artifact authority.
-9. Migration tests prove lossless predecessor upgrades, legacy-only v4
-   downgrades where representable, and hard rejection of every image-bearing or
-   `unsupported_image_profile` downgrade.
+   message, unknown-kind, exact line/scalar/UTF-8 boundaries, deterministic
+   overflow, numeric grammar, and tile value/area rejection without source or
+   artifact authority.
+9. Migration tests prove all three lossless predecessor-to-v4 upgrades, exact
+   representable v4-to-v3 downgrade, subsequent use of the existing v3-to-v2
+   helper, and hard rejection of image-bearing, component-bearing, or
+   `unsupported_image_profile` downgrade. No v2-to-v1 helper is added.
 10. Ruff format/check, strict mypy, the complete pytest suite, build and
     wheel/sdist inspection, `git diff --check`, and relative-link checks all
     pass. Only commands actually run may be reported.
@@ -540,8 +839,9 @@ alter the P5-C/P5-P/P5-F/P5-M/P5-H/P5-S callbacks or authorize any of them.
 
 If accepted, this RFC supersedes only RFC 0007's open choices about P5-A1 enum
 representation, transformation JSON shape, schema-only fixture identity,
-schema-v4 problem gating, terminal projection, and downgrade mechanics. All
-other I1-I16 decisions and RFC 0007 semantics remain authoritative.
+schema-v4 problem gating and signature classification, terminal projection,
+and downgrade mechanics. All other I1-I16 decisions and RFC 0007 semantics
+remain authoritative.
 
 ## References
 

@@ -48,7 +48,7 @@ UI 或图片 corpus 文件。由于没有 runtime capability registration，
 | P5A1-1 | 按上述边界将 P5-A1 严格限定为 contract-only。 |
 | P5A1-2 | 可复用的 public 图片选项使用具名 `StrEnum`；只有 discriminator 与固定 tile-size 常量保留 `Literal`。 |
 | P5A1-3 | 精确冻结下述五种 transformation parameter object；missing/unknown key 均拒绝。 |
-| P5A1-4 | schema-v4 completed/failed fixture 是 provider/backend identity 为 null 且不声称 Pillow 的直接 contract specimen。 |
+| P5A1-4 | 闭合完整 schema-v4 type/export lattice，并把 completed/failed fixture 定义为具有精确 built-in attempt/provenance binding、null backend identity、空 backend-component evidence 且不声称 Pillow 的直接 contract specimen。 |
 | P5A1-5 | 只在 schema-v4 failed-problem allowlist 增加 `unsupported_image_profile`，其 details object 为 closed；v1-v3 reader 继续拒绝它。 |
 | P5A1-6 | 只增加下述有界 terminal projection；仅当所有事实都能无损表达于目标前驱时才允许 downgrade。 |
 
@@ -133,8 +133,9 @@ Transformation parameter 继续是经过验证的 JSON object，不新增 public
 拒绝 boolean。Count/size 是非负 exact integer；width/height 是正 exact integer；SHA-256 是
 64 位小写十六进制。声明有顺序或唯一性的 array 必须遵守约束并保留文中大小写。
 
-Public model 的 role object key 始终先 `before` 后 `after`。Canonical JSON byte order 沿用
-现有 serializer；本文 pretty example 的空白仅用于阅读。
+Role object 恰好要求 `before`/`after` 两个 member；语义来自 key 而非 object-member order。
+Pretty example 只说明语义，不声称 canonical writer order；canonical writer 与
+order-insensitive reader rule 在下方冻结。
 
 ### 共享 decode facts
 
@@ -271,7 +272,128 @@ Schema-v4 completed image specimen 必须按上方顺序恰好各含一条 recor
 image transformation ID。Failed specimen 只包含 failed stage 前已经 completed 的 stage record；
 因此在 `decoding` 失败的 `unsupported_image_profile` specimen 不含 image transformation record。
 
+## 完整 schema-v4 type lattice
+
+P5-A1 新增以下完整、closed public lattice。未列出的名称不是 v4 public contract：
+
+```python
+SCHEMA_VERSION_V4: Literal[4] = 4
+
+
+@dataclass(frozen=True, slots=True)
+class BackendComponentVersion:
+    component_id: str
+    component_version: str
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityAttemptV4:
+    capability_id: str
+    backend_id: str | None
+    disposition: Literal[
+        "selected", "rejected", "fallback", "unavailable", "failed"
+    ]
+    reason_code: str | None
+    capability_version: str | None
+    backend_version: str | None
+    provider: ProviderIdentity | None
+    backend_components: tuple[BackendComponentVersion, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionRecordV4(ExecutionRecordV2):
+    attempts: tuple[CapabilityAttemptV4, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ComparisonProvenanceV4(ComparisonProvenanceV2):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionProblemV4:
+    code: str
+    status_code: int
+    stage: PipelineStage
+    message: str
+    details: JsonObject
+    retryable: bool
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityProblemV4:
+    code: str
+    status_code: int
+    stage: PipelineStage
+    message: str
+    details: JsonObject
+    retryable: bool
+
+
+@dataclass(frozen=True, slots=True)
+class CompletedOutcomeV4:
+    schema_version: Literal[4] = field(default=SCHEMA_VERSION_V4, init=False)
+    kind: Literal["completed"] = field(default="completed", init=False)
+    execution: ExecutionRecordV4 = field(kw_only=True)
+    result: DiffResult = field(kw_only=True)
+
+
+@dataclass(frozen=True, slots=True)
+class UnavailableOutcomeV4:
+    schema_version: Literal[4] = field(default=SCHEMA_VERSION_V4, init=False)
+    kind: Literal["unavailable"] = field(default="unavailable", init=False)
+    execution: ExecutionRecordV4 = field(kw_only=True)
+    problem: CapabilityProblemV4 = field(kw_only=True)
+
+
+@dataclass(frozen=True, slots=True)
+class FailedOutcomeV4:
+    schema_version: Literal[4] = field(default=SCHEMA_VERSION_V4, init=False)
+    kind: Literal["failed"] = field(default="failed", init=False)
+    execution: ExecutionRecordV4 = field(kw_only=True)
+    problem: ExecutionProblemV4 = field(kw_only=True)
+
+
+CompareSpecV4 = CompareSpecV3 | ImageCompareSpec
+ChangeV4 = Change | ImageChange
+CompareOutcomeV4 = CompletedOutcomeV4 | UnavailableOutcomeV4 | FailedOutcomeV4
+AnyCompareOutcome = CompareOutcome | CompareOutcomeV2 | CompareOutcomeV3 | CompareOutcomeV4
+```
+
+`ExecutionRecordV4` 原样保留 `ExecutionRecordV2` 的所有 field/invariant——timestamp、duration、
+contiguous stage、diagnostic、detection、last completed stage 与 `plugin_host`——但要求每条
+attempt 都是 exact `CapabilityAttemptV4`。`ComparisonProvenanceV4` 原样保留
+`ComparisonProvenanceV2` 的所有 field/provider invariant；它的独立 runtime type 防止把 v3
+provenance object 直接放入 v4 completed outcome。`CompletedOutcomeV4.result` 继续使用现有
+`DiffResult` class，但其 provenance 必须恰好是 `ComparisonProvenanceV4`，spec/change union
+按 v4 validation。
+
+`BackendComponentVersion.component_id` 是稳定小写 identifier，`component_version` 是 bounded
+identity text。Component 按 `component_id` 唯一并排序。`backend_id=null` 的 v4 attempt 要求
+`backend_version=null` 且 `backend_components=[]`。非 null backend 要求非 null backend version；
+backend 暴露的 separately versioned linked component 记录在这里，而不是 transformation 或
+free-form diagnostic。后续 runtime 例如可标识 `libpng`/`zlib`，但 P5-A1 不声称安装了任何
+component，fixture 使用空 tuple。该 carrier 在不声称 backend 已存在的前提下闭合 RFC 0007 的
+linked-library evidence 要求。
+
+Curated top-level `platydiff` export 新增 `CompareSpecV4`、`CompareOutcomeV4`、三个 v4 outcome
+class、本 RFC 全部 image spec/change class/named enum，以及下方四个 migration helper。
+Foundational `SCHEMA_VERSION_V4`、`ChangeV4`、`BackendComponentVersion`、v4 attempt/execution/
+provenance/problem class 从 `platydiff.core.models` 公开，遵循 predecessor 对 curated/foundational
+contract 的区分，不在 top-level 重复 export。两个 surface 都不 export private decoder/backend
+implementation。Serialization export 新增 `upgrade_outcome_v1_to_v4`、`upgrade_outcome_v2_to_v4`、
+`upgrade_outcome_v3_to_v4` 与 `downgrade_outcome_v4_to_v3`；`platydiff.core` 与既有
+serialization entry point 一并 re-export 这四个 helper。
+
 ## Contract-only canonical fixtures
+
+### Canonical writer 与 reader semantics
+
+Canonical schema-v4 writer 使用 UTF-8 JSON，`ensure_ascii=false`、`allow_nan=false`、object key
+递归按字典序排列、compact separator `,`/`:` 且无 trailing newline。该 writer order 只属于
+byte-stability rule。Reader 接受任意 object member order，拒绝 duplicate/missing/unknown member，
+并保留 normative array order。仅改变 object member order 不得改变语义；stage、attempt、input、
+transformation、resource、change、metric 或 evaluation 的 array order 由其既有或图片专属规则验证。
 
 P5-A1 恰好新增两个 byte-stable JSON fixture：
 
@@ -295,6 +417,7 @@ object，identity field 为：
       {
         "capability_id": "image",
         "backend_id": null,
+        "backend_components": [],
         "disposition": "selected",
         "reason_code": null,
         "capability_version": "1",
@@ -305,7 +428,7 @@ object，identity field 为：
   },
   "result": {
     "provenance": {
-      "comparator_id": "image.decoded_samples",
+      "comparator_id": "image",
       "comparator_version": "1",
       "algorithm_id": "image.decoded_samples.tiles.v1",
       "implementation_version": "contract-only",
@@ -319,8 +442,26 @@ object，identity field 为：
 
 上方为避免重复 inherited stage/result/metric/source provenance field 而只展示部分 object；实际
 fixture 必须是完整 outcome，并使用与其他 fixture 相同的 reject-unknown-key rule decode。
-`plugin_host`、两个 provider、`backend_id` 与 `backend_version` 必须为 JSON null；两种 fixture
-任何位置都不得出现 `pillow`、`PIL`、Pillow version、distribution name、module path 或 local path。
+`plugin_host`、两个 provider、`backend_id` 与 `backend_version` 必须为 JSON null，
+`backend_components` 必须为空；两种 fixture 任何位置都不得出现 `pillow`、`PIL`、Pillow
+version、distribution name、module path 或 local path。
+
+Completed specimen 不含 detection record，且恰好有一条 attempt，其 disposition 为 `selected`。
+Attempt 与 comparison provenance 必须满足机械绑定：
+
+```text
+attempt.capability_id == provenance.comparator_id == "image"
+attempt.capability_version == provenance.comparator_version == "1"
+attempt.provider == provenance.provider == null
+attempt.backend_id == attempt.backend_version == null
+attempt.backend_components == []
+provenance.detector_provider == null
+execution.plugin_host == null
+```
+
+`image` 是 built-in comparator/capability identifier；dotted string
+`image.decoded_samples.tiles.v1` 仅是 algorithm identifier。根据 inherited P4-C1 provider
+invariant，provider 为 null 的 dotted comparator identifier 无效，必须拒绝。
 
 Completed specimen 必须 `artifacts=[]`、full fidelity、complete `ChangeSet` 且无 diagnostic；只使用
 RFC 0007 已接受的 image metric/evaluation/change/summary/resource/digest invariant。所有
@@ -328,10 +469,44 @@ configured/used resource 使用 RFC 0007 精确名称并按字典序排列，五
 order 出现。Failed specimen 不含 `DiffResult`、artifact、metric、change、comparison provenance 或
 transformation；execution 终止于 failed `decoding` stage，并携带下述精确 problem。
 
-P5-A1 只可在 schema validation 中 reserve `image`、`image.decoded_samples` 与
-`image.decoded_samples.tiles.v1`；runtime registry 继续拒绝它们。后续 P5-A2/P5-A3 runtime 必须记录
+P5-A1 只可在 schema validation 中 reserve `image` 与 `image.decoded_samples.tiles.v1`；
+runtime registry 继续拒绝它们。后续 P5-A2/P5-A3 runtime 必须记录
 实际 selected backend 与 Platydiff implementation version，不得把
 `implementation_version="contract-only"` 复制到 runtime outcome。
+
+### Cross-object bindings
+
+Canonical completed specimen 是 equal 1x1 RGBA specimen：两个 role 都使用 RFC 0007 sample
+vector `00 7f ff 80`，三种 descriptor digest 均相等，不含 change item，
+relation/verdict/fidelity 为 `equal`/`pass`/`full`，且 `artifacts=[]`。下列 binding 是不依赖
+object member order 的 semantic reader invariant：
+
+| Fact | 必须满足的 binding |
+| --- | --- |
+| Inputs | `provenance.inputs` 恰好先 `before` 后 `after`；每个 decode role 的 `input_bytes` 等于对应 input `size_bytes`，input digest 是有效 SHA-256 evidence。Specimen 不声称这些 bytes 是可运行 PNG fixture。 |
+| Spec/profile | `spec.kind=image`；每条 transformation 的 policy/profile/tile value 等于 normalized spec 对应值。 |
+| Decode/resources | 每个 role 的 decode `input_bytes`、metadata counter、`pixels`、`decoded_bytes` 等于同名 `ResourceUsage.used`；resource `limit` 等于 normalized spec limit。 |
+| Mode/alpha | 每个 role 的 decode `mode` 等于 alpha `mode`；bands/`has_alpha` 匹配 mode；IHDR color type 与 decoded-byte arithmetic 也匹配。 |
+| Dimensions/alignment | Decode dimensions 绑定 descriptor digest input；coordinate policy/tile size 等于 normalized spec。Descriptor 相等要求 role dimensions、mode/bands/alpha 与 color-description digest 相等。 |
+| Comparison work | `image.compare.sample_pairs.used == image.compared_samples`；limit 等于 `max_compare_work`。 |
+| Changes/resources | `image.changes.items.used == changes.returned_count`；`image.changes.payload_bytes.used` 等于 retained change canonical payload byte count；limit 等于两个 spec change limit。 |
+| Summary/changes | `summary.change_count == changes.total_count == image.changed_items`；summary `changed_tiles` 等于 full tile-change count，`descriptor_changes` 等于 full descriptor-change count。 |
+| Metrics | Equal specimen 的 compared/equal/changed pixels 为 `1/1/0`，compared samples `4`，changed items `0`，MAE/RMSE `0.0`，PSNR 是 tagged positive infinity，并遵守 RFC 0007 metric order。 |
+| Evaluation | 唯一的 `image.decoded_sample_equality` evaluation observe `image.changed_items`，使用 `eq 0`，verdict 等于 result verdict；changed items 为零当且仅当 relation 为 equal。 |
+
+对所有 schema-v4 image outcome（不只 canonical specimen），descriptor change 禁止 tile change，
+并把 compared/equal/changed pixel 与 compared-sample metric 全部置零。Descriptor 相同时，每个 tile
+都位于两个 role dimension 内，满足 `1 <= width,height <= 64`，edge geometry 遵循 fixed grid。
+Tile change 满足 `1 <= changed_pixels <= width * height`，且 `maximum_absolute_error` 必须是
+inclusive `1.0..255.0` 的 finite value；NaN、正负 infinity、zero 与 negative error 均无效。
+Complete change set 的 tile `changed_pixels` 之和等于完整 `image.changed_pixels` metric；truncated set
+的 retained sum 不得超过该 metric，producer 在 truncation 前计算完整 metric，reader 不虚构 omitted
+tile fact。每个 before/after digest 必须绑定相应 role 与 RFC 0007 digest domain。
+
+Canonical failed specimen 不含 detection record，且恰好有一条 disposition 为 `selected` 的 attempt：
+capability/version 为 `image`/`1`，provider/backend identity 为 null，`backend_components` 为空，
+`plugin_host` 为 null。Failed outcome 没有 `DiffResult`，因此没有 comparison provenance；该
+attempt 仍是解释 execution 为何到达 `decoding` 的必要证据。
 
 ## Schema-v4 problem model
 
@@ -380,22 +555,81 @@ Allowlist 必须先按 outer envelope version gate 再 decode problem：schema v
 仅把 v4 fixture 的 outer `schema_version` 改为 `1`、`2` 或 `3` 必须 decode 失败；reader 不得静默
 reinterpret、drop 或 rename 该 code。
 
+### 完整 scenario classification
+
+Classification 依据显式 PNG profile，而非 filename/MIME label。对于 8-byte PNG signature，若短输入
+是其 exact proper prefix，则是 truncated/malformed，返回 `decode_error`；若短或完整 prefix 已经在
+现有位置偏离 PNG signature，则是 wrong codec，返回
+`unsupported_image_profile/wrong_codec`。该规则消除 unsupported codec 与 damaged PNG 的歧义。
+
+| Input/execution scenario | Outcome/code | Stage | 适用时的 `reason` |
+| --- | --- | --- | --- |
+| Backend 缺失或不在 accepted version range | unavailable / `backend_unavailable` (503) | resolving | — |
+| 未注册 built-in image capability，包括 P5-A1 的全部 runtime call | unavailable / `capability_unavailable` (501) | resolving | — |
+| Invalid `ImageCompareSpec` field/type/limit | failed / `invalid_spec` (400) | validating | — |
+| Path source 缺失 | failed / `source_not_found` (404) | sourcing | — |
+| Source read 被拒绝 | failed / `permission_denied` (403) | sourcing | — |
+| Owned snapshot 期间 source mutation | failed / `source_changed` (409) | sourcing | — |
+| Directory、special file、`TextSource` 或其他 unsupported source kind | failed / `source_type_unsupported` (415) | sourcing | — |
+| 其他 source read failure | failed / `io_error` (500) | sourcing | — |
+| Available prefix 结束前 bytes 已偏离 PNG signature | failed / `unsupported_image_profile` (415) | decoding | `wrong_codec` |
+| PNG signature 的 exact proper prefix 提前结束 | failed / `decode_error` (422) | decoding | — |
+| Valid PNG 使用 1/2/4-bit greyscale 或任意 16-bit sample pair | failed / `unsupported_image_profile` (415) | decoding | `unsupported_bit_depth` |
+| Valid PNG 使用 indexed color 或其他 legal unsupported color type | failed / `unsupported_image_profile` (415) | decoding | `unsupported_color_type` |
+| Valid PNG 含 `tRNS` 且需要隐式 transparency expansion | failed / `unsupported_image_profile` (415) | decoding | `transparency_expansion_required` |
+| Valid PNG 含 `acTL`、`fcTL`、`fdAT` 或以其他方式证明 multiple frames | failed / `unsupported_image_profile` (415) | decoding | `multiple_frames` |
+| Structurally valid PNG 含 unknown critical chunk | failed / `unsupported_image_profile` (415) | decoding | `unknown_critical_chunk` |
+| Signature 是 PNG，但 framing、CRC、ordering、multiplicity、chunk value、compressed metadata、`IEND` 或 stream termination malformed | failed / `decode_error` (422) | decoding | — |
+| Scanner 接受 profile，但后续 backend 报告其他 codec/mode/dimensions/frame state 或 malformed decode | failed / `decode_error` (422) | decoding | — |
+| 跨越 input、metadata、ICC、dimension、pixel、decoded-byte 或 decompression-bomb limit | failed / `resource_limit_exceeded` (413) | 实际 sourcing/decoding stage | — |
+| 完整 sample comparison 将跨越 work budget | failed / `compare_resource_limit` (413) | comparing | — |
+| Selected built-in comparator 在已分类 decode/resource condition 外失败 | failed / `comparator_failure` (502) | comparing | — |
+| 只在 CLI outer boundary mapping 的 unexpected exception | failed / `internal_error` (500) | outer CLI boundary | — |
+| 成功 decode 后 dimensions、pixel format 或 color description 不同 | completed / different / fail | aggregating | — |
+| Supported descriptor 与全部 sample 相同/不同 | completed / equal/pass 或 different/fail | aggregating | — |
+
+`unsupported_image_profile` object 必须使用匹配行的 reason；六种 reason 是 schema v4 exhaustive set。
+`decode_error` 与其他 inherited problem 保留其 inherited details policy，不得获得 profile `reason`。
+同时 malformed 且超出 supported profile 的条件归为 `decode_error`：必须先建立 structural validity 再做
+support-profile classification，只有上方显式 signature-prefix rule 例外。
+
 ## 最小安全 terminal projection
 
 P5-A1 只可扩展 terminal renderer 以消费已验证 v4 outcome。它不获得 source service/artifact root，
-不计算 metric、digest、image 或 verdict。Inherited header、fidelity、summary count 与 diagnostic 不变。
+不计算 metric、digest、image 或 verdict。Inherited header、fidelity、summary count 与 diagnostic
+保持原语义，但整个 schema-v4 projection 必须遵守以下精确上限：
+
+```text
+TERMINAL_V4_MAX_LINES = 512
+TERMINAL_V4_MAX_UNICODE_SCALARS = 65_536
+TERMINAL_V4_MAX_UTF8_BYTES = 65_536
+TERMINAL_V4_OVERFLOW_LINE = ... terminal output truncated by schema-v4 limits
+```
+
+Renderer 按既有顺序生成完整 logical line stream，先 escape untrusted text，再用一个 ASCII LF join，
+且不添加 trailing LF。Line count 包含 overflow line；scalar/byte count 包含 separator。当仍有 logical
+line 时，renderer 保留能同时容纳 exact overflow line 及其 separator、并满足三个 limit 的最长 prefix。
+只要有内容 omitted，就恰好 emit 一次 overflow line 后停止，绝不 emit partial logical line。若第一个
+logical line 加 overflow line 都无法容纳，则 output 只包含 overflow line。算法不依赖 terminal width、
+locale、color 或 environment。
 
 对每个 retained `ImageChange` 恰好附加一行：
 
 ```text
 descriptor <component> changed
-tile x=<x> y=<y> width=<width> height=<height> changed_pixels=<count> maximum_absolute_error=<tagged-number>
+tile x=<x> y=<y> width=<width> height=<height> changed_pixels=<count> maximum_absolute_error=<decimal>
 ```
 
-Descriptor form 只使用已验证 component wire value；tile form 只使用已验证 integer field 与现有 tagged
-numeric rendering。Finite value 使用现有 locale-independent float representation，Inf/NaN 使用现有
-显式 tag。不得打印 digest、pixel、path、label、metadata、profile 或 source excerpt。Truncated result
-只 render retained item 与 inherited complete total，不得暗示 omitted tile 不存在。
+Descriptor form 只使用已验证 component wire value。Tile form 只使用已验证 integer 与 finite error。
+Coordinate 使用 grammar `0|[1-9][0-9]{0,15}` 并满足既有 exact-integer bound；width、height、changed
+pixels 使用 `[1-9][0-9]{0,15}` 并满足各自 model bound。`maximum_absolute_error` 还必须在数学上
+为整数，并使用 Python locale-independent `repr(float(value))`；经过 required `1.0..255.0`
+validation 后，其 grammar 为
+`(?:[1-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.0`。Image tile
+绝不 render tagged NaN/infinity。除一般 image invariant 外，任何 line 产生前 terminal input validation
+还必须验证 `changed_pixels <= width * height`。不得打印 digest、pixel、path、label、metadata、profile
+或 source excerpt。Truncated result 只 render retained item 与 inherited complete total，不得暗示 omitted
+tile 不存在。
 
 Canonical failed fixture 的 inherited problem projection 精确为：
 
@@ -406,22 +640,45 @@ failed [unsupported_image_profile/415] at decoding: input is outside the static 
 Unknown schema-v4 built-in change/transformation/enum/problem code 必须在 rendering 前由 reader 拒绝；
 renderer 不猜测 generic image meaning。Namespaced `ExtensionChange` 保持现有显式 generic presentation。
 
+Golden test 覆盖恰好 512 lines、65,536 scalars、65,536 UTF-8 bytes；逐一多一 line/scalar/byte；
+multibyte diagnostic；单条 overbound line；以及 deterministic repetition。测试还拒绝 tile error `0`、
+`NaN`、正负 infinity、超过 `255`，并拒绝 zero/over-64 dimension、zero changed pixels 与超过 tile area
+的 changed pixels。
+
 ## Upgrade、downgrade 与 reader 边界
 
-V4 reader 接受并保留有效 v1/v2/v3/v4 envelope。显式 v1/v2/v3-to-v4 helper 只增加 predecessor
-migration 已接受的 neutral default，不把 legacy outcome relabel 为 image。
+V4 reader 接受并保留有效 v1/v2/v3/v4 envelope。三个显式 upgrade helper 是精确 composition：
 
-Renderer、CLI、JSON writer 或 reader 均不得自动 downgrade。只有 validation 证明每个 field 都能由
-目标版本表达时，显式 `downgrade_outcome_v4(outcome, target_version)` 才成功。包含以下任意内容即拒绝：
+```text
+upgrade_outcome_v3_to_v4(v3) -> v4
+upgrade_outcome_v2_to_v4(v2) = upgrade_outcome_v3_to_v4(upgrade_outcome_v2_to_v3(v2))
+upgrade_outcome_v1_to_v4(v1) = upgrade_outcome_v2_to_v4(upgrade_outcome_v1_to_v2(v1))
+```
+
+V3-to-v4 step 把每条 attempt 替换为保留七个 inherited field 并新增 `backend_components=[]` 的
+`CapabilityAttemptV4`，把 execution/provenance/problem wrapper 替换为 exact v4 type，并保留全部
+wire fact；不会把 predecessor outcome relabel 为 image。
+
+Renderer、CLI、JSON writer 或 reader 均不得自动 downgrade。P5-A1 只定义一个新 downgrade helper：
+
+```python
+def downgrade_outcome_v4_to_v3(outcome: CompareOutcomeV4) -> CompareOutcomeV3: ...
+```
+
+只有 validation 证明每个 field 都可由 schema v3 表达且所有 attempt 的
+`backend_components=[]` 时才成功。包含以下任意内容即拒绝：
 
 - image spec kind 或 image change；
-- `image.*` built-in transformation/comparator/algorithm/metric/evaluation/resource/capability-attempt ID；
+- `image` 或 `image.*` built-in transformation/comparator/algorithm/metric/evaluation/resource/capability-attempt ID；
 - `unsupported_image_profile`；
-- 任意 schema-v4-only fact、enum value 或 problem shape。
+- 非空 `backend_components` tuple；
+- 任意其他 schema-v4-only fact、enum value 或 problem shape。
 
-Helper 随后必须应用现有 v3-to-v2 与 v2-to-v1 gate，不能绕过它们。所有
-`ImageCompareSpec` outcome 和两种 P5-A1 canonical fixture 都不能 downgrade 到 v1-v3。不识别 v4 的
-旧 reader 必须返回现有 unknown-schema error，无需产生 lossy approximation。
+成功时，把 exact v4 wrapper/attempt 转回 v3 type，不改变任何剩余 value。Caller 随后可以显式使用
+已实现的 `downgrade_outcome_v3_to_v2`；P5-A1 不修改或绕过该 gate。Reviewed predecessor 不存在
+v2-to-v1 downgrade helper，因此 P5-A1 不承诺或新增它；若出现用例，留待独立 contract。
+所有 `ImageCompareSpec` outcome 和两个 P5-A1 canonical fixture 都不能 downgrade 到 v3 或更低。
+不识别 v4 的旧 reader 必须返回现有 unknown-schema error，无需产生 lossy approximation。
 
 ## 机械验收条件
 
@@ -429,22 +686,29 @@ Helper 随后必须应用现有 v3-to-v2 与 v2-to-v1 gate，不能绕过它们�
 
 1. 实际 merged P4-C1 commit 是 implementation branch 的祖先，完整 predecessor suite 原样通过，
    且 public v3 type 与本 amendment 一致；否则停止并回调 RFC。
-2. `ImageCompareSpec`、`ImageResourceLimits`、`ImageChange`、具名 enum、v4 outcome alias/class、
-   `ExecutionProblemV4` 与显式 migration 位于已记录 public export set；不 export decoder/backend object。
+2. `SCHEMA_VERSION_V4`、`BackendComponentVersion`、`CapabilityAttemptV4`、`ExecutionRecordV4`、
+   `ComparisonProvenanceV4`、两个 v4 problem class、三个 v4 outcome class、`CompareSpecV4`、
+   `ChangeV4`、`CompareOutcomeV4`、扩展后的 `AnyCompareOutcome`、所有 documented image
+   spec/change/enum 与恰好四个 v4 migration helper 位于上方 documented top-level/foundational
+   export set；不 export decoder/backend implementation。
 3. 所有新 object 拒绝 missing/extra key、boolean-as-integer、invalid enum、invalid mode/IHDR/band
    combination、invalid role order/digest 与 cross-field invariant violation。
 4. 五条 transformation record 各自接受 canonical payload，并拒绝错误 stage、ID、key、type、
    nesting、value 或 sequence position。
 5. v1/v2/v3 canonical file 保持 byte-identical；全部 predecessor round trip、migration、plugin receipt、
    CLI output 与 public export 保持有效。
-6. 两个 v4 fixture byte-identical round-trip；测试证明 direct construction、null provider/backend、
-   无 Pillow string、无 image runtime registration/CLI route/dependency，以及适用的 v1-v3 code gate rejection。
+6. 两个 v4 fixture 在 canonical writer 下 byte-identical round-trip，permuted object member 以同一语义
+   读取；测试证明 direct construction、精确 `image` attempt/comparator/version/provider binding、null
+   backend identity、空 component、无 Pillow string、无 image runtime registration/CLI route/dependency，
+   以及适用的 v1-v3 code gate rejection。
 7. V4 reader 在 terminal rendering 前拒绝 duplicate key、unknown schema、unknown built-in
    kind/transformation/problem 与 invalid image change combination。
-8. Terminal golden test 覆盖 descriptor、tile、truncated、failed、unsafe message、unknown-kind，且不授予
+8. Terminal golden test 覆盖 descriptor、tile、truncated、failed、unsafe message、unknown-kind、精确
+   line/scalar/UTF-8 boundary、deterministic overflow、numeric grammar 与 tile value/area rejection，且不授予
    source/artifact authority。
-9. Migration test 证明 lossless predecessor upgrade、可表达的 legacy-only v4 downgrade，以及所有
-   image-bearing 或 `unsupported_image_profile` downgrade 的 hard rejection。
+9. Migration test 证明三个 lossless predecessor-to-v4 upgrade、精确 representable v4-to-v3 downgrade、
+   后续使用既有 v3-to-v2 helper，以及所有 image-bearing、component-bearing 或
+   `unsupported_image_profile` downgrade 的 hard rejection；不新增 v2-to-v1 helper。
 10. Ruff format/check、strict mypy、完整 pytest、build/wheel/sdist inspection、`git diff --check` 与
     relative-link check 全通过；只能报告实际运行的命令。
 
@@ -467,8 +731,8 @@ terminal command 与 executable image-result gate，二者独立派发。本 ame
 P5-C/P5-P/P5-F/P5-M/P5-H/P5-S callback。
 
 若获接受，本 RFC 只 supersede RFC 0007 中仍开放的 P5-A1 enum representation、transformation JSON
-shape、schema-only fixture identity、schema-v4 problem gate、terminal projection 与 downgrade
-mechanics；其余 I1-I16 decision 和 RFC 0007 语义继续有效。
+shape、schema-only fixture identity、schema-v4 problem gate/signature classification、terminal
+projection 与 downgrade mechanics；其余 I1-I16 decision 和 RFC 0007 语义继续有效。
 
 ## 参考
 
