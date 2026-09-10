@@ -2,22 +2,26 @@
 
 [English documentation](0008-source-code-and-pdf-comparison.md)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-10
+- Accepted: 2026-09-10
 - Review revision: 2026-09-10
+- Approved decisions: P6X1-P6X11, SC1-SC10, PDF1-PDF10
+- Approved contract gate: P6-C0
 - Owners: Platydiff maintainers
 - Implementation owner: unassigned pending separate implementation authorization
 
 ## 摘要与授权边界
 
-本 RFC 提议 Phase 6 的显式源代码与 PDF 比较契约。本文只进行设计工作，不授权源代码
-或 PDF 实现、依赖变更、SDK v2、自动探测、UI 工作、artifact 生成、可选后端安装或
-任何代码变更。
+本 RFC 定义已接受的 Phase 6 显式源代码与 PDF 比较契约。本次只是 contract 与文档接受；
+不授权源代码或 PDF 实现、依赖变更、SDK v2、自动探测、UI 工作、artifact 生成、可选后端
+安装或任何代码变更。
 
 源代码与 PDF 同属 Phase 6 路线图，是因为二者都需要重量级解析后端和更丰富的结构化
 事实；但它们不是同一个实现门禁。源代码和 PDF 的等价关系、后端、安全边界、artifact
-与依赖风险都不同，因此本 RFC 将它们拆分为独立授权的交付门禁。后续人工审批可以接受
-其中一个、两个或都不接受。
+与依赖风险都不同，因此本 RFC 将它们拆分为独立授权的交付门禁。2026-09-10 的人工批准
+接受 P6X1-P6X11、SC1-SC10、PDF1-PDF10，以及 P6-C0 contract gate 定义。它只授权本文档
+PR。P6-C0 实现与每个后续 source/PDF code gate 仍需要从更新后的 `main` 单独获得实现授权。
 
 所有行为都保持显式启用。调用者必须直接选择 source-code 或 PDF spec。既有
 `AutoCompareSpec` 在 RFC 0003 的后继 RFC 接受新的探测语义之前，仍只支持 text/binary。
@@ -65,11 +69,12 @@ Phase 6 不包括：
 - 通过 SDK v1.1 执行 source/PDF plugin；
 - HTML、TUI、desktop、local-web、page-image、heatmap 或 downloadable artifact 实现。
 
-## 提议决策
+## 已批准决策
 
-下面的稳定 ID 是本提案的人工决策清单。在 reviewer 显式批准前，它们都尚未接受。
+下面的稳定 ID 已在 2026-09-10 获得批准。其接受确立 Phase 6 contract 与 P6-C0 gate 定义；
+不启动实现。
 
-| ID | 提议决策 | 未选择的替代方案 |
+| ID | 已接受决策 | 未选择的替代方案 |
 | --- | --- | --- |
 | P6X1 | Source-code 与 PDF 比较保持 explicit-only；既有 auto 仍只支持 text/binary。 | 不定义 ambiguity 与 attribution 就把 source/PDF candidate 加入 RFC 0003 detection。 |
 | P6X2 | Phase 6 source-code 与 PDF 内建 spec/change variant 使用 schema v5，并受 P6X10 的全局 allocation 与 predecessor merge/fixture gate 约束。 | 有条件扩展 schema v3，或复用 image/media schema 编号。 |
@@ -80,7 +85,7 @@ Phase 6 不包括：
 | P6X7 | 后端/parser 开始后，禁止改变比较 relation 的 fallback。 | 失败时静默 fallback 到 text、binary、另一个 parser、另一个 renderer 或 approximate semantics。 |
 | P6X8 | 多 view PDF spec 作为 required all-or-nothing invocation 执行：任一 selected view unavailable 或 failed 都终止顶层 outcome，且不产生 `DiffResult`。 | 返回只包含已完成 view 的 partial PDF `DiffResult`。 |
 | P6X9 | artifact gate 之前，`artifact_policy` 只有一个取值：`none`。 | 在安全 artifact writer 存在前预留 `record_refs`。 |
-| P6X10 | 提议 coordinated schema allocation：P4 structured data = v3，Phase 5 image = v4，Phase 6 source/PDF = v5，Phase 7 audio = v6，video schema successor 延后到与 RFC 0009 协调且单独接受的 backend-worker amendment；每个 successor 只有在其依赖的所有 predecessor schema 已合并到 `main` 且 reader/writer 与 migration fixture 就绪后才能开始。 | 让每个 RFC 局部选择 schema 编号，或在后续 video-worker amendment 要求下仍让 audio 与 video 共用 v6。 |
+| P6X10 | 使用 coordinated schema allocation：P4 structured data = v3，Phase 5 image = v4，Phase 6 source/PDF = v5，Phase 7 audio = v6，video schema successor 延后到与 RFC 0009 协调且单独接受的 backend-worker amendment；每个 successor 只有在其依赖的所有 predecessor schema 已合并到 `main` 且 reader/writer 与 migration fixture 就绪后才能开始。 | 让每个 RFC 局部选择 schema 编号，或在后续 video-worker amendment 要求下仍让 audio 与 video 共用 v6。 |
 | P6X11 | 增加一个独立授权的 P6-C0 schema-v5 source/PDF contract gate，在任何 source/PDF comparator、backend 或 CLI gate 开始前一次性冻结两个 spec 与 change。 | 让 P6-S1 或 P6-P1a 先合并，再为另一个 modality 重开 schema-v5 closed union。 |
 | SC1 | 增加显式 `SourceCodeCompareSpec`，并要求 `language` 与 `relation` 字段。 | 从 suffix/content 推断语言，或复用 `TextCompareSpec`。 |
 | SC2 | 首批 source language 为 `python` 与 `javascript`；`typescript`、`c`、`cpp`、`rust`、`go`、`java`、notebook、template 与 generated-code policy 延后。 | 从后端 package 中可用的所有 grammar 同时开始。 |
@@ -105,13 +110,14 @@ Phase 6 不包括：
 
 ## Schema 与兼容性契约
 
-本 RFC 为 Phase 6 source-code 与 PDF 内建能力提议 schema v5。人工决策是 P6X10：
+本 RFC 为 Phase 6 source-code 与 PDF 内建能力接受 schema v5。人工决策是 P6X10：
 P4 structured data 使用 schema v3，Phase 5 image 使用 schema v4，Phase 6 source/PDF
 使用 schema v5，Phase 7 audio 使用 schema v6，video schema allocation 延后到后续全局
 successor，等待与 RFC 0009 协调且单独接受的 backend-worker amendment。这是 coordinated
-Proposed allocation，不是已接受的 schema migration，也不声明任何 RFC 0009 amendment 已在
-`main` 上接受。若后续全局 schema RFC 或人工 review 选择不同 allocation，必须在任何受影响
-gate 开始前同时更新 RFC 0007、RFC 0008 与 RFC 0009。
+allocation，并由 RFC 0008 作为 Phase 6 dependency planning 接受；但它不实现 schema
+migration，也不声明任何 RFC 0009 amendment 已在 `main` 上接受。若后续全局 schema RFC 或
+人工 review 选择不同 allocation，必须在任何受影响 gate 开始前同时更新 RFC 0007、RFC 0008
+与 RFC 0009。
 
 Phase 6 schema implementation 只属于 P6-C0。P6-C0 只有在其依赖的 predecessor schema 已
 合并到 `main` 且带 compatibility fixture 后才能开始：
@@ -131,7 +137,7 @@ name、problem code、canonical wire key、digest domain 或 validation rule。�
 relation 或 view 都必须已在 P6-C0 中表示为 unavailable capability，而不是通过重开 v5 closed
 union 添加。
 
-提议的 v5 closed union 为：
+已接受的 v5 closed union 为：
 
 ```python
 CompareSpecV5 = (
@@ -146,7 +152,7 @@ ChangeV5 = (
 )
 ```
 
-在该提议 allocation 下：
+在该 allocation 下：
 
 - 既有内建 text、binary 与 auto 调用保持 schema v1；
 - 既有 `PluginHost` text/binary 调用保持 schema v2；
@@ -179,7 +185,7 @@ backend identity 与 problem detail 定义稳定 JSON 名称。后续 Phase 6 im
 
 ## Canonical fact、digest 与 ordering
 
-Source-code 与 PDF fact 在提议 schema-v5 allocation 下使用 RFC 0006 的 evidence-digest
+Source-code 与 PDF fact 在已接受的 schema-v5 allocation 下使用 RFC 0006 的 evidence-digest
 framing，并增加新 domain：
 
 ```text
@@ -221,7 +227,7 @@ entry 或 rendered region 不得部分 serialization。
 
 ### Public intent
 
-提议的首个 public shape 为：
+已接受的首个 public shape 为：
 
 ```python
 class SourceCodeCompareSpec:
@@ -385,7 +391,7 @@ Alignment 是确定性的：
 
 ### Source metric 与 policy
 
-首批 source-code metric registry 提议为：
+已接受的首批 source-code metric registry 为：
 
 | Metric name | 含义 | Unit | Direction | Aggregation |
 | --- | --- | --- | --- | --- |
@@ -461,7 +467,7 @@ platform 返回 `backend_unavailable`。Dependency installation 仍属于用户�
 
 ### Public intent 与 view
 
-提议的首个 public shape 为：
+已接受的首个 public shape 为：
 
 ```python
 from dataclasses import field
@@ -645,7 +651,7 @@ order。Reader 拒绝违反该顺序的 interleaved view。
 
 ### PDF metric 与 policy
 
-首批 PDF metric registry 提议为：
+已接受的首批 PDF metric registry 为：
 
 | Metric name | 含义 | Unit | Direction | Aggregation |
 | --- | --- | --- | --- | --- |
@@ -1015,7 +1021,7 @@ embedded file、获取 remote asset 或派生新 view。
 
 ## 交付门禁、commit 与测试
 
-这些 gate 是提议计划，不是实现授权。
+这些 gate 是已接受的 Phase 6 计划，不是实现授权。
 
 ### P6-C0：schema-v5 source/PDF contract gate
 

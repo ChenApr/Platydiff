@@ -2,25 +2,32 @@
 
 [Chinese documentation](0008-source-code-and-pdf-comparison_zh.md)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-10
+- Accepted: 2026-09-10
 - Review revision: 2026-09-10
+- Approved decisions: P6X1-P6X11, SC1-SC10, PDF1-PDF10
+- Approved contract gate: P6-C0
 - Owners: Platydiff maintainers
 - Implementation owner: unassigned pending separate implementation authorization
 
 ## Summary and authorization boundary
 
-This RFC proposes Phase 6 contracts for explicit source-code and PDF
-comparison. It is design work only. It does not authorize source-code or PDF
-implementation, dependency changes, SDK v2, automatic detection, UI work,
-artifact generation, optional backend installation, or any code changes.
+This RFC defines the accepted Phase 6 contracts for explicit source-code and
+PDF comparison. It is a contract and documentation acceptance only. It does not
+authorize source-code or PDF implementation, dependency changes, SDK v2,
+automatic detection, UI work, artifact generation, optional backend
+installation, or any code changes.
 
 Source code and PDF comparison are grouped as Phase 6 roadmap work because both
 need heavyweight parsing backends and richer structural facts, but they are not
 one implementation gate. Source code and PDF have different equivalence
 relations, backends, security profiles, artifacts, and dependency risks, so this
-RFC splits them into independently authorized delivery gates. A later human
-approval may accept one, both, or neither set of gates.
+RFC splits them into independently authorized delivery gates. Human approval on
+2026-09-10 accepts decisions P6X1-P6X11, SC1-SC10, PDF1-PDF10, and the P6-C0
+contract gate definition. It authorizes this documentation PR only. P6-C0
+implementation and every later source/PDF code gate still require separate
+implementation authorization from updated `main`.
 
 All behavior remains explicit-only. A caller must choose a source-code or PDF
 spec directly. Existing `AutoCompareSpec` remains text/binary-only unless a
@@ -73,12 +80,13 @@ Phase 6 does not include:
 - HTML, TUI, desktop, local-web, page-image, heatmap, or downloadable artifact
   implementation.
 
-## Proposed decisions
+## Approved decisions
 
-The following stable IDs are the human decision list for this proposal. They
-are not accepted until a reviewer explicitly approves them.
+The following stable IDs were approved on 2026-09-10. Their acceptance
+establishes the Phase 6 contract and P6-C0 gate definition; it does not start
+implementation.
 
-| ID | Proposed decision | Alternative not selected |
+| ID | Accepted decision | Alternative not selected |
 | --- | --- | --- |
 | P6X1 | Keep source-code and PDF comparison explicit-only; existing auto remains text/binary. | Add source/PDF candidates to RFC 0003 detection without defining ambiguity and attribution. |
 | P6X2 | Use schema v5 for Phase 6 source-code and PDF built-in spec/change variants, subject to the global allocation in P6X10 and predecessor merge/fixture gates. | Conditionally extend schema v3 or reuse the image/media schema numbers. |
@@ -89,7 +97,7 @@ are not accepted until a reviewer explicitly approves them.
 | P6X7 | Forbid fallback that changes comparison relation after a parser/backend starts. | On failure, silently fall back to text, binary, another parser, another renderer, or approximate semantics. |
 | P6X8 | Execute multi-view PDF specs as required all-or-nothing invocations: any selected view unavailable or failed terminates the top-level outcome without a `DiffResult`. | Return a partial PDF `DiffResult` containing the views that happened to finish. |
 | P6X9 | Before the artifact gate, `artifact_policy` has exactly one value, `none`. | Reserve `record_refs` before a safe artifact writer exists. |
-| P6X10 | Propose the coordinated schema allocation P4 structured data = v3, Phase 5 image = v4, Phase 6 source/PDF = v5, Phase 7 audio = v6, and video schema successor deferred to a separately accepted backend-worker amendment coordinated with RFC 0009; each successor may start only after all predecessor schemas it depends on are merged on `main` with reader/writer and migration fixtures. | Let each RFC pick a schema number locally, or let audio and video share v6 despite later video-worker amendment requirements. |
+| P6X10 | Use the coordinated schema allocation P4 structured data = v3, Phase 5 image = v4, Phase 6 source/PDF = v5, Phase 7 audio = v6, and video schema successor deferred to a separately accepted backend-worker amendment coordinated with RFC 0009; each successor may start only after all predecessor schemas it depends on are merged on `main` with reader/writer and migration fixtures. | Let each RFC pick a schema number locally, or let audio and video share v6 despite later video-worker amendment requirements. |
 | P6X11 | Add one independently authorized P6-C0 schema-v5 source/PDF contract gate that freezes both specs and changes before any source/PDF comparator, backend, or CLI gate starts. | Let P6-S1 or P6-P1a merge first and later reopen the schema-v5 closed union for the other modality. |
 | SC1 | Add an explicit `SourceCodeCompareSpec` with required `language` and `relation` fields. | Infer language from suffix/content or reuse `TextCompareSpec`. |
 | SC2 | First source languages are `python` and `javascript`; `typescript`, `c`, `cpp`, `rust`, `go`, `java`, notebooks, templates, and generated-code policies are deferred. | Start with every grammar available from a backend package. |
@@ -114,15 +122,16 @@ are not accepted until a reviewer explicitly approves them.
 
 ## Schema and compatibility contract
 
-This RFC proposes schema v5 for Phase 6 source-code and PDF built-ins. The
+This RFC accepts schema v5 for Phase 6 source-code and PDF built-ins. The
 human decision is P6X10: P4 structured data owns schema v3, Phase 5 image owns
 schema v4, Phase 6 source/PDF owns schema v5, Phase 7 audio owns schema v6, and
 video schema allocation is deferred to a later global successor pending a
-separately accepted backend-worker amendment coordinated with RFC 0009. This is
-a coordinated Proposed allocation, not an accepted schema migration and not a
-claim that any RFC 0009 amendment is already accepted on `main`. If a later
-global schema RFC or human review chooses a different allocation, it must update
-RFC 0007, RFC 0008, and RFC 0009 together before any affected gate starts.
+separately accepted backend-worker amendment coordinated with RFC 0009. This
+coordinated allocation is accepted by RFC 0008 for Phase 6 dependency planning,
+but it does not implement a schema migration and does not claim that any RFC
+0009 amendment is already accepted on `main`. If a later global schema RFC or
+human review chooses a different allocation, it must update RFC 0007, RFC 0008,
+and RFC 0009 together before any affected gate starts.
 
 Phase 6 schema implementation belongs only to P6-C0. P6-C0 may start only after
 the predecessor schemas it depends on are merged on `main` with compatibility
@@ -146,7 +155,7 @@ wire key, digest domain, or validation rule. Any missing future relation or
 view must already be represented in P6-C0 as an unavailable capability, not
 added by reopening the v5 closed union.
 
-The proposed v5 closed unions are:
+The accepted v5 closed unions are:
 
 ```python
 CompareSpecV5 = (
@@ -161,7 +170,7 @@ ChangeV5 = (
 )
 ```
 
-Under this proposed allocation:
+Under this allocation:
 
 - existing built-in text, binary, and auto calls keep schema v1;
 - existing `PluginHost` text/binary calls keep schema v2;
@@ -202,7 +211,7 @@ still present and compatible; they do not choose or change schema shape.
 ## Canonical facts, digests, and ordering
 
 Source-code and PDF facts use the RFC 0006 evidence-digest framing with new
-domains under the proposed schema-v5 allocation:
+domains under the accepted schema-v5 allocation:
 
 ```text
 UTF8("platydiff/v5/" + domain) || 0x00 || U64BE(payload_length) || payload
@@ -248,7 +257,7 @@ serialized.
 
 ### Public intent
 
-The proposed first public shape is:
+The accepted first public shape is:
 
 ```python
 class SourceCodeCompareSpec:
@@ -428,7 +437,7 @@ children. Lexical P6-S1 ordering is exactly RFC 0002 hunk source order.
 
 ### Source metrics and policy
 
-The first source-code metric registry is proposed as:
+The accepted first source-code metric registry is:
 
 | Metric name | Meaning | Unit | Direction | Aggregation |
 | --- | --- | --- | --- | --- |
@@ -516,7 +525,7 @@ environment concern; Platydiff does not fetch grammars or compilers.
 
 ### Public intent and views
 
-The proposed first public shape is:
+The accepted first public shape is:
 
 ```python
 from dataclasses import field
@@ -728,7 +737,7 @@ that violate this order.
 
 ### PDF metrics and policy
 
-The first PDF metric registry is proposed as:
+The accepted first PDF metric registry is:
 
 | Metric name | Meaning | Unit | Direction | Aggregation |
 | --- | --- | --- | --- | --- |
@@ -1143,7 +1152,7 @@ open an embedded file, fetch a remote asset, or derive a new view.
 
 ## Delivery gates, commits, and tests
 
-These gates are proposed plans, not implementation authorization.
+These gates are the accepted Phase 6 plan, not implementation authorization.
 
 ### P6-C0: schema-v5 source/PDF contract gate
 
