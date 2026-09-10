@@ -2,32 +2,34 @@
 
 [Chinese documentation](0007-image-comparison_zh.md)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-10
 - Review revision: 2026-09-10
+- Acceptance date: 2026-09-10
 - Owners: Platydiff maintainers
-- Implementation owner: unassigned pending acceptance and separate authorization
+- Implementation owner: unassigned pending separate implementation authorization
 
 ## Summary and authorization boundary
 
-This RFC proposes the Phase 5 contract for image comparison. It deliberately
-starts with one narrow executable slice: explicit, built-in comparison of the
+This RFC defines the accepted Phase 5 contract for image comparison. It
+deliberately starts with one narrow executable slice: explicit, built-in comparison of the
 decoded sample matrix of a single static PNG. Encoded-byte identity remains the
 existing binary contract. Perceptual similarity, color conversion, registration,
 animation, artifacts, plugin execution, and automatic image detection remain
 separate later gates.
 
-This document is a design-review artifact only. While it is `Proposed`, it does
-not authorize image code, dependencies, SDK changes, automatic detection, UI
-work, or artifact publication. Acceptance would approve only the decisions
-listed below. Every implementation gate still requires a separate dispatch from
+Human approval accepts I1-I16 below as the Phase 5 design contract. Acceptance
+does not authorize image code, dependencies, SDK changes, automatic detection,
+UI work, or artifact publication. It also does not start P5-R, P5-A1, P5-A2, or
+P5-A3. Every implementation gate still requires a separate dispatch from
 updated `main`.
 
 Phase 4 RFC 0006 is accepted, but its P4-A1 schema-v3 implementation is not
 present in the code evidence reviewed for this RFC. Phase 5 therefore has a hard
 revalidation prerequisite: schema v3 must first be merged, verified against RFC
 0006, and treated as the actual predecessor. This RFC does not assume or stack
-on an unmerged Phase 4 branch.
+on an unmerged Phase 4 branch. No image product code is present at the accepted
+evidence revision, and this acceptance-only change adds none.
 
 ## Evidence ledger
 
@@ -60,11 +62,11 @@ an unmerged P4-A1 branch may inform review but cannot satisfy the prerequisite.
 
 No row grants implementation authority or changes an older schema's meaning.
 
-## Proposed decisions for human approval
+## Accepted decisions
 
-| ID | Recommended decision | Alternative not selected |
+| ID | Accepted decision | Alternative not selected |
 | --- | --- | --- |
-| I1 | Keep this RFC Proposed until a human approves I1-I16; acceptance still does not start implementation. | Treat a roadmap entry as implementation authorization. |
+| I1 | Accept I1-I16 as the Phase 5 design contract; acceptance does not start P5-R or any implementation gate. | Treat acceptance or a roadmap entry as implementation authorization. |
 | I2 | Require merged and independently verified P4-A1/schema v3 before any Phase 5 implementation; then use outcome schema v4. | Stack on unmerged code or extend v2/v3 in place without validating the actual predecessor. |
 | I3 | Make Phase 5 explicit and built-in only; do not change auto detection or SDK v1.1. | Let file extensions, Pillow sniffing, or installed plugins silently select image semantics. |
 | I4 | Keep encoded-byte identity under `BinaryCompareSpec`; do not add an image alias that returns a different shape for the same fact. | Duplicate byte comparison inside `ImageCompareSpec`. |
@@ -107,7 +109,7 @@ digest alone to establish equality.
 
 This is sample equality, not displayed-color, perceptual, structural, or
 metadata equality. An unprofiled image and a profiled image are different under
-the proposed native-profile contract even if their integer samples match,
+the accepted native-profile contract even if their integer samples match,
 because the samples do not have the same declared interpretation.
 
 ### Perceptual similarity
@@ -128,8 +130,8 @@ review. PSNR alone must not be marketed as perceptual equivalence.
 
 ## Schema-v4 and compatibility contract
 
-Subject to I2, schema v4 is an additive semantic successor to the actually
-merged schema v3:
+Under accepted decision I2, schema v4 is an additive semantic successor to the
+actually merged schema v3:
 
 ```python
 CompareSpecV4 = CompareSpecV3 | ImageCompareSpec
@@ -161,14 +163,14 @@ types or ship image models before the predecessor audit passes.
 | Existing `compare()` / default CLI | v1 | none | Existing text/binary/auto payloads remain byte-stable. |
 | Existing `PluginHost` | v2 | none | SDK v1.1 stays text/binary-only; receipts remain valid. |
 | Merged Phase 4 built-ins | v3 | none | Actual v3 models, migration, and fixtures are the predecessor. |
-| Proposed built-in image path | v4 | explicit static PNG only | Strict v4 validation and inherited invariants. |
+| Accepted built-in image path | v4 | explicit static PNG only | Strict v4 validation and inherited invariants. |
 | `PluginHost` with `ImageCompareSpec` | none | unsupported | Python returns resolving-stage unavailable; CLI plugin flags with image are usage exit 2. |
 | Existing auto on PNG bytes | v1 | none | Existing text/binary evidence and selection remain unchanged. |
 | Future image auto/SDK/perceptual | unspecified | unspecified | Requires a successor RFC and its own schema decision. |
 
 ## Public image intent
 
-The proposed normalized public shapes are:
+The accepted normalized public shapes are:
 
 ```python
 class ImageResourceLimits:

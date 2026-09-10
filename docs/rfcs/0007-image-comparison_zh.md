@@ -2,26 +2,28 @@
 
 [English documentation](0007-image-comparison.md)
 
-- 状态：Proposed
+- 状态：Accepted
 - 日期：2026-09-10
 - 评审修订：2026-09-10
+- 接受日期：2026-09-10
 - Owners：Platydiff 维护者
-- 实现 owner：等待接受本 RFC 与单独授权后指派
+- 实现 owner：等待单独的实现授权后指派
 
 ## 摘要与授权边界
 
-本 RFC 提议 Phase 5 图片比较契约。它刻意从一个狭窄的可执行切片开始：显式、内建地
-比较单张静态 PNG 的解码 sample matrix。encoded-byte identity 继续使用既有 binary
+本 RFC 定义已接受的 Phase 5 图片比较契约。它刻意从一个狭窄的可执行切片开始：显式、
+内建地比较单张静态 PNG 的解码 sample matrix。encoded-byte identity 继续使用既有 binary
 契约。感知相似、色彩转换、配准、动画、artifact、plugin 执行与自动图片探测仍是彼此
 独立的后续门禁。
 
-本文只是设计评审资产。状态仍为 `Proposed` 时，不授权图片代码、依赖、SDK 修改、自动
-探测、UI 工作或 artifact 发布。接受本文只会批准下列决策；每个实现门禁仍须从更新后的
-`main` 单独派发。
+人类批准已将下列 I1-I16 接受为 Phase 5 设计契约。接受本文不授权图片代码、依赖、SDK
+修改、自动探测、UI 工作或 artifact 发布，也不启动 P5-R、P5-A1、P5-A2 或 P5-A3。每个
+实现门禁仍须从更新后的 `main` 单独派发。
 
 Phase 4 RFC 0006 已接受，但本 RFC 评审所依据的代码还没有 P4-A1/schema-v3 实现。因此
 Phase 5 有一个硬性重新验证前置条件：schema v3 必须先合并、按 RFC 0006 验证，并作为
-实际前驱。本文不假设或 stack 在未合并的 Phase 4 分支之上。
+实际前驱。本文不假设或 stack 在未合并的 Phase 4 分支之上；已接受的 evidence revision
+不存在 image product code，本次 acceptance-only 变更也不添加任何代码。
 
 ## 证据账本
 
@@ -53,11 +55,11 @@ Phase 5 有一个硬性重新验证前置条件：schema v3 必须先合并、�
 
 矩阵中的任何一行都不授予实现权限，也不改变旧 schema 的含义。
 
-## 提交人类批准的决策
+## 已接受的决策
 
-| ID | 推荐决策 | 未选择的替代方案 |
+| ID | 已接受的决策 | 未选择的替代方案 |
 | --- | --- | --- |
-| I1 | 人类批准 I1-I16 前保持 Proposed；接受后仍不自动启动实现。 | 把 roadmap 项目当作实现授权。 |
+| I1 | 接受 I1-I16 作为 Phase 5 设计契约；接受不启动 P5-R 或任何实现门禁。 | 把 RFC 接受或 roadmap 项目当作实现授权。 |
 | I2 | 任何 Phase 5 实现前，必须合并并独立验证 P4-A1/schema v3；随后使用 outcome schema v4。 | stack 在未合并代码上，或在未验证实际前驱时原地扩展 v2/v3。 |
 | I3 | Phase 5 只显式选择且只使用 built-in；不改变 auto detection 或 SDK v1.1。 | 让扩展名、Pillow sniffing 或已安装 plugin 静默选择图片语义。 |
 | I4 | encoded-byte identity 继续由 `BinaryCompareSpec` 负责；不增加为同一事实返回另一种形状的 image alias。 | 在 `ImageCompareSpec` 内复制 byte comparison。 |
@@ -95,7 +97,7 @@ Phase 5 不得用一个标签表示三种不同 predicate。
 `(x, y, channel)` coordinate 的 sample 完全相同。算法不能只凭 digest 建立 equality。
 
 这是 sample equality，不是 displayed-color、perceptual、structural 或 metadata equality。
-在提议的 native-profile 契约下，即使 integer sample 一致，unprofiled image 与 profiled
+在已接受的 native-profile 契约下，即使 integer sample 一致，unprofiled image 与 profiled
 image 仍不同，因为 sample 的声明解释不同。
 
 ### 感知相似
@@ -113,7 +115,8 @@ hardware、determinism 与 supply-chain 评审。不得把 PSNR 单独宣传为 
 
 ## Schema-v4 与兼容性契约
 
-在满足 I2 后，schema v4 是实际已合并 schema v3 的 additive semantic successor：
+按已接受决策 I2，在其前置条件满足后，schema v4 是实际已合并 schema v3 的 additive
+semantic successor：
 
 ```python
 CompareSpecV4 = CompareSpecV3 | ImageCompareSpec
@@ -140,14 +143,14 @@ ChangeV4 = ChangeV3 | ImageChange
 | 既有 `compare()`/default CLI | v1 | 无 | 既有 text/binary/auto payload 保持 byte-stable。 |
 | 既有 `PluginHost` | v2 | 无 | SDK v1.1 保持 text/binary-only；receipt 有效。 |
 | 已合并 Phase 4 built-in | v3 | 无 | 实际 v3 model、migration 与 fixture 是前驱。 |
-| 提议的 built-in image path | v4 | 仅显式 static PNG | strict v4 validation 与继承 invariant。 |
+| 已接受的 built-in image path | v4 | 仅显式 static PNG | strict v4 validation 与继承 invariant。 |
 | `PluginHost` + `ImageCompareSpec` | 无 | 不支持 | Python 返回 resolving-stage unavailable；CLI plugin flag + image 为 usage exit 2。 |
 | 既有 auto 遇到 PNG byte | v1 | 无 | 既有 text/binary evidence 与 selection 不变。 |
 | 未来 image auto/SDK/perceptual | 未指定 | 未指定 | 需要 successor RFC 与自己的 schema 决策。 |
 
 ## Public image intent
 
-提议的 normalized public shape 为：
+已接受的 normalized public shape 为：
 
 ```python
 class ImageResourceLimits:
