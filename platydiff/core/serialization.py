@@ -2573,12 +2573,13 @@ def _validate_yaml_result(result: DiffResult, spec: YamlCompareSpec) -> None:
             max_change_payload_bytes=spec.limits.max_change_payload_bytes,
         ),
     )
+    resources = {item.name: item for item in result.provenance.resources}
     for item in result.changes.items:
         if not isinstance(item, StructuredChange):
             raise RuntimeError("YAML structured-change narrowing failed")
-        for digest, fact in (
-            (item.before_digest, item.before_fact),
-            (item.after_digest, item.after_fact),
+        for side, digest, fact in (
+            ("before", item.before_digest, item.before_fact),
+            ("after", item.after_digest, item.after_fact),
         ):
             if spec.detail_mode is StructuredDetailMode.DIGEST_ONLY:
                 if fact is not None:
@@ -2597,12 +2598,38 @@ def _validate_yaml_result(result: DiffResult, spec: YamlCompareSpec) -> None:
                     )
             elif fact.descendant_count >= spec.limits.max_nodes:
                 raise SerializationError("YAML subtree fact exceeds its node limit")
+            else:
+                materialized_nodes = fact.descendant_count + 1
+                for resource_name in ("nodes", "expanded_nodes"):
+                    usage = resources.get(f"{side}_{resource_name}")
+                    if usage is not None and usage.used < materialized_nodes:
+                        raise SerializationError(
+                            f"YAML {side} {resource_name} resource does not cover "
+                            "subtree evidence"
+                        )
         if spec.detail_mode is StructuredDetailMode.VALUES:
             if item.before_type is not None and item.before_fact is None:
                 raise SerializationError("values YAML change is missing a before fact")
             if item.after_type is not None and item.after_fact is None:
                 raise SerializationError("values YAML change is missing an after fact")
-        for token in item.path.split("/")[1:]:
+        pointer_tokens = item.path.split("/")[1:]
+        pointer_depth = len(pointer_tokens)
+        if pointer_depth > spec.limits.max_depth:
+            raise SerializationError("YAML change path exceeds its depth limit")
+        for side, value_type in (
+            ("before", item.before_type),
+            ("after", item.after_type),
+        ):
+            depth_usage = resources.get(f"{side}_depth")
+            if (
+                value_type is not None
+                and depth_usage is not None
+                and depth_usage.used < pointer_depth
+            ):
+                raise SerializationError(
+                    f"YAML {side} depth resource does not cover change evidence"
+                )
+        for token in pointer_tokens:
             decoded_token = token.replace("~1", "/").replace("~0", "~")
             if len(decoded_token.encode("utf-8")) > spec.limits.max_scalar_bytes:
                 raise SerializationError("YAML Pointer token exceeds its spec limit")
@@ -2754,9 +2781,17 @@ def _table_column_policy_digest(spec: TableCompareSpec) -> str:
 
 def _validate_table_keyed_coordinates(changes: tuple[TableChange, ...]) -> None:
     seen: dict[int, tuple[str, tuple[ScalarFact, ...] | None]] = {}
+    ordinals_by_key: dict[tuple[ScalarFact, ...], int] = {}
     for item in changes:
         if item.key_ordinal is None:
             continue
+        if item.key is not None:
+            existing_ordinal = ordinals_by_key.get(item.key)
+            if existing_ordinal is not None and existing_ordinal != item.key_ordinal:
+                raise SerializationError(
+                    "table key facts carry inconsistent key ordinals"
+                )
+            ordinals_by_key[item.key] = item.key_ordinal
         existing = seen.get(item.key_ordinal)
         if existing is None:
             seen[item.key_ordinal] = (item.operation, item.key)
@@ -2776,13 +2811,21 @@ def _validate_table_result(result: DiffResult, spec: TableCompareSpec) -> None:
         comparator_id="table",
         algorithm_id="table.delimited.align.v1",
     )
-    if len(spec.columns) > spec.limits.max_columns or any(
-        len(column.name.encode("utf-8")) > spec.limits.max_cell_bytes
+    if (
+        len(spec.columns) > spec.limits.max_columns
+        or len(spec.key_columns) > spec.limits.max_columns
         or any(
-            len(token.encode("utf-8")) > spec.limits.max_cell_bytes
-            for token in column.missing_tokens
+            len(name.encode("utf-8")) > spec.limits.max_cell_bytes
+            for name in spec.key_columns
         )
-        for column in spec.columns
+        or any(
+            len(column.name.encode("utf-8")) > spec.limits.max_cell_bytes
+            or any(
+                len(token.encode("utf-8")) > spec.limits.max_cell_bytes
+                for token in column.missing_tokens
+            )
+            for column in spec.columns
+        )
     ):
         raise SerializationError("schema-v3 table column policy exceeds its limits")
     expected_transformations: list[tuple[str, str, JsonObject]] = [
@@ -2891,6 +2934,7 @@ def _validate_table_result(result: DiffResult, spec: TableCompareSpec) -> None:
     ):
         raise SerializationError("schema-v3 table changes are not in canonical order")
     columns_by_name = {column.name: column for column in spec.columns}
+    table_resources = {item.name: item for item in result.provenance.resources}
     for item in result.changes.items:
         if not isinstance(item, TableChange):
             raise RuntimeError("table-change narrowing failed")
@@ -2901,6 +2945,21 @@ def _validate_table_result(result: DiffResult, spec: TableCompareSpec) -> None:
         if spec.alignment == "position":
             if item.key_ordinal is not None or item.key is not None:
                 raise SerializationError("positional table change carries key data")
+            if item.row is not None:
+                if item.row > spec.limits.max_rows:
+                    raise SerializationError("table row coordinate exceeds its limit")
+                required_sides = {
+                    "row_add": ("after",),
+                    "row_remove": ("before",),
+                    "cell_replace": ("before", "after"),
+                }.get(item.operation, ())
+                for side in required_sides:
+                    usage = table_resources.get(f"{side}_rows")
+                    if usage is not None and item.row > usage.used:
+                        raise SerializationError(
+                            f"table {side} row resource does not cover "
+                            "change coordinate"
+                        )
         elif item.operation in ("row_add", "row_remove", "cell_replace"):
             if item.row is not None or item.key_ordinal is None:
                 raise SerializationError("keyed table change has invalid coordinates")
@@ -2916,6 +2975,24 @@ def _validate_table_result(result: DiffResult, spec: TableCompareSpec) -> None:
                         )
             elif item.key is not None:
                 raise SerializationError("digest_only table change must omit its key")
+            before_rows = table_resources.get("before_rows")
+            after_rows = table_resources.get("after_rows")
+            if (
+                item.key_ordinal is not None
+                and before_rows is not None
+                and after_rows is not None
+                and (
+                    item.key_ordinal > before_rows.used + after_rows.used
+                    or item.key_ordinal > 2 * spec.limits.max_rows
+                )
+            ):
+                raise SerializationError(
+                    "table key ordinal exceeds the row-union resource bound"
+                )
+        if item.column is not None and (
+            len(item.column.encode("utf-8")) > spec.limits.max_cell_bytes
+        ):
+            raise SerializationError("table column coordinate exceeds its byte limit")
         if (
             item.operation == "cell_replace"
             and aligned_columns
@@ -2926,14 +3003,20 @@ def _validate_table_result(result: DiffResult, spec: TableCompareSpec) -> None:
             if item.before_fact is not None or item.after_fact is not None:
                 raise SerializationError("digest_only table change must omit facts")
         else:
-            for digest, fact in (
-                (item.before_digest, item.before_fact),
-                (item.after_digest, item.after_fact),
+            for side, digest, fact in (
+                ("before", item.before_digest, item.before_fact),
+                ("after", item.after_digest, item.after_fact),
             ):
                 if digest is not None and fact is None:
                     raise SerializationError("values table change is missing a fact")
                 if fact is not None:
                     _validate_table_fact_against_spec(fact, spec)
+                    if isinstance(fact, TableRowFact):
+                        cell_usage = table_resources.get(f"{side}_cells")
+                        if cell_usage is not None and len(fact.cells) > cell_usage.used:
+                            raise SerializationError(
+                                f"table {side} cell resource does not cover row fact"
+                            )
                     if isinstance(fact, ColumnSchemaFact) and fact.name != item.column:
                         raise SerializationError(
                             "table column fact disagrees with its coordinate"
@@ -2980,6 +3063,10 @@ def _validate_table_result(result: DiffResult, spec: TableCompareSpec) -> None:
         changed_name="changed_cells",
         change_count_name="changed_items",
     )
+    if counts["changed_cells"] > counts["changed_items"]:
+        raise SerializationError(
+            "schema-v3 table changed-cell count exceeds changed items"
+        )
     returned_cell_changes = sum(
         item.operation == "cell_replace"
         for item in result.changes.items

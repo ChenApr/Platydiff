@@ -51,6 +51,8 @@ from platydiff.core.models import (
     ResourceUsage,
     StructuredChange,
     StructuredDetailMode,
+    StructuredType,
+    SubtreeFact,
     SummaryCount,
     TransformationRecord,
     Verdict,
@@ -1188,7 +1190,11 @@ def test_yaml_reader_does_not_guess_unavailable_parent_type_for_path_order() -> 
     )
     for first, second in paths:
         changes = (replace(original, path=first), replace(original, path=second))
-        invalid_only_after_path_validation = _outcome_with_changes(outcome, changes)
+        invalid_only_after_path_validation = _with_resource_usage(
+            _outcome_with_changes(outcome, changes),
+            before_depth=1,
+            after_depth=1,
+        )
         with pytest.raises(SerializationError, match="count identities"):
             outcome_to_data(invalid_only_after_path_validation)
 
@@ -1327,6 +1333,33 @@ def test_table_changed_cells_matches_complete_and_truncated_cell_evidence() -> N
             )
         )
 
+    impossible_metrics = tuple(
+        replace(metric, value=FiniteValue(1))
+        if metric.name == "table.changed_cells"
+        else replace(metric, value=FiniteValue(0))
+        if metric.name == "table.equal_cells"
+        else metric
+        for metric in outcome.result.metrics
+    )
+    impossible_counts = tuple(
+        replace(count, value=1)
+        if count.name == "changed_cells"
+        else replace(count, value=0)
+        if count.name == "equal_cells"
+        else count
+        for count in outcome.result.summary.counts
+    )
+    impossible = replace(
+        outcome,
+        result=replace(
+            outcome.result,
+            metrics=impossible_metrics,
+            summary=replace(outcome.result.summary, counts=impossible_counts),
+        ),
+    )
+    with pytest.raises(SerializationError, match="exceeds changed items"):
+        outcome_to_data(impossible)
+
 
 def test_table_key_ordinal_binds_one_key_and_one_operation_class() -> None:
     first = TableChange(
@@ -1345,6 +1378,9 @@ def test_table_key_ordinal_binds_one_key_and_one_operation_class() -> None:
     different_key = replace(same_key_other_column, key=(ScalarFact("integer", "2"),))
     with pytest.raises(SerializationError, match="inconsistent key facts"):
         _validate_table_keyed_coordinates((first, different_key))
+    same_key_different_ordinal = replace(same_key_other_column, key_ordinal=2)
+    with pytest.raises(SerializationError, match="inconsistent key ordinals"):
+        _validate_table_keyed_coordinates((first, same_key_different_ordinal))
     keyed_outcome = _contract_outcome(
         TableCompareSpec(
             dialect="csv",
@@ -1402,3 +1438,138 @@ def test_table_cell_order_uses_aligned_column_ordinals() -> None:
         outcome_to_data(_outcome_with_changes(outcome, (z_change, a_change)))
     with pytest.raises(SerializationError, match="not in canonical order"):
         outcome_to_data(_outcome_with_changes(outcome, (a_change, z_change)))
+
+
+def _with_resource_usage(
+    outcome: CompletedOutcomeV3, **used: int
+) -> CompletedOutcomeV3:
+    provenance = cast(ComparisonProvenanceV2, outcome.result.provenance)
+    return replace(
+        outcome,
+        result=replace(
+            outcome.result,
+            provenance=replace(
+                provenance,
+                resources=tuple(
+                    replace(resource, used=used.get(resource.name, resource.used))
+                    for resource in provenance.resources
+                ),
+            ),
+        ),
+    )
+
+
+def test_yaml_change_depth_matches_spec_and_present_side_resources() -> None:
+    shallow_spec = YamlCompareSpec(limits=replace(YamlResourceLimits(), max_depth=1))
+    shallow = _contract_outcome(shallow_spec)
+    original = cast(StructuredChange, shallow.result.changes.items[0])
+    too_deep = _outcome_with_changes(shallow, (replace(original, path="/a/b"),))
+    with pytest.raises(SerializationError, match="exceeds its depth limit"):
+        outcome_to_data(too_deep)
+
+    roomy = _contract_outcome(
+        YamlCompareSpec(limits=replace(YamlResourceLimits(), max_depth=4))
+    )
+    original = cast(StructuredChange, roomy.result.changes.items[0])
+    nested = _outcome_with_changes(roomy, (replace(original, path="/a"),))
+    with pytest.raises(SerializationError, match="depth resource"):
+        outcome_to_data(nested)
+
+    covered = _with_resource_usage(
+        nested,
+        before_depth=1,
+        after_depth=1,
+        change_payload_bytes=serialized_change_size(nested.result.changes.items[0]),
+    )
+    outcome_to_data(covered)
+
+    added = StructuredChange(
+        operation="add",
+        path="/a",
+        after_type=original.after_type,
+        after_digest=original.after_digest,
+        after_fact=original.after_fact,
+    )
+    add_outcome = _with_resource_usage(
+        _outcome_with_changes(roomy, (added,)),
+        before_depth=0,
+        after_depth=1,
+        change_payload_bytes=serialized_change_size(added),
+    )
+    outcome_to_data(add_outcome)
+
+    subtree = StructuredChange(
+        operation="add",
+        path="",
+        after_type=StructuredType.MAPPING,
+        after_digest="a" * 64,
+        after_fact=SubtreeFact("mapping", 5, 3),
+    )
+    subtree_outcome = _outcome_with_changes(roomy, (subtree,))
+    with pytest.raises(SerializationError, match="subtree evidence"):
+        outcome_to_data(subtree_outcome)
+    outcome_to_data(
+        _with_resource_usage(
+            subtree_outcome,
+            after_nodes=6,
+            after_expanded_nodes=6,
+            change_payload_bytes=serialized_change_size(subtree),
+        )
+    )
+
+
+def test_table_coordinates_are_covered_by_row_resources() -> None:
+    limits = replace(TableResourceLimits(), max_rows=1)
+    outcome = _contract_outcome(TableCompareSpec(dialect="csv", limits=limits))
+    cell = TableChange(
+        operation="cell_replace",
+        row=2,
+        column="column_1",
+        before_digest="1" * 64,
+        after_digest="2" * 64,
+        before_fact=ScalarFact("string", "x"),
+        after_fact=ScalarFact("string", "y"),
+    )
+    with pytest.raises(SerializationError, match="row coordinate exceeds"):
+        outcome_to_data(_outcome_with_changes(outcome, (cell,)))
+
+    keyed = _contract_outcome(
+        TableCompareSpec(
+            dialect="csv",
+            alignment="key",
+            key_columns=("id",),
+            columns=(ColumnSpec("id", "integer"),),
+            detail_mode=StructuredDetailMode.DIGEST_ONLY,
+            limits=limits,
+        )
+    )
+    outside_union = TableChange(
+        operation="row_remove", key_ordinal=3, before_digest="3" * 64
+    )
+    with pytest.raises(SerializationError, match="row-union resource bound"):
+        outcome_to_data(_outcome_with_changes(keyed, (outside_union,)))
+
+    ordinary = _contract_outcome(TableCompareSpec(dialect="csv"))
+    beyond_used = replace(cell, row=2)
+    with pytest.raises(SerializationError, match="row resource"):
+        outcome_to_data(_outcome_with_changes(ordinary, (beyond_used,)))
+
+    two_cell_row = TableChange(
+        operation="row_add",
+        row=1,
+        after_digest="4" * 64,
+        after_fact=TableRowFact(
+            (("a", ScalarFact("string", "x")), ("b", ScalarFact("string", "y")))
+        ),
+    )
+    with pytest.raises(SerializationError, match="cell resource"):
+        outcome_to_data(_outcome_with_changes(ordinary, (two_cell_row,)))
+
+    byte_limited = _contract_outcome(
+        TableCompareSpec(
+            dialect="csv", limits=replace(TableResourceLimits(), max_cell_bytes=1)
+        )
+    )
+    wide_column = replace(cell, row=1, column="xx")
+    with pytest.raises(SerializationError, match="column coordinate"):
+        outcome_to_data(_outcome_with_changes(byte_limited, (wide_column,)))
