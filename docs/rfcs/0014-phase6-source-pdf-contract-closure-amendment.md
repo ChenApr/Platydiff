@@ -297,18 +297,20 @@ null. `before_text_digest` is null exactly when `before_run` is null, and
 `after_text_digest` is null exactly when `after_run` is null. Non-null text-run
 digests are SHA-256 values computed with the accepted `pdf/text/run` frame over
 that side's page, run, text bytes, extractor flags, and text span; they remain
-present when `text` is null in `digest_only` mode. `insert` has null
-`before_run`, `before_text_digest`, `before_text_identity_digest`, and
-`before_text`; `delete` has null `after_run`, `after_text_digest`,
-`after_text_identity_digest`, and `after_text`; `update` has both runs on the
-same page at an aligned text coordinate and unequal text-run digests;
+present when `text` is null in `digest_only` mode.
 `before_text_identity_digest` and `after_text_identity_digest` follow the same
 nullability as the run digests but use the `pdf/text/content` domain over only
 text bytes and extractor flags, excluding page, run, and offset coordinates.
-`move` has both runs on the same page, unequal coordinate-bearing text-run
-digests, equal text identity digests, and changed `(run, start_text_offset)`.
-Cross-page text movement is reported as delete plus insert to preserve RFC 0008
-page-local text alignment.
+`equal` has both runs at the same coordinate, equal coordinate-bearing text-run
+digests, and equal text identity digests. `insert` has null `before_run`,
+`before_text_digest`, `before_text_identity_digest`, and `before_text`; `delete`
+has null `after_run`, `after_text_digest`, `after_text_identity_digest`, and
+`after_text`; `update` has both runs on the same page at an aligned text
+coordinate, unequal coordinate-bearing text-run digests, and unequal text
+identity digests. `move` has both runs on the same page, unequal
+coordinate-bearing text-run digests, equal text identity digests, and changed
+`(run, start_text_offset)`. Cross-page text movement is reported as delete plus
+insert to preserve RFC 0008 page-local text alignment.
 Extracted-text facts have `page_count`, `run_count`, `char_count`,
 `extraction_digest`, and `backend_id`.
 

@@ -268,16 +268,17 @@ run text 中的 zero-based half-open Unicode scalar offset。`text` 在 `digest_
 `after_run` 为 null。`before_text_digest` 为 null 当且仅当 `before_run` 为 null；`after_text_digest`
 为 null 当且仅当 `after_run` 为 null。非 null text-run digest 使用已接受的 `pdf/text/run` frame，
 基于对应 side 的 page、run、text byte、extractor flag 与 text span 计算；当 `digest_only` mode 中
-`text` 为 null 时它们仍然存在。`insert` 的 `before_run`、`before_text_digest`、
+`text` 为 null 时它们仍然存在。`before_text_identity_digest` 与 `after_text_identity_digest` 采用
+相同 nullability，但使用 `pdf/text/content` domain，仅基于 text byte 与 extractor flag 计算，排除
+page、run 与 offset。`equal` 两侧 run 坐标相同，coordinate-bearing text-run digest 相等，且
+text identity digest 相等。`insert` 的 `before_run`、`before_text_digest`、
 `before_text_identity_digest` 与 `before_text` 为 null；`delete` 的 `after_run`、`after_text_digest`、
 `after_text_identity_digest` 与 `after_text` 为 null；`update` 两侧在同一 page 上有 aligned text
-coordinate，且 text-run digest 不相等。`before_text_identity_digest` 与
-`after_text_identity_digest` 采用相同 nullability，但使用 `pdf/text/content` domain，仅基于 text
-byte 与 extractor flag 计算，排除 page、run 与 offset。`move` 两侧在同一 page 上都有 run，
-coordinate-bearing text-run digest 不相等，text identity digest 相等，且 `(run, start_text_offset)`
-改变。Cross-page text movement 以 delete plus insert 表示，以保留 RFC 0008 page-local text
-alignment。Extracted-text fact 有 `page_count`、`run_count`、`char_count`、`extraction_digest` 与
-`backend_id`。
+coordinate，coordinate-bearing text-run digest 不相等，且 text identity digest 不相等。`move`
+两侧在同一 page 上都有 run，coordinate-bearing text-run digest 不相等，text identity digest 相等，
+且 `(run, start_text_offset)` 改变。Cross-page text movement 以 delete plus insert 表示，以保留
+RFC 0008 page-local text alignment。Extracted-text fact 有 `page_count`、`run_count`、
+`char_count`、`extraction_digest` 与 `backend_id`。
 
 PDF objects-metadata change 的 stable top-level field order 为：
 
