@@ -112,7 +112,7 @@ correction gate：
 3. `test(core): add schema-v3 YAML table array contract fixtures`
 4. `docs(rfc): record schema-v3 predecessor correction evidence`
 
-Gate：本 RFC 合并后仍需从更新后的 `main` 单独授权；不实现 YAML、table 或 array comparator 行为；不新增 CLI
+Gate：本 RFC 合并后由 coordinator 从更新后的 `main` 派发；不实现 YAML、table 或 array comparator 行为；不新增 CLI
 route、detector、plugin SDK、artifact 或 renderer feature；`git diff --check`、formatting、lint、
 strict type checking、完整测试、schema-v1/v2/v3 compatibility fixture、unknown-kind rejection
 与 public-export check 全部通过。P5-A1、P6-C0、P7-A1 与后续 video schema gate 必须等待
@@ -138,9 +138,9 @@ Phase 6 contract decision 接受，但不是实现授权。
 
 ### 未来 P6-C0 的已接受 schema-v5 public shape
 
-这些 shape 已作为 future P6-C0 implementation review 的契约被接受，但不授权实现。P6-C0 只有在
-本 RFC 已合并、P4-C1 与 predecessor schema fixture 已存在于 `main`，并且 P6-C0 获得单独实现
-授权后才能启动。
+这些 shape 已作为 future P6-C0 implementation review 的契约被接受，但其本身不启动代码。
+P6-C0 已记录条件授权；coordinator 只有在 RFC 0010、P4-C1、P5-A1/schema-v4 及其
+compatibility fixture 都合并到 `main` 后才能派发。这不表示自动启动。
 
 Source lexical change 使用既有 schema-v5 closed-union member
 `kind="source_code_change"`，并使用 lexical discriminator

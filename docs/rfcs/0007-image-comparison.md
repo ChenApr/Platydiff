@@ -7,9 +7,11 @@
 - Review revision: 2026-09-10
 - Acceptance date: 2026-09-10
 - Owners: Platydiff maintainers
-- Implementation owner: unassigned pending separate implementation authorization
-- Predecessor amendment: RFC 0010 accepts Option A/P4-C1 before P5-A1 may treat
-  schema v3 as a stable predecessor
+- Implementation owner: unassigned; conditional authorization recorded for
+  coordinator dispatch after the actual predecessor merge gate passes
+- Predecessor amendment: RFC 0010 records conditional authorization for P5-A1
+  dispatch only after RFC 0010, P4-C1/schema-v3, and predecessor compatibility
+  fixtures merge to `main`; P5-A1 does not start automatically
 
 ## Summary and authorization boundary
 

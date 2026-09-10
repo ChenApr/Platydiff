@@ -7,9 +7,12 @@
 - Accepted: 2026-09-10
 - Approved decisions: P7X1-P7X8, A1-A7; V1-V6 roadmap-only
 - Owners: Platydiff maintainers
-- Implementation owner: unassigned pending separate implementation authorization
-- Predecessor amendment: RFC 0010 accepts Option A/P4-C1 before P7-A1 may treat
-  schema v3 as a stable predecessor
+- Implementation owner: unassigned; conditional authorization recorded for
+  coordinator dispatch after the actual predecessor merge gates pass
+- Predecessor amendment: RFC 0010 records conditional authorization for P7-A1
+  dispatch only after RFC 0010, P4-C1/schema-v3, P5-A1/schema-v4,
+  P6-C0/schema-v5, and compatibility fixtures merge to `main`; P7-A1 does not
+  start automatically
 
 ## Summary and authorization boundary
 
@@ -210,9 +213,9 @@ detection RFC is separately accepted.
 | Existing `compare()` and default CLI | v1 | text, binary, auto to either | none | Existing byte-stable fixtures remain valid. |
 | Existing explicit `PluginHost` | v2 | text, binary, auto to either | SDK v1.1 | Existing v2 fixtures and receipts remain valid. |
 | Merged Phase 4 P4-A1 path | v3 | explicit JSON | none | Actual v3 JSON models, migrations, and fixtures are the predecessor; YAML, table, and array work remain later gates. |
-| Accepted Phase 5 image path | v4 | explicit static PNG image | none until separately authorized | Media must not reuse v4 or require image implementation to change. |
-| Accepted Phase 6 source/PDF path | v5 | source-code/PDF | none until separately authorized | Audio v6 implementation waits for merged v5 readers, writers, upgraders, and fixtures. |
-| Accepted Phase 7 audio path | v6, dependent on v5 predecessor availability | explicit audio | none in first gates | Produces validated audio specs, changes, metrics, transformations, and failures after separate implementation authorization. |
+| Accepted Phase 5 image path | v4 | explicit static PNG image | none before explicit dispatch | Media must not reuse v4 or require image implementation to change. |
+| Accepted Phase 6 source/PDF path | v5 | source-code/PDF | none before explicit dispatch | Audio v6 implementation waits for merged v5 readers, writers, upgraders, and fixtures. |
+| Accepted Phase 7 audio path | v6, dependent on v5 predecessor availability | explicit audio | none in first gates | Produces validated audio specs, changes, metrics, transformations, and failures after recorded conditional authorization and coordinator dispatch from the actual predecessor merge gate. |
 | Accepted Phase 7 video roadmap path | next global successor after v6 | explicit video | none in first gates | Remains pending until backend and worker contracts are frozen in a later amendment; no video type is added to audio v6. |
 | Existing auto on media-looking bytes | v1 | text or binary only | existing rules | Detection evidence and result do not change. |
 | Future SDK v2 or media auto | unspecified | unspecified | unspecified | Requires successor RFCs. |
@@ -961,10 +964,12 @@ resources, or reinterpret relation/verdict. UI work remains unauthorized.
 
 ## Delivery gates, commits, and tests
 
-These gates are accepted delivery plans, not implementation authorization.
-P7-A1, P7-A2, and P7-A3 require separate human authorization from updated
-`main`. P7-A1 in particular must revalidate the actual merged v3/v4/v5
-predecessor chain before implementing the accepted audio schema-v6 allocation.
+These gates are accepted delivery plans and do not start code by themselves.
+P7-A1 has recorded conditional authorization; coordinator dispatch waits for
+RFC 0010, P4-C1/schema-v3, P5-A1/schema-v4, P6-C0/schema-v5, and compatibility
+fixtures to merge to `main`. P7-A1 in particular must revalidate the actual
+merged v3/v4/v5 predecessor chain before implementing the accepted audio
+schema-v6 allocation.
 P7-V1, P7-V2, and P7-V3 are accepted roadmap direction only and remain pending
 until a later video backend/worker amendment accepts the next schema successor.
 

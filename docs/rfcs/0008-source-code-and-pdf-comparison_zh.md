@@ -9,9 +9,11 @@
 - Approved decisions: P6X1-P6X11, SC1-SC10, PDF1-PDF10
 - Approved contract gate definition: P6-C0
 - Owners: Platydiff maintainers
-- Implementation owner: unassigned pending separate implementation authorization
+- Implementation owner：尚未指派；已记录条件授权，coordinator 只有在实际 predecessor
+  merge gate 通过后才能派发
 - Predecessor and contract amendment：RFC 0010 接受 Option A/P4-C1 与
-  P6C0-1-P6C0-10；P6-C0 implementation 仍需单独授权
+  P6C0-1-P6C0-10；P6-C0 已记录条件授权，但 coordinator 须等待 RFC 0010、P4-C1、
+  P5-A1/schema-v4 与 compatibility fixture 都合并到 `main` 后才能派发
 
 ## 摘要与授权边界
 
@@ -23,7 +25,9 @@
 事实；但它们不是同一个实现门禁。源代码和 PDF 的等价关系、后端、安全边界、artifact
 与依赖风险都不同，因此本 RFC 将它们拆分为独立授权的交付门禁。2026-09-10 的人工批准
 接受 P6X1-P6X11、SC1-SC10、PDF1-PDF10，以及 P6-C0 contract gate 定义。它只授权本文档
-PR。P6-C0 实现与每个后续 source/PDF code gate 仍需要从更新后的 `main` 单独获得实现授权。
+PR。P6-C0 已记录条件授权，但 coordinator 须等待 RFC 0010、P4-C1、P5-A1/schema-v4 与
+compatibility fixture 都合并到 `main` 后才能派发。每个后续 source/PDF code gate 仍需要
+从更新后的 `main` 显式派发。
 
 所有行为都保持显式启用。调用者必须直接选择 source-code 或 PDF spec。既有
 `AutoCompareSpec` 在 RFC 0003 的后继 RFC 接受新的探测语义之前，仍只支持 text/binary。

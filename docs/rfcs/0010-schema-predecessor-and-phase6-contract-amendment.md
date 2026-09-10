@@ -135,7 +135,7 @@ v4/v5/v6 implementation gate:
 3. `test(core): add schema-v3 YAML table array contract fixtures`
 4. `docs(rfc): record schema-v3 predecessor correction evidence`
 
-Gate: separately authorized from updated `main` after this RFC merges; no YAML, table, or array
+Gate: coordinator-dispatched from updated `main` after this RFC merges; no YAML, table, or array
 comparator behavior is implemented; no CLI route, detector, plugin SDK,
 artifact, or renderer feature is added; `git diff --check`, formatting, lint,
 strict type checking, complete tests, schema-v1/v2/v3 compatibility fixtures,
@@ -165,9 +165,10 @@ not implementation authority.
 ### Accepted schema-v5 public shapes for future P6-C0
 
 These shapes are accepted for the future P6-C0 implementation review, but they
-do not authorize implementation. P6-C0 may start only after this RFC is merged,
-P4-C1 and predecessor schema fixtures are present on `main`, and P6-C0 receives
-separate implementation authorization.
+do not start code by themselves. P6-C0 has recorded conditional authorization,
+and the coordinator may dispatch it only after RFC 0010, P4-C1,
+P5-A1/schema-v4, and their compatibility fixtures have all merged to `main`.
+This does not imply automatic start.
 
 Source lexical changes use the existing schema-v5 closed-union member
 `kind="source_code_change"` with lexical discriminator

@@ -24,7 +24,7 @@ This directory contains accepted and proposed design decisions for Platydiff. En
 | [0005](0005-third-party-plugin-discovery-sdk-and-compatibility.md) | Implemented | Define explicit third-party discovery, a versioned SDK, deterministic capability execution, and compatibility evidence |
 | [0006](0006-structured-data-comparison.md) | Accepted | Define explicit JSON/YAML, table, and dense-array semantics behind schema-v3 and separately authorized delivery gates |
 | [0007](0007-image-comparison.md) | Accepted | Define a schema-v4, explicit static-PNG decoded-sample slice and defer perceptual, artifact, plugin, and detection work |
-| [0008](0008-source-code-and-pdf-comparison.md) | Accepted | Define explicit source-code and PDF comparison contracts; only the P6-C0 gate definition is accepted, and P6-C0 implementation plus later gates need separate authorization |
+| [0008](0008-source-code-and-pdf-comparison.md) | Accepted | Define explicit source-code and PDF comparison contracts; RFC 0010 records conditional P6-C0 authorization behind predecessor merge gates |
 | [0009](0009-audio-and-video-comparison.md) | Accepted | Accept explicit audio contracts and audio-only schema-v6 allocation; accept video contracts as roadmap direction only pending a later backend/worker amendment and successor schema |
 | [0010](0010-schema-predecessor-and-phase6-contract-amendment.md) | Accepted | Select Option A/P4-C1 for the schema-v3 predecessor correction and accept P6-C0 contract-gap decisions before downstream implementation |
 

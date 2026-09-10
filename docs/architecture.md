@@ -240,7 +240,9 @@ Syntactic equality does not imply runtime semantic equality. AST comparison must
 
 [RFC 0008](rfcs/0008-source-code-and-pdf-comparison.md) accepts explicit
 source-code comparison contracts and independently authorized Phase 6 gates.
-It remains unimplemented and requires separate gate authorization before code.
+It remains unimplemented; RFC 0010 records conditional authorization for P6-C0
+dispatch only after RFC 0010, P4-C1, P5-A1/schema-v4, and compatibility
+fixtures merge to `main`.
 
 ### 6.4 Images
 
@@ -260,8 +262,10 @@ Audio comparison records explicit sample-rate, channel, and sample-format facts 
 
 [RFC 0009](rfcs/0009-audio-and-video-comparison.md) accepts explicit audio
 contracts for encoded bytes, decoded samples, waveform/numeric, spectral, and
-perceptual relations, including audio-only schema v6. It remains unimplemented
-and requires separate gate authorization before code.
+perceptual relations, including audio-only schema v6. It remains unimplemented;
+RFC 0010 records conditional authorization for P7-A1 dispatch only after the
+actual schema-v3, schema-v4, schema-v5, and compatibility-fixture predecessors
+merge to `main`.
 
 ### 6.6 Video
 
@@ -279,7 +283,9 @@ A PDF contains text, drawing instructions, fonts, images, and page layout. The s
 
 [RFC 0008](rfcs/0008-source-code-and-pdf-comparison.md) accepts explicit PDF
 view contracts for binary, extracted text, objects/metadata, and rendered pages.
-It remains unimplemented and requires separate gate authorization before code.
+It remains unimplemented; RFC 0010 records conditional authorization for P6-C0
+dispatch only after RFC 0010, P4-C1, P5-A1/schema-v4, and compatibility
+fixtures merge to `main`.
 
 ### 6.8 Tables, arrays, and statistical data
 

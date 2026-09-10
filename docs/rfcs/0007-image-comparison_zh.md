@@ -7,9 +7,10 @@
 - 评审修订：2026-09-10
 - 接受日期：2026-09-10
 - Owners：Platydiff 维护者
-- 实现 owner：等待单独的实现授权后指派
-- Predecessor amendment：RFC 0010 接受 Option A/P4-C1；P5-A1 只有在其完成后才能把
-  schema v3 当作稳定前驱
+- 实现 owner：尚未指派；已记录条件授权，coordinator 只有在实际 predecessor merge gate
+  通过后才能派发
+- Predecessor amendment：RFC 0010 记录 P5-A1 的条件授权；只有 RFC 0010、P4-C1/schema-v3
+  与 predecessor compatibility fixture 都合并到 `main` 后才能派发；P5-A1 不会自动启动
 
 ## 摘要与授权边界
 

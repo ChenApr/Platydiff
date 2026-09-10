@@ -232,7 +232,9 @@ schema-v6 实现把 v3 视为稳定前驱前的 Phase 4 correction gate。RFC 00
 语法相同不等于运行语义相同。AST 比较需要明确其解析器版本、错误恢复策略和宏/预处理边界。
 
 [RFC 0008](rfcs/0008-source-code-and-pdf-comparison_zh.md) 接受显式源代码比较契约与
-独立授权的 Phase 6 门禁。它仍未实现，写代码前需要单独 gate authorization。
+独立授权的 Phase 6 门禁。它仍未实现；RFC 0010 记录 P6-C0 的条件授权，但 coordinator
+只有在 RFC 0010、P4-C1、P5-A1/schema-v4 与 compatibility fixture 都合并到 `main` 后才能
+派发。
 
 ### 6.4 图片
 
@@ -251,7 +253,9 @@ static 8-bit PNG 的 decoded sample；encoded identity 继续由 binary comparat
 
 [RFC 0009](rfcs/0009-audio-and-video-comparison_zh.md) 接受 audio 的显式契约：
 encoded byte、decoded sample、waveform/numeric、spectral 与 perceptual relation，并接受
-audio-only schema v6。它仍未实现，写代码前需要单独 gate authorization。
+audio-only schema v6。它仍未实现；RFC 0010 记录 P7-A1 的条件授权，但 coordinator 只有在
+实际 schema-v3、schema-v4、schema-v5 与 compatibility fixture 前驱都合并到 `main` 后
+才能派发。
 
 ### 6.6 视频
 
@@ -267,8 +271,9 @@ successor。
 PDF 同时包含文本、绘制指令、字体、图片和页面布局。应提供三种可组合视角：提取文本比较、PDF 对象/元数据比较、页面渲染后的图片比较。不同生成器可能产生完全不同的内部对象但视觉页面一致，因此不能只做二进制 Diff。
 
 [RFC 0008](rfcs/0008-source-code-and-pdf-comparison_zh.md) 接受 PDF 的显式 view
-契约：binary、extracted text、objects/metadata 与 rendered pages。它仍未实现，写代码前需要
-单独 gate authorization。
+契约：binary、extracted text、objects/metadata 与 rendered pages。它仍未实现；RFC 0010
+记录 P6-C0 的条件授权，但 coordinator 只有在 RFC 0010、P4-C1、P5-A1/schema-v4 与
+compatibility fixture 都合并到 `main` 后才能派发。
 
 ### 6.8 表格、数组和统计数据
 
