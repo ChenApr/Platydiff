@@ -67,13 +67,16 @@ Equal decoded-sample comparison 的第一个 `media_evaluations` entry 为：
 | `metric_names` | relation 使用的 metric name 排序 tuple |
 | `policy_rule_ids` | relation 使用的 policy rule ID 排序 tuple |
 | `transformation_ids` | relation 使用的 transformation ID 排序 tuple |
+| `algorithm_id` | relation 使用的 stable algorithm ID |
 | `warning_codes` | 除非记录 visible warning，否则为空 tuple |
 | `change_count` | `0` |
 | `failure_stage` | `null` |
 | `failure_code` | `null` |
 
 Backend、profile 与 `stream.index` 记录在 provenance 和 selected spec field 中，不作为替代
-`MediaViewEvaluation` field。
+`MediaViewEvaluation` field。RFC 0012 为 schema-v6 audio 提出
+`MediaViewEvaluation.algorithm_id`，使 aggregate result 可以把每个 selected relation 绑定到其
+deterministic algorithm，而不重载 top-level comparison provenance。
 
 Schema-v6 为 audio 闭合 result-level `completeness` carrier：新增
 `DiffResult.completeness`，其 closed value 与语义与 `MediaViewEvaluation.completeness`
@@ -89,6 +92,7 @@ Stable ID 保持 RFC 0011 accepted ID：
 | Built-in comparator/capability | `builtin.audio` |
 | Decoded-sample algorithm | `audio.decoded_samples.exact.v1` |
 | Encoded-byte algorithm | `audio.encoded_bytes.exact.v1` |
+| Multi-relation aggregate algorithm | `audio.aggregate.selected_relations.v1` |
 | WAV/PCM decode transformation | `audio.decode.stdlib_wave_pcm.v1` |
 | Resource profile | `audio.resource.p7_a1.v1` |
 | Resource defaults | `audio.resource.p7_a1.defaults.v1` |
@@ -159,9 +163,9 @@ Proposed 名称：`container.endianness`、`format.tag`、`format.extensible`、
 | 9 | `container_bits_per_sample` | integer | `bits` | yes | no | no | `null` | once per selected stream |
 | 10 | `valid_bits_per_sample` | integer | `bits` | yes | no | no | `null` | once per selected stream |
 | 11 | `sample_count_per_channel` | integer | `samples` | yes | no | no | `null` | once per selected stream |
-| 12 | `duration_numerator` | integer | `samples` | yes | no | no | `null` | once per selected stream |
-| 13 | `duration_denominator` | integer | `Hz` | yes | no | no | `null` | once per selected stream |
-| 14 | `duration_seconds` | finite number | `s` | yes | no | no | `null` | once per selected stream |
+| 12 | `duration_seconds` | finite number | `s` | yes | no | no | `null` | once per selected stream |
+| 13 | `duration_numerator` | integer | `samples` | yes | no | no | `null` | once per selected stream |
+| 14 | `duration_denominator` | integer | `Hz` | yes | no | no | `null` | once per selected stream |
 | 15 | `timestamp_status` | string | `name` | yes | no | `"unknown"` | `null` | once per selected stream |
 | 16 | `encoder_delay_status` | string | `name` | yes | no | `"unknown"` | `null` | once per selected stream |
 | 17 | `encoder_padding_status` | string | `name` | yes | no | `"unknown"` | `null` | once per selected stream |
@@ -175,10 +179,10 @@ rank 与 value。Value ordering 在 accepted value type 之间是 total order：
 `"unknown"`。Integer 与 finite number 在各自 type 内按 exact numeric value 比较；string 使用
 Unicode scalar lexical order。该顺序只用于 deterministic serialization，不改变 relation semantic。
 
-RFC 0012 保留 RFC 0011 duration recording：`duration_numerator`、
-`duration_denominator` 与 binary64 `duration_seconds` 是分离 fact。`duration_seconds` 是
-`duration_numerator / duration_denominator` 的 IEEE-754 binary64 nearest-even 值，并序列化为可
-round-trip 到同一 binary64 的 shortest decimal。
+RFC 0012 保留 RFC 0011 duration recording：`duration_seconds` 仍是 accepted duration fact，
+`duration_numerator` 与 `duration_denominator` 是同一 total order 中相邻的 required companion
+fact。`duration_seconds` 是 `duration_numerator / duration_denominator` 的 IEEE-754 binary64
+nearest-even 值，并序列化为可 round-trip 到同一 binary64 的 shortest decimal。
 
 Predecessor v1-v5 upgrader 必须添加 `DiffResult.completeness`、
 `DiffResult.media_evaluations` 和 `DiffResult.audio_facts`。对于 non-audio 或 pre-media result，
@@ -222,8 +226,10 @@ completed/truncated result，`returned_count=0`、`omitted_count=total_count`；
 Canonical change payload byte 使用 UTF-8 JSON 计算：object key 排序、无 insignificant
 whitespace、digest 为 lowercase hex，并使用插入 null field 后的 wire-visible `AudioChange`
 object。对于包含 `n` 个 complete change 的 retained prefix，且每个 encoded byte length 为 `b_i`，
-array payload byte count 为 `2 + sum(b_i) + max(n - 1, 0)`：`[` 与 `]` byte、每个 retained
-item，以及相邻 item 之间的一个 comma byte。Payload accounting 绝不在单个 change item 内截断。
+retained payload byte count 为 `sum(b_i) + max(n - 1, 0)`：每个 retained item，加上相邻 item
+之间的一个 comma byte；不统计 outer `[` 与 `]` byte。`n=0` 时 retained payload byte count 为
+`0`。Payload accounting 绝不在单个 change item 内截断，且 reported `ResourceUsage.used` 是
+retained usage，必须小于或等于 configured limit。
 
 对于 `decoded_samples`，sample change 按以下字段相同的 maximal continuous run 分组：
 
@@ -332,13 +338,18 @@ Deterministic counter rule：
 | `max_metadata_entries` | 插入前统计单个 input retained metadata entry。 | `resolving` 或 `decoding` | `resource_limit_exceeded` | 任何 retained metadata entry 都失败 |
 | `max_metadata_value_bytes` | retain metadata value 前统计单个 metadata value 的 byte 数。 | `resolving` 或 `decoding` | `resource_limit_exceeded` | 任何 non-empty metadata value 都失败 |
 | `max_spectral_cells` | materialize spectral block 前累加 generated spectral cell。 | `normalizing` 或 `comparing` | `compare_resource_limit` | spectral relation 在生成 cell 前失败 |
-| `max_backend_seconds` | backend start 前与每次 bounded backend wait 后检查 monotonic elapsed backend nanoseconds；serialized seconds 为 elapsed nanoseconds 除以 1,000,000,000 后向上取整的 integer。 | backend execution stage | `resource_limit_exceeded` | 无 backend runtime budget；若需要 backend，则 backend start 前失败 |
-| `max_stdout_stderr_bytes` | append capture buffer 前累加 captured backend stdout/stderr bytes。 | backend execution stage | `resource_limit_exceeded` | 任何 captured byte 都失败 |
-| `max_temp_bytes` | create 或 extend temp data 前累加 temporary bytes。 | 创建 temp data 的任意 stage | `resource_limit_exceeded` | 任何 temp byte 都失败 |
-| `max_materialized_bytes` | retain materialized data 前累加 host-owned snapshot 与 materialized bytes。 | `sourcing` 或 materialization stage | `resource_limit_exceeded` | 任何 materialized byte 都失败 |
+| `max_backend_seconds` | backend start 前与每次 bounded backend wait 后检查 monotonic elapsed backend nanoseconds；serialized seconds 为 elapsed nanoseconds 除以 1,000,000,000 后向上取整的 integer。 | `resolving`、`decoding` 或 `comparing` | `resource_limit_exceeded` | 无 backend runtime budget；若需要 backend，则 backend start 前失败 |
+| `max_stdout_stderr_bytes` | append capture buffer 前累加 captured backend stdout/stderr bytes。 | `resolving`、`decoding` 或 `comparing` | `resource_limit_exceeded` | 任何 captured byte 都失败 |
+| `max_temp_bytes` | create 或 extend temp data 前累加 temporary bytes。 | first concrete pipeline stage that creates temp data | `resource_limit_exceeded` | 任何 temp byte 都失败 |
+| `max_materialized_bytes` | retain materialized data 前累加 host-owned snapshot 与 materialized bytes。 | first concrete pipeline stage that retains materialized data | `resource_limit_exceeded` | 任何 materialized byte 都失败 |
 | `max_compare_work` | 每个 comparison work batch 前累加 deterministic relation work unit。Encoded bytes 使用下文 byte-work table；decoded samples 每个 compared sample-channel position 为一个 work unit。 | `comparing` | `compare_resource_limit` | 只有 zero-work comparison 可以完成 |
 | `max_change_items` | 所有 selected relation count 已知后，统计 whole completed result 中的 grouped changes。 | `aggregating` | completed/truncated result, not a problem code | 计算 relation 与 total count；`total_count>0` 时 emit truncated empty change list；`total_count=0` 时保持 complete |
 | `max_change_payload_bytes` | append 每个 complete change item 前统计 canonical result `changes.items` JSON array payload bytes。 | `aggregating` | completed/truncated result, not a problem code | 计算 relation 与 total count；`total_count>0` 时省略 payload-bearing change；`total_count=0` 时保持 complete |
+
+当某一行列出多个 possible stage 时，canonical problem stage 是 actual execution 中最早证明 breach 的
+lifecycle stage。`last_completed_stage` 是其前一个已完成的 pipeline stage。Temp-byte 与
+materialization breach 使用第一次尝试 temp write 或 materialized retention 的 concrete pipeline
+stage；序列化时不得使用非 enum stage name。
 
 `max_compare_work=0` 只允许可以用 zero relation work 完成的 comparison：identical empty encoded-byte
 input，或 relation work 开始前的 metadata-only failure。`max_packets=0` 禁止读取任何 packet 或
@@ -403,10 +414,10 @@ recognized source：
 
 | Fact name | Value type | Unit | Absence value | Unknown value | Recognized source |
 | --- | --- | --- | --- | --- | --- |
-| `duration_seconds` | string rational 或 finite number | `s` | exact decoded duration | no | decoded sample count 与 sample rate；`smpl.sample_period` 可提供 exact scale evidence |
+| `duration_seconds` | finite number | `s` | exact decoded duration | no | decoded sample count 与 sample rate |
 | `timestamp_status` | string | `name` | `"absent"` | `"unknown"` | no source 或 `bext.time_reference` |
-| `encoder_delay_status` | string | `name` | `"absent"` | `"unknown"` | recognized delay metadata |
-| `encoder_padding_status` | string | `name` | `"absent"` | `"unknown"` | recognized padding metadata |
+| `encoder_delay_status` | string | `name` | `"absent"` | `"unknown"` | no source in P7-A1 |
+| `encoder_padding_status` | string | `name` | `"absent"` | `"unknown"` | no source in P7-A1 |
 
 Status semantic：
 
@@ -424,9 +435,9 @@ P7-A1 recognized timing chunk 和 field 是 closed set：
 | --- | --- | --- | --- |
 | no recognized timing chunk | absent | `timestamp_status="absent"` | not an error |
 | `bext.time_reference` | unsigned 64-bit sample count | `timestamp_status="present"` | malformed `bext` 在证明 malformed 的 stage 失败 |
-| `smpl.sample_period` | unsigned 32-bit nanoseconds per sample | only `duration_seconds` scale evidence | malformed `smpl` 在证明 malformed 的 stage 失败 |
-| recognized encoder delay field | non-negative integer samples | `encoder_delay_status="present"` | malformed field 在证明 malformed 的 stage 失败 |
-| recognized encoder padding field | non-negative integer samples | `encoder_padding_status="present"` | malformed field 在证明 malformed 的 stage 失败 |
+| `smpl.sample_period` | unsigned 32-bit nanoseconds per sample | consistency evidence only | malformed `smpl` 在证明 malformed 的 stage 失败 |
+| encoder delay source | none in P7-A1 | `encoder_delay_status="absent"` | not applicable |
+| encoder padding source | none in P7-A1 | `encoder_padding_status="absent"` | not applicable |
 
 Exact rational string 使用以下 grammar：
 
@@ -437,8 +448,14 @@ denominator = nonzero_digit *digit
 ```
 
 Denominator 始终为正。Serialized rational 必须约分到 lowest terms，不得包含 whitespace 或 plus sign，
-且只能使用 ASCII digit。只有在表格允许 finite number 的位置才可使用 decimal finite JSON number；
-exact duration 与 sample-period fact 在 binary64 会丢失信息时使用 rational string。
+且只能使用 ASCII digit。只有在表格允许 finite number 的位置才可使用 decimal finite JSON number。
+
+P7-A1 duration 始终由 decoded `sample_count_per_channel` 与 `sample_rate` 推导。
+`smpl.sample_period` 只是 consistency check；它不得覆盖 duration。若 `smpl.sample_period` 与
+`sample_count_per_channel / sample_rate` 冲突，bounded probe 证明时 outcome 为
+`failed/resolving/decode_error`，否则为 `failed/decoding/decode_error`。Problem details 包含
+`media_kind="audio"`、`field="smpl.sample_period"`、`expected` 为 sample-rate-derived
+rational、`actual` 为 `smpl` rational。
 
 所有其他 chunk 只有在 RFC 0011 已允许它们作为 bounded chunk fact 时才是 metadata fact。它们不得静默影响
 sample coordinate、duration、alignment 或 equality。
@@ -479,6 +496,52 @@ Optional key 在 unavailable 时省略；除非 type 明确包含 `null`，否�
 
 Detail value 不得包含 backend stderr、exception class name、host path、source filename、safe label、
 解释性 sentence 或 arbitrary dictionary。
+
+## Fixture recipe and oracle
+
+以下 canonical vector 由这个 Python 3.12 stdlib recipe 生成。该 recipe 是 WAV bytes、input
+SHA-256 value、decoded PCM payload、RFC 0011 framed change digest、decoded byte usage 与
+comparison work 的唯一来源：
+
+```python
+import io
+import struct
+import wave
+
+
+def pcm_s16le_wav(samples: list[int]) -> bytes:
+    out = io.BytesIO()
+    with wave.open(out, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(8000)
+        wav.writeframes(b"".join(struct.pack("<h", sample) for sample in samples))
+    return out.getvalue()
+
+
+PC_B_BEFORE_SAMPLES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+PC_B_AFTER_SAMPLES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 100, 101, 102]
+PC_E_SAMPLES = [0]
+```
+
+Expected bytes 与 hashes：
+
+| Name | Samples | Size | SHA-256 | Hex |
+| --- | --- | ---: | --- | --- |
+| `PC_B_BEFORE` | `[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]` | `70` | `832bba329af2eaf85edb3c0453e172af87c206d1cb956026b450bb8feb413481` | `524946463e00000057415645666d74201000000001000100401f0000803e000002001000646174611a00000000000100020003000400050006000700080009000a000b000c00` |
+| `PC_B_AFTER` | `[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 100, 101, 102]` | `70` | `dfd8c66124c26c5754bb84896fc764a21ab5d1aacd93c95eb1684943edd96c71` | `524946463e00000057415645666d74201000000001000100401f0000803e000002001000646174611a0000000000010002000300040005000600070008000900640065006600` |
+| `PC_E_ONE_ZERO` | `[0]` | `46` | `4aebda3a657a0d8f532d11ceacb1679081d7bdf7d7d301a53f1096af3580be91` | `524946462600000057415645666d74201000000001000100401f0000803e00000200100064617461020000000000` |
+
+PC-B decoded run 是 samples 10 through 12。其 RFC 0011
+`audio.decoded_samples.v1` framed digests 为：
+
+| Side | Digest |
+| --- | --- |
+| before | `2d835305250ffbf0bc5ee2278d5f9d015c7481547881cdcfdc09c325a4013ec6` |
+| after | `1c88a697051262817a32ed38cda1e89a62dd0eb5af31844914596374de180d06` |
+
+同一 byte fixture 产生 PC-G。其 encoded relation 在 source byte range `[64, 70)` 不同，
+decoded relation 在 sample range `[10, 13)` 不同。
 
 ## Canonical vectors
 
@@ -735,6 +798,7 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
           "audio.policy.encoded_bytes.v1"
         ],
         "transformation_ids": [],
+        "algorithm_id": "audio.encoded_bytes.exact.v1",
         "warning_codes": [],
         "change_count": 0,
         "failure_stage": null,
@@ -864,8 +928,8 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
             "time_duration_seconds": null
           },
           "channel": 0,
-          "before_digest": "sha256:e10fcab70a6455011b76f60e9774b33ed52c4aa9ef51e2c4a1cfcda3003c29f1",
-          "after_digest": "sha256:e493bc94d15fc37e05153d7b7649ab038d8e88a5e81e040c8878a36e11dc3b4f",
+          "before_digest": "sha256:2d835305250ffbf0bc5ee2278d5f9d015c7481547881cdcfdc09c325a4013ec6",
+          "after_digest": "sha256:1c88a697051262817a32ed38cda1e89a62dd0eb5af31844914596374de180d06",
           "before_fact": null,
           "after_fact": null
         }
@@ -1067,6 +1131,7 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
           "audio.decode.stdlib_wave_pcm.v1",
           "audio.align.sample_index.v1"
         ],
+        "algorithm_id": "audio.decoded_samples.exact.v1",
         "warning_codes": [],
         "change_count": 1,
         "failure_stage": null,
@@ -1349,6 +1414,7 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
           "audio.policy.encoded_bytes.v1"
         ],
         "transformation_ids": [],
+        "algorithm_id": "audio.encoded_bytes.exact.v1",
         "warning_codes": [],
         "change_count": 1,
         "failure_stage": null,
@@ -1729,6 +1795,7 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
           "audio.decode.stdlib_wave_pcm.v1",
           "audio.align.sample_index.v1"
         ],
+        "algorithm_id": "audio.decoded_samples.exact.v1",
         "warning_codes": [],
         "change_count": 0,
         "failure_stage": null,
@@ -1773,7 +1840,7 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
       },
       {
         "name": "channel_layout",
-        "value": "unknown",
+        "value": "unknown_ordered",
         "unit": "name",
         "stream_index": 0,
         "coordinate": null
@@ -1814,6 +1881,13 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
         "coordinate": null
       },
       {
+        "name": "duration_seconds",
+        "value": 0.000125,
+        "unit": "s",
+        "stream_index": 0,
+        "coordinate": null
+      },
+      {
         "name": "duration_numerator",
         "value": 1,
         "unit": "samples",
@@ -1824,13 +1898,6 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
         "name": "duration_denominator",
         "value": 8000,
         "unit": "Hz",
-        "stream_index": 0,
-        "coordinate": null
-      },
-      {
-        "name": "duration_seconds",
-        "value": 0.000125,
-        "unit": "s",
         "stream_index": 0,
         "coordinate": null
       },
@@ -2011,7 +2078,7 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
 }
 ```
 
-### Vector PC-G： dual-relation item-limit truncation
+### Vector PC-G： dual-relation item-limit truncation from PC-B WAV payloads
 
 ```json
 {
@@ -2119,8 +2186,18 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
         {
           "kind": "audio_change",
           "relation": "encoded_bytes",
-          "operation": "encoded_byte_insert",
-          "before_coordinate": null,
+          "operation": "encoded_byte_update",
+          "before_coordinate": {
+            "stream_index": null,
+            "channel_index": null,
+            "channel_label": null,
+            "sample_start": null,
+            "sample_count": null,
+            "time_start_seconds": null,
+            "time_duration_seconds": null,
+            "byte_start": 64,
+            "byte_count": 6
+          },
           "after_coordinate": {
             "stream_index": null,
             "channel_index": null,
@@ -2129,12 +2206,12 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
             "sample_count": null,
             "time_start_seconds": null,
             "time_duration_seconds": null,
-            "byte_start": 4,
-            "byte_count": 2
+            "byte_start": 64,
+            "byte_count": 6
           },
           "channel": null,
-          "before_digest": null,
-          "after_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000003",
+          "before_digest": "sha256:b79b07c8795af378c6a0ed8cfb414c9d4585cb509295fd2551906e20ba70c5aa",
+          "after_digest": "sha256:bdcdfc6d38aa5feed8ac10cf0d12e49a55be1df0dc364c6044fc6b50f906eb6a",
           "before_fact": null,
           "after_fact": null
         }
@@ -2151,7 +2228,7 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
         "name": "audio.bytes_changed",
         "value": {
           "kind": "finite",
-          "value": 2
+          "value": 6
         },
         "unit": "bytes",
         "direction": "lower_is_better",
@@ -2180,7 +2257,7 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
         },
         "observed": {
           "kind": "finite",
-          "value": 2
+          "value": 6
         }
       },
       {
@@ -2211,8 +2288,8 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
         {
           "role": "after",
           "source_kind": "bytes",
-          "size_bytes": 72,
-          "sha256": "b33d2b6174518c106ffecb640edd4eac74a67203ed70088953fd91ee4e431fd7",
+          "size_bytes": 70,
+          "sha256": "dfd8c66124c26c5754bb84896fc764a21ab5d1aacd93c95eb1684943edd96c71",
           "label": null
         }
       ],
@@ -2223,7 +2300,7 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
           "decoded_samples"
         ],
         "stream": {
-          "index": null,
+          "index": 0,
           "require_channel_labels": false
         },
         "decode": {
@@ -2285,17 +2362,41 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
           "max_change_payload_bytes": 4194304
         }
       },
-      "transformations": [],
+      "transformations": [
+        {
+          "stage": "decoding",
+          "transformation_id": "audio.decode.stdlib_wave_pcm.v1",
+          "parameters": {
+            "backend": "stdlib_wave_pcm",
+            "profile": "p7_a1_wav_pcm"
+          }
+        },
+        {
+          "stage": "aligning",
+          "transformation_id": "audio.align.sample_index.v1",
+          "parameters": {}
+        }
+      ],
       "comparator_id": "builtin.audio",
       "comparator_version": "1",
-      "algorithm_id": "audio.encoded_bytes.exact.v1",
+      "algorithm_id": "audio.aggregate.selected_relations.v1",
       "implementation_version": "p7-a1-proposed",
       "seeds": [],
       "resources": [
         {
           "name": "max_change_items",
           "limit": 1,
-          "used": 2
+          "used": 1
+        },
+        {
+          "name": "max_compare_work",
+          "limit": 10000000,
+          "used": 83
+        },
+        {
+          "name": "max_total_decoded_bytes",
+          "limit": 536870912,
+          "used": 52
         }
       ],
       "provider": null,
@@ -2317,6 +2418,7 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
           "audio.policy.encoded_bytes.v1"
         ],
         "transformation_ids": [],
+        "algorithm_id": "audio.encoded_bytes.exact.v1",
         "warning_codes": [],
         "change_count": 1,
         "failure_stage": null,
@@ -2329,7 +2431,7 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
         "relation": "different",
         "verdict": "fail",
         "fidelity": "full",
-        "completeness": "complete",
+        "completeness": "truncated",
         "metric_names": [
           "audio.samples_changed"
         ],
@@ -2340,6 +2442,7 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
           "audio.decode.stdlib_wave_pcm.v1",
           "audio.align.sample_index.v1"
         ],
+        "algorithm_id": "audio.decoded_samples.exact.v1",
         "warning_codes": [],
         "change_count": 1,
         "failure_stage": null,
@@ -2587,7 +2690,7 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
         {
           "name": "max_change_payload_bytes",
           "limit": 0,
-          "used": 2
+          "used": 0
         }
       ],
       "provider": null,
@@ -2601,7 +2704,7 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
         "relation": "different",
         "verdict": "fail",
         "fidelity": "full",
-        "completeness": "complete",
+        "completeness": "truncated",
         "metric_names": [
           "audio.bytes_changed"
         ],
@@ -2609,6 +2712,7 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
           "audio.policy.encoded_bytes.v1"
         ],
         "transformation_ids": [],
+        "algorithm_id": "audio.encoded_bytes.exact.v1",
         "warning_codes": [],
         "change_count": 1,
         "failure_stage": null,
@@ -2868,6 +2972,7 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
           "audio.policy.encoded_bytes.v1"
         ],
         "transformation_ids": [],
+        "algorithm_id": "audio.encoded_bytes.exact.v1",
         "warning_codes": [],
         "change_count": 0,
         "failure_stage": null,

@@ -71,13 +71,17 @@ For equal decoded-sample comparison, the first `media_evaluations` entry has:
 | `metric_names` | sorted tuple of metric names used by the relation |
 | `policy_rule_ids` | sorted tuple of policy rule IDs used by the relation |
 | `transformation_ids` | sorted tuple of transformation IDs used by the relation |
+| `algorithm_id` | stable algorithm ID used by the relation |
 | `warning_codes` | empty tuple unless a visible warning was recorded |
 | `change_count` | `0` |
 | `failure_stage` | `null` |
 | `failure_code` | `null` |
 
 Backend, profile, and `stream.index` are recorded in provenance and selected
-spec fields, not as replacement `MediaViewEvaluation` fields.
+spec fields, not as replacement `MediaViewEvaluation` fields. RFC 0012
+proposes `MediaViewEvaluation.algorithm_id` for schema-v6 audio so aggregate
+results can bind each selected relation to its deterministic algorithm without
+overloading top-level comparison provenance.
 
 Schema-v6 closes the result-level `completeness` carrier for audio by adding
 `DiffResult.completeness` with the same closed values and semantics as
@@ -94,6 +98,7 @@ Stable IDs remain exactly the IDs accepted by RFC 0011:
 | Built-in comparator/capability | `builtin.audio` |
 | Decoded-sample algorithm | `audio.decoded_samples.exact.v1` |
 | Encoded-byte algorithm | `audio.encoded_bytes.exact.v1` |
+| Multi-relation aggregate algorithm | `audio.aggregate.selected_relations.v1` |
 | WAV/PCM decode transformation | `audio.decode.stdlib_wave_pcm.v1` |
 | Resource profile | `audio.resource.p7_a1.v1` |
 | Resource defaults | `audio.resource.p7_a1.defaults.v1` |
@@ -170,9 +175,9 @@ below. It supersedes the older Proposed names
 | 9 | `container_bits_per_sample` | integer | `bits` | yes | no | no | `null` | once per selected stream |
 | 10 | `valid_bits_per_sample` | integer | `bits` | yes | no | no | `null` | once per selected stream |
 | 11 | `sample_count_per_channel` | integer | `samples` | yes | no | no | `null` | once per selected stream |
-| 12 | `duration_numerator` | integer | `samples` | yes | no | no | `null` | once per selected stream |
-| 13 | `duration_denominator` | integer | `Hz` | yes | no | no | `null` | once per selected stream |
-| 14 | `duration_seconds` | finite number | `s` | yes | no | no | `null` | once per selected stream |
+| 12 | `duration_seconds` | finite number | `s` | yes | no | no | `null` | once per selected stream |
+| 13 | `duration_numerator` | integer | `samples` | yes | no | no | `null` | once per selected stream |
+| 14 | `duration_denominator` | integer | `Hz` | yes | no | no | `null` | once per selected stream |
 | 15 | `timestamp_status` | string | `name` | yes | no | `"unknown"` | `null` | once per selected stream |
 | 16 | `encoder_delay_status` | string | `name` | yes | no | `"unknown"` | `null` | once per selected stream |
 | 17 | `encoder_padding_status` | string | `name` | yes | no | `"unknown"` | `null` | once per selected stream |
@@ -189,8 +194,9 @@ and finite numbers are compared by exact numeric value within their type;
 strings use Unicode scalar lexical order. This order is for deterministic
 serialization only and never changes relation semantics.
 
-RFC 0012 preserves RFC 0011 duration recording: `duration_numerator`,
-`duration_denominator`, and binary64 `duration_seconds` are separate facts.
+RFC 0012 preserves RFC 0011 duration recording: `duration_seconds` remains the
+accepted duration fact, and `duration_numerator` plus `duration_denominator`
+are required adjacent companion facts in the same total order.
 `duration_seconds` is the IEEE-754 binary64 nearest-even value of
 `duration_numerator / duration_denominator`, serialized as the shortest decimal
 that round-trips to the same binary64 value.
@@ -246,9 +252,11 @@ Canonical change payload bytes are computed from UTF-8 JSON with sorted object
 keys, no insignificant whitespace, lowercase hex digests, and the exact
 wire-visible `AudioChange` object after null fields have been inserted. For a
 retained prefix of `n` complete changes with encoded byte lengths `b_i`, the
-array payload byte count is `2 + sum(b_i) + max(n - 1, 0)`: the `[` and `]`
-bytes, each retained item, and one comma byte between adjacent items. Payload
-accounting never cuts inside one change item.
+retained payload byte count is `sum(b_i) + max(n - 1, 0)`: each retained item
+plus one comma byte between adjacent items; the outer `[` and `]` bytes are not
+counted. For `n=0`, retained payload byte count is `0`. Payload accounting
+never cuts inside one change item, and reported `ResourceUsage.used` is
+retained usage that must be less than or equal to the configured limit.
 
 For `decoded_samples`, sample changes are grouped into maximal continuous runs
 with the same:
@@ -369,13 +377,20 @@ Deterministic counter rules:
 | `max_metadata_entries` | Count retained metadata entries per input before insertion. | `resolving` or `decoding` | `resource_limit_exceeded` | any retained metadata entry fails |
 | `max_metadata_value_bytes` | Count bytes in one metadata value before retaining the value. | `resolving` or `decoding` | `resource_limit_exceeded` | any non-empty metadata value fails |
 | `max_spectral_cells` | Add generated spectral cells before materializing a spectral block. | `normalizing` or `comparing` | `compare_resource_limit` | spectral relations fail before producing cells |
-| `max_backend_seconds` | Check monotonic elapsed backend nanoseconds before backend start and after each bounded backend wait; serialize seconds as integer ceiling of elapsed nanoseconds divided by 1,000,000,000. | backend execution stage | `resource_limit_exceeded` | no backend runtime budget; fail before backend start if a backend would be needed |
-| `max_stdout_stderr_bytes` | Add captured backend stdout/stderr bytes before appending to capture buffers. | backend execution stage | `resource_limit_exceeded` | any captured byte fails |
-| `max_temp_bytes` | Add temporary bytes before creating or extending temp data. | any stage that creates temp data | `resource_limit_exceeded` | any temp byte fails |
-| `max_materialized_bytes` | Add host-owned snapshot and materialized bytes before retaining materialized data. | `sourcing` or materialization stage | `resource_limit_exceeded` | any materialized byte fails |
+| `max_backend_seconds` | Check monotonic elapsed backend nanoseconds before backend start and after each bounded backend wait; serialize seconds as integer ceiling of elapsed nanoseconds divided by 1,000,000,000. | `resolving`, `decoding`, or `comparing` | `resource_limit_exceeded` | no backend runtime budget; fail before backend start if a backend would be needed |
+| `max_stdout_stderr_bytes` | Add captured backend stdout/stderr bytes before appending to capture buffers. | `resolving`, `decoding`, or `comparing` | `resource_limit_exceeded` | any captured byte fails |
+| `max_temp_bytes` | Add temporary bytes before creating or extending temp data. | first concrete pipeline stage that creates temp data | `resource_limit_exceeded` | any temp byte fails |
+| `max_materialized_bytes` | Add host-owned snapshot and materialized bytes before retaining materialized data. | first concrete pipeline stage that retains materialized data | `resource_limit_exceeded` | any materialized byte fails |
 | `max_compare_work` | Add deterministic relation work units before each comparison work batch. Encoded bytes use the byte-work table below; decoded samples use one work unit per compared sample-channel position. | `comparing` | `compare_resource_limit` | only zero-work comparisons may complete |
 | `max_change_items` | Count grouped changes across the whole completed result after all selected relation counts are known. | `aggregating` | completed/truncated result, not a problem code | compute relation and total counts, then emit a truncated empty change list when `total_count>0`; remain complete when `total_count=0` |
 | `max_change_payload_bytes` | Count canonical result `changes.items` JSON array payload bytes before appending each complete change item. | `aggregating` | completed/truncated result, not a problem code | compute relation and total counts, then omit payload-bearing changes when `total_count>0`; remain complete when `total_count=0` |
+
+When a row lists more than one possible stage, the canonical problem stage is
+the first lifecycle stage in the actual execution at which the breach is
+proven. `last_completed_stage` is the immediately preceding completed
+pipeline stage. Temp-byte and materialization breaches use the concrete
+pipeline stage that first attempts the temp write or materialized retention;
+no non-enum stage names are serialized.
 
 `max_compare_work=0` permits only comparisons that can complete with zero
 relation work: identical empty encoded-byte inputs or metadata-only failures
@@ -451,7 +466,7 @@ the registry facts above, repeated here with their recognized sources:
 
 | Fact name | Value type | Unit | Absence value | Unknown value | Recognized source |
 | --- | --- | --- | --- | --- | --- |
-| `duration_seconds` | string rational or finite number | `s` | exact decoded duration | no | decoded sample count and sample rate; `smpl.sample_period` may provide exact scale evidence |
+| `duration_seconds` | finite number | `s` | exact decoded duration | no | decoded sample count and sample rate |
 | `timestamp_status` | string | `name` | `"absent"` | `"unknown"` | no source or `bext.time_reference` |
 | `encoder_delay_status` | string | `name` | `"absent"` | `"unknown"` | recognized delay metadata |
 | `encoder_padding_status` | string | `name` | `"absent"` | `"unknown"` | recognized padding metadata |
@@ -474,9 +489,9 @@ Recognized timing chunks and fields are closed for P7-A1:
 | --- | --- | --- | --- |
 | no recognized timing chunk | absent | `timestamp_status="absent"` | not an error |
 | `bext.time_reference` | unsigned 64-bit sample count | `timestamp_status="present"` | malformed `bext` fails at the stage that proves malformation |
-| `smpl.sample_period` | unsigned 32-bit nanoseconds per sample | `duration_seconds` scale evidence only | malformed `smpl` fails at the stage that proves malformation |
-| recognized encoder delay field | non-negative integer samples | `encoder_delay_status="present"` | malformed field fails at the stage that proves malformation |
-| recognized encoder padding field | non-negative integer samples | `encoder_padding_status="present"` | malformed field fails at the stage that proves malformation |
+| `smpl.sample_period` | unsigned 32-bit nanoseconds per sample | consistency evidence only | malformed `smpl` fails at the stage that proves malformation |
+| encoder delay source | none in P7-A1 | `encoder_delay_status="absent"` | not applicable |
+| encoder padding source | none in P7-A1 | `encoder_padding_status="absent"` | not applicable |
 
 Exact rational strings use this grammar:
 
@@ -489,8 +504,16 @@ denominator = nonzero_digit *digit
 The denominator is always positive. Serialized rationals must be reduced to
 lowest terms, must not contain whitespace or plus signs, and must use ASCII
 digits only. Decimal finite JSON numbers may appear only where the table above
-allows finite numbers; exact duration and sample-period facts use rational
-strings when a binary64 value would lose information.
+allows finite numbers.
+
+P7-A1 duration is always derived from decoded `sample_count_per_channel` and
+`sample_rate`. `smpl.sample_period` is a consistency check only; it must not
+override duration. If `smpl.sample_period` conflicts with
+`sample_count_per_channel / sample_rate`, the outcome is
+`failed/resolving/decode_error` when proven by the bounded probe, otherwise
+`failed/decoding/decode_error`. Problem details include
+`media_kind="audio"`, `field="smpl.sample_period"`, `expected` as the
+sample-rate-derived rational, and `actual` as the `smpl` rational.
 
 All other chunks are metadata facts only when RFC 0011 already allows them as
 bounded chunk facts. They must not silently affect sample coordinates,
@@ -537,6 +560,54 @@ explicitly includes `null`.
 Detail values must not contain backend stderr, exception class names, host
 paths, source filenames, safe labels, explanatory sentences, or arbitrary
 dictionaries.
+
+## Fixture recipe and oracle
+
+The canonical vectors below are generated from this Python 3.12 stdlib recipe.
+The recipe is the single source of truth for WAV bytes, input SHA-256 values,
+decoded PCM payloads, RFC 0011 framed change digests, decoded byte usage, and
+comparison work:
+
+```python
+import io
+import struct
+import wave
+
+
+def pcm_s16le_wav(samples: list[int]) -> bytes:
+    out = io.BytesIO()
+    with wave.open(out, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(8000)
+        wav.writeframes(b"".join(struct.pack("<h", sample) for sample in samples))
+    return out.getvalue()
+
+
+PC_B_BEFORE_SAMPLES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+PC_B_AFTER_SAMPLES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 100, 101, 102]
+PC_E_SAMPLES = [0]
+```
+
+Expected bytes and hashes:
+
+| Name | Samples | Size | SHA-256 | Hex |
+| --- | --- | ---: | --- | --- |
+| `PC_B_BEFORE` | `[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]` | `70` | `832bba329af2eaf85edb3c0453e172af87c206d1cb956026b450bb8feb413481` | `524946463e00000057415645666d74201000000001000100401f0000803e000002001000646174611a00000000000100020003000400050006000700080009000a000b000c00` |
+| `PC_B_AFTER` | `[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 100, 101, 102]` | `70` | `dfd8c66124c26c5754bb84896fc764a21ab5d1aacd93c95eb1684943edd96c71` | `524946463e00000057415645666d74201000000001000100401f0000803e000002001000646174611a0000000000010002000300040005000600070008000900640065006600` |
+| `PC_E_ONE_ZERO` | `[0]` | `46` | `4aebda3a657a0d8f532d11ceacb1679081d7bdf7d7d301a53f1096af3580be91` | `524946462600000057415645666d74201000000001000100401f0000803e00000200100064617461020000000000` |
+
+The PC-B decoded run is samples 10 through 12. Its RFC 0011
+`audio.decoded_samples.v1` framed digests are:
+
+| Side | Digest |
+| --- | --- |
+| before | `2d835305250ffbf0bc5ee2278d5f9d015c7481547881cdcfdc09c325a4013ec6` |
+| after | `1c88a697051262817a32ed38cda1e89a62dd0eb5af31844914596374de180d06` |
+
+The same byte fixtures produce PC-G. Their encoded relation differs at source
+byte range `[64, 70)`, and their decoded relation differs at sample range
+`[10, 13)`.
 
 ## Canonical vectors
 
@@ -795,6 +866,7 @@ canonical detail-limit truncation behavior.
           "audio.policy.encoded_bytes.v1"
         ],
         "transformation_ids": [],
+        "algorithm_id": "audio.encoded_bytes.exact.v1",
         "warning_codes": [],
         "change_count": 0,
         "failure_stage": null,
@@ -924,8 +996,8 @@ canonical detail-limit truncation behavior.
             "time_duration_seconds": null
           },
           "channel": 0,
-          "before_digest": "sha256:e10fcab70a6455011b76f60e9774b33ed52c4aa9ef51e2c4a1cfcda3003c29f1",
-          "after_digest": "sha256:e493bc94d15fc37e05153d7b7649ab038d8e88a5e81e040c8878a36e11dc3b4f",
+          "before_digest": "sha256:2d835305250ffbf0bc5ee2278d5f9d015c7481547881cdcfdc09c325a4013ec6",
+          "after_digest": "sha256:1c88a697051262817a32ed38cda1e89a62dd0eb5af31844914596374de180d06",
           "before_fact": null,
           "after_fact": null
         }
@@ -1127,6 +1199,7 @@ canonical detail-limit truncation behavior.
           "audio.decode.stdlib_wave_pcm.v1",
           "audio.align.sample_index.v1"
         ],
+        "algorithm_id": "audio.decoded_samples.exact.v1",
         "warning_codes": [],
         "change_count": 1,
         "failure_stage": null,
@@ -1409,6 +1482,7 @@ canonical detail-limit truncation behavior.
           "audio.policy.encoded_bytes.v1"
         ],
         "transformation_ids": [],
+        "algorithm_id": "audio.encoded_bytes.exact.v1",
         "warning_codes": [],
         "change_count": 1,
         "failure_stage": null,
@@ -1789,6 +1863,7 @@ canonical detail-limit truncation behavior.
           "audio.decode.stdlib_wave_pcm.v1",
           "audio.align.sample_index.v1"
         ],
+        "algorithm_id": "audio.decoded_samples.exact.v1",
         "warning_codes": [],
         "change_count": 0,
         "failure_stage": null,
@@ -1833,7 +1908,7 @@ canonical detail-limit truncation behavior.
       },
       {
         "name": "channel_layout",
-        "value": "unknown",
+        "value": "unknown_ordered",
         "unit": "name",
         "stream_index": 0,
         "coordinate": null
@@ -1874,6 +1949,13 @@ canonical detail-limit truncation behavior.
         "coordinate": null
       },
       {
+        "name": "duration_seconds",
+        "value": 0.000125,
+        "unit": "s",
+        "stream_index": 0,
+        "coordinate": null
+      },
+      {
         "name": "duration_numerator",
         "value": 1,
         "unit": "samples",
@@ -1884,13 +1966,6 @@ canonical detail-limit truncation behavior.
         "name": "duration_denominator",
         "value": 8000,
         "unit": "Hz",
-        "stream_index": 0,
-        "coordinate": null
-      },
-      {
-        "name": "duration_seconds",
-        "value": 0.000125,
-        "unit": "s",
         "stream_index": 0,
         "coordinate": null
       },
@@ -2071,7 +2146,7 @@ canonical detail-limit truncation behavior.
 }
 ```
 
-### Vector PC-G: dual-relation item-limit truncation
+### Vector PC-G: dual-relation item-limit truncation from PC-B WAV payloads
 
 ```json
 {
@@ -2179,8 +2254,18 @@ canonical detail-limit truncation behavior.
         {
           "kind": "audio_change",
           "relation": "encoded_bytes",
-          "operation": "encoded_byte_insert",
-          "before_coordinate": null,
+          "operation": "encoded_byte_update",
+          "before_coordinate": {
+            "stream_index": null,
+            "channel_index": null,
+            "channel_label": null,
+            "sample_start": null,
+            "sample_count": null,
+            "time_start_seconds": null,
+            "time_duration_seconds": null,
+            "byte_start": 64,
+            "byte_count": 6
+          },
           "after_coordinate": {
             "stream_index": null,
             "channel_index": null,
@@ -2189,12 +2274,12 @@ canonical detail-limit truncation behavior.
             "sample_count": null,
             "time_start_seconds": null,
             "time_duration_seconds": null,
-            "byte_start": 4,
-            "byte_count": 2
+            "byte_start": 64,
+            "byte_count": 6
           },
           "channel": null,
-          "before_digest": null,
-          "after_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000003",
+          "before_digest": "sha256:b79b07c8795af378c6a0ed8cfb414c9d4585cb509295fd2551906e20ba70c5aa",
+          "after_digest": "sha256:bdcdfc6d38aa5feed8ac10cf0d12e49a55be1df0dc364c6044fc6b50f906eb6a",
           "before_fact": null,
           "after_fact": null
         }
@@ -2211,7 +2296,7 @@ canonical detail-limit truncation behavior.
         "name": "audio.bytes_changed",
         "value": {
           "kind": "finite",
-          "value": 2
+          "value": 6
         },
         "unit": "bytes",
         "direction": "lower_is_better",
@@ -2240,7 +2325,7 @@ canonical detail-limit truncation behavior.
         },
         "observed": {
           "kind": "finite",
-          "value": 2
+          "value": 6
         }
       },
       {
@@ -2271,8 +2356,8 @@ canonical detail-limit truncation behavior.
         {
           "role": "after",
           "source_kind": "bytes",
-          "size_bytes": 72,
-          "sha256": "b33d2b6174518c106ffecb640edd4eac74a67203ed70088953fd91ee4e431fd7",
+          "size_bytes": 70,
+          "sha256": "dfd8c66124c26c5754bb84896fc764a21ab5d1aacd93c95eb1684943edd96c71",
           "label": null
         }
       ],
@@ -2283,7 +2368,7 @@ canonical detail-limit truncation behavior.
           "decoded_samples"
         ],
         "stream": {
-          "index": null,
+          "index": 0,
           "require_channel_labels": false
         },
         "decode": {
@@ -2345,17 +2430,41 @@ canonical detail-limit truncation behavior.
           "max_change_payload_bytes": 4194304
         }
       },
-      "transformations": [],
+      "transformations": [
+        {
+          "stage": "decoding",
+          "transformation_id": "audio.decode.stdlib_wave_pcm.v1",
+          "parameters": {
+            "backend": "stdlib_wave_pcm",
+            "profile": "p7_a1_wav_pcm"
+          }
+        },
+        {
+          "stage": "aligning",
+          "transformation_id": "audio.align.sample_index.v1",
+          "parameters": {}
+        }
+      ],
       "comparator_id": "builtin.audio",
       "comparator_version": "1",
-      "algorithm_id": "audio.encoded_bytes.exact.v1",
+      "algorithm_id": "audio.aggregate.selected_relations.v1",
       "implementation_version": "p7-a1-proposed",
       "seeds": [],
       "resources": [
         {
           "name": "max_change_items",
           "limit": 1,
-          "used": 2
+          "used": 1
+        },
+        {
+          "name": "max_compare_work",
+          "limit": 10000000,
+          "used": 83
+        },
+        {
+          "name": "max_total_decoded_bytes",
+          "limit": 536870912,
+          "used": 52
         }
       ],
       "provider": null,
@@ -2377,6 +2486,7 @@ canonical detail-limit truncation behavior.
           "audio.policy.encoded_bytes.v1"
         ],
         "transformation_ids": [],
+        "algorithm_id": "audio.encoded_bytes.exact.v1",
         "warning_codes": [],
         "change_count": 1,
         "failure_stage": null,
@@ -2389,7 +2499,7 @@ canonical detail-limit truncation behavior.
         "relation": "different",
         "verdict": "fail",
         "fidelity": "full",
-        "completeness": "complete",
+        "completeness": "truncated",
         "metric_names": [
           "audio.samples_changed"
         ],
@@ -2400,6 +2510,7 @@ canonical detail-limit truncation behavior.
           "audio.decode.stdlib_wave_pcm.v1",
           "audio.align.sample_index.v1"
         ],
+        "algorithm_id": "audio.decoded_samples.exact.v1",
         "warning_codes": [],
         "change_count": 1,
         "failure_stage": null,
@@ -2647,7 +2758,7 @@ canonical detail-limit truncation behavior.
         {
           "name": "max_change_payload_bytes",
           "limit": 0,
-          "used": 2
+          "used": 0
         }
       ],
       "provider": null,
@@ -2661,7 +2772,7 @@ canonical detail-limit truncation behavior.
         "relation": "different",
         "verdict": "fail",
         "fidelity": "full",
-        "completeness": "complete",
+        "completeness": "truncated",
         "metric_names": [
           "audio.bytes_changed"
         ],
@@ -2669,6 +2780,7 @@ canonical detail-limit truncation behavior.
           "audio.policy.encoded_bytes.v1"
         ],
         "transformation_ids": [],
+        "algorithm_id": "audio.encoded_bytes.exact.v1",
         "warning_codes": [],
         "change_count": 1,
         "failure_stage": null,
@@ -2928,6 +3040,7 @@ canonical detail-limit truncation behavior.
           "audio.policy.encoded_bytes.v1"
         ],
         "transformation_ids": [],
+        "algorithm_id": "audio.encoded_bytes.exact.v1",
         "warning_codes": [],
         "change_count": 0,
         "failure_stage": null,
