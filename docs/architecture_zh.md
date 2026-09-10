@@ -228,8 +228,8 @@ Accepted amendment。其已授权的 Option A/P4-C1 修正补入缺失的 YAML/t
 spec、fact、change、reader/writer、validation、migration 与冻结 predecessor fixture
 surface。该修正仍仅限 contract：YAML/table/array comparator execution、registry entry、
 `compare()` route、CLI command、detection、SDK v2 与 UI 均不在 P4-C1 范围内。
-schema-v4/v5/v6 implementation 必须消费实际合并的 P4-C1 predecessor fixture，且不得
-重写其 bytes。
+PR #20 已在 `b84603f` 把该修正及冻结 predecessor fixture 合并到 `main`；
+schema-v4/v5/v6 implementation 必须消费这些实际 fixture，且不得重写其 bytes。
 
 语法相同不等于运行语义相同。AST 比较需要明确其解析器版本、错误恢复策略和宏/预处理边界。
 
@@ -247,7 +247,10 @@ schema-v4/v5/v6 implementation 必须消费实际合并的 P4-C1 predecessor fix
 [RFC 0007](rfcs/0007-image-comparison_zh.md) 定义已接受的更窄首个图片切片：显式、内建地比较
 static 8-bit PNG 的 decoded sample；encoded identity 继续由 binary comparator 负责，且不提供
 隐式 orientation、color、alpha、resize、crop、artifact、plugin 或 detection 行为。接受该 RFC
-不授权实现。
+不授权实现。Accepted
+[RFC 0013](rfcs/0013-p5a1-image-wire-contract-amendment_zh.md) 闭合 contract-only P5-A1 的
+enum、transformation、canonical-fixture provenance、problem-code、terminal、serializer-version 与
+downgrade decision。其 acceptance 不授予实现权限；P5-A1 仍未实现，须等待人类单独派发。
 
 ### 6.5 音频
 

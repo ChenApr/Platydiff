@@ -234,8 +234,9 @@ Option A/P4-C1 correction adds the missing YAML/table/array public spec, fact,
 change, reader/writer, validation, migration, and frozen predecessor-fixture
 surface. The correction remains contract-only: YAML/table/array comparator
 execution, registry entries, `compare()` routes, CLI commands, detection, SDK
-v2, and UI remain outside P4-C1. Schema-v4/v5/v6 implementation must consume
-the actual merged P4-C1 predecessor fixtures without rewriting their bytes.
+v2, and UI remain outside P4-C1. PR #20 merged the correction and its frozen
+predecessor fixtures into `main` at `b84603f`; schema-v4/v5/v6 implementation
+must consume those actual fixtures without rewriting their bytes.
 
 Syntactic equality does not imply runtime semantic equality. AST comparison must state its parser version, error-recovery behavior, and macro or preprocessing boundaries.
 
@@ -255,7 +256,12 @@ A one-pixel translation can create a large apparent difference. Registration, cr
 image slice: an explicit built-in comparison of static 8-bit PNG decoded
 samples, with encoded identity left to the binary comparator and no implicit
 orientation, color, alpha, resize, crop, artifact, plugin, or detection behavior. Acceptance
-does not authorize implementation.
+does not authorize implementation. Accepted
+[RFC 0013](rfcs/0013-p5a1-image-wire-contract-amendment.md) closes the
+contract-only P5-A1 enum, transformation, canonical-fixture provenance,
+problem-code, terminal, serializer-version, and downgrade decisions. Its
+acceptance grants no implementation authority; P5-A1 remains unimplemented
+until separately dispatched by a human.
 
 ### 6.5 Audio
 
