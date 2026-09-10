@@ -224,8 +224,8 @@ semantics、JSON Pointer alignment、typed structured change 与确定性 eviden
 
 语法相同不等于运行语义相同。AST 比较需要明确其解析器版本、错误恢复策略和宏/预处理边界。
 
-[RFC 0008](rfcs/0008-source-code-and-pdf-comparison_zh.md) 提议显式源代码比较契约与
-独立授权的 Phase 6 门禁。它仍为 Proposed，不授权实现。
+[RFC 0008](rfcs/0008-source-code-and-pdf-comparison_zh.md) 接受显式源代码比较契约与
+独立授权的 Phase 6 门禁。它仍未实现，写代码前需要单独 gate authorization。
 
 ### 6.4 图片
 
@@ -240,27 +240,28 @@ static 8-bit PNG 的 decoded sample；encoded identity 继续由 binary comparat
 
 ### 6.5 音频
 
-音频先统一采样率、声道与样本格式，通过时间戳或互相关对齐，再比较 PCM 波形、STFT/Mel 频谱、SNR 或感知质量。毫秒级延迟、增益或重采样都会破坏严格样本比较，因此必须区分“信号相同”和“听感接近”。ViSQOL、PESQ/POLQA 等可作为可选后端，而不是核心依赖。
+音频先记录显式采样率、声道与样本格式事实，再应用选中的对齐策略。只有在显式契约下，才可比较 PCM 波形、STFT/Mel 频谱、SNR 或感知质量。毫秒级延迟、增益或重采样都会破坏严格样本比较，因此必须区分“信号相同”和“听感接近”。ViSQOL、PESQ/POLQA 等可作为可选后端，而不是核心依赖。
 
-[RFC 0009](rfcs/0009-audio-and-video-comparison_zh.md) 提议 audio 的显式契约：
-encoded byte、decoded sample、waveform/numeric、spectral 与 perceptual relation。
-它仍为 Proposed，不授权实现。
+[RFC 0009](rfcs/0009-audio-and-video-comparison_zh.md) 接受 audio 的显式契约：
+encoded byte、decoded sample、waveform/numeric、spectral 与 perceptual relation，并接受
+audio-only schema v6。它仍未实现，写代码前需要单独 gate authorization。
 
 ### 6.6 视频
 
-视频比较需要解封装、解码、时间轴对齐、帧率和分辨率统一、颜色空间规范化，再执行逐帧 PSNR、SSIM、VMAF 等指标并沿时间聚合。检测剪辑、插帧和镜头重排时，需要镜头切分、帧指纹或特征序列匹配，不能只依赖视频质量指标。音轨应作为独立模态比较并与视频时间线关联。
+视频比较先记录解封装、解码、时间轴、帧率、分辨率、颜色、HDR、orientation 与 interlacing 事实，再执行选中的逐帧 PSNR、SSIM、VMAF 等指标。Resize、crop、frame-rate conversion、color conversion、tone mapping、deinterlacing 与 synchronization shift 必须是显式 transformation，不能隐藏在 metric setup 中。检测剪辑、插帧和镜头重排时，需要镜头切分、帧指纹或特征序列匹配，不能只依赖视频质量指标。音轨应作为独立模态比较并与视频时间线关联。
 
-[RFC 0009](rfcs/0009-audio-and-video-comparison_zh.md) 也提议 video 的显式契约：
-stream structure、decoded frame、frame metric、perceptual video 与 audio-track
-association。它仍为 Proposed，不授权实现。
+[RFC 0009](rfcs/0009-audio-and-video-comparison_zh.md) 也把 video 的显式契约接受为 roadmap
+direction：stream structure、decoded frame、frame metric、perceptual video 与 audio-track
+association。Video 仍未实现，写代码前必须等待后续 backend/worker amendment 与下一个 schema
+successor。
 
 ### 6.7 PDF
 
 PDF 同时包含文本、绘制指令、字体、图片和页面布局。应提供三种可组合视角：提取文本比较、PDF 对象/元数据比较、页面渲染后的图片比较。不同生成器可能产生完全不同的内部对象但视觉页面一致，因此不能只做二进制 Diff。
 
-[RFC 0008](rfcs/0008-source-code-and-pdf-comparison_zh.md) 提议 PDF 的显式 view
-契约：binary、extracted text、objects/metadata 与 rendered pages。它仍为 Proposed，
-不授权实现。
+[RFC 0008](rfcs/0008-source-code-and-pdf-comparison_zh.md) 接受 PDF 的显式 view
+契约：binary、extracted text、objects/metadata 与 rendered pages。它仍未实现，写代码前需要
+单独 gate authorization。
 
 ### 6.8 表格、数组和统计数据
 
@@ -285,8 +286,11 @@ Phase 1 至 Phase 3 以及 Phase 4 门禁 P4-A1 包含 Python 包、schema-v1/v2
 门禁仍未实现且需要单独授权。
 Phase 5 图片契约已在 [RFC 0007](rfcs/0007-image-comparison_zh.md) 中接受；接受不构成实现授权，
 且必须先重新验证实际合并的 schema-v3 前驱。下列其他模态与 renderer 仍是计划能力。
-Phase 7 audio/video 契约已在 [RFC 0009](rfcs/0009-audio-and-video-comparison_zh.md)
-中提议；它们尚未实现。
+Phase 6 source/PDF 契约已在 [RFC 0008](rfcs/0008-source-code-and-pdf-comparison_zh.md)
+中接受；schema-v5 allocation 已接受，但仍需要 implementation 与 compatibility fixture。Phase 7 audio
+契约和 video roadmap direction 已在 [RFC 0009](rfcs/0009-audio-and-video-comparison_zh.md) 中接受；
+它只为 audio 接受 schema v6，video 需等待后续 backend/worker amendment 与下一个 successor。
+它们尚未实现；即使 design 与 backend research 并发推进，public schema merge 也必须遵守前驱顺序。
 
 ### v0.1：核心闭环
 

@@ -229,9 +229,9 @@ built-in-only; it does not expand text/binary automatic detection or SDK v1.1.
 
 Syntactic equality does not imply runtime semantic equality. AST comparison must state its parser version, error-recovery behavior, and macro or preprocessing boundaries.
 
-[RFC 0008](rfcs/0008-source-code-and-pdf-comparison.md) proposes explicit
+[RFC 0008](rfcs/0008-source-code-and-pdf-comparison.md) accepts explicit
 source-code comparison contracts and independently authorized Phase 6 gates.
-It remains proposed and does not authorize implementation.
+It remains unimplemented and requires separate gate authorization before code.
 
 ### 6.4 Images
 
@@ -247,29 +247,30 @@ does not authorize implementation.
 
 ### 6.5 Audio
 
-Audio comparison first applies explicit sample-rate, channel, and sample-format policies, then aligns by timestamp or cross-correlation. It can compare PCM waveforms, STFT or Mel spectra, SNR, or perceptual quality. Millisecond delays, gain changes, and resampling can all break exact sample comparison, so the system must distinguish “identical signal” from “perceptually similar.” ViSQOL, PESQ/POLQA, and comparable systems belong in optional backends rather than core dependencies.
+Audio comparison records explicit sample-rate, channel, and sample-format facts before applying any selected alignment policy. It can compare PCM waveforms, STFT or Mel spectra, SNR, or perceptual quality only under explicit contracts. Millisecond delays, gain changes, and resampling can all break exact sample comparison, so the system must distinguish “identical signal” from “perceptually similar.” ViSQOL, PESQ/POLQA, and comparable systems belong in optional backends rather than core dependencies.
 
-[RFC 0009](rfcs/0009-audio-and-video-comparison.md) proposes explicit audio
+[RFC 0009](rfcs/0009-audio-and-video-comparison.md) accepts explicit audio
 contracts for encoded bytes, decoded samples, waveform/numeric, spectral, and
-perceptual relations. It remains proposed and does not authorize
-implementation.
+perceptual relations, including audio-only schema v6. It remains unimplemented
+and requires separate gate authorization before code.
 
 ### 6.6 Video
 
-Video comparison requires demuxing, decoding, timeline alignment, explicit frame-rate and resolution policies, and color-space normalization before computing per-frame metrics such as PSNR, SSIM, or VMAF and aggregating them over time. Detecting edits, inserted frames, and reordered shots requires shot segmentation, frame fingerprints, or feature-sequence matching; quality metrics alone are insufficient. Audio tracks should be compared as a separate modality and associated with the video timeline.
+Video comparison records demuxing, decoding, timeline, frame-rate, resolution, color, HDR, orientation, and interlacing facts before computing any selected per-frame metric such as PSNR, SSIM, or VMAF. Resize, crop, frame-rate conversion, color conversion, tone mapping, deinterlacing, and synchronization shifts must be explicit transformations, not hidden metric setup. Detecting edits, inserted frames, and reordered shots requires shot segmentation, frame fingerprints, or feature-sequence matching; quality metrics alone are insufficient. Audio tracks should be compared as a separate modality and associated with the video timeline.
 
-[RFC 0009](rfcs/0009-audio-and-video-comparison.md) also proposes explicit
-video contracts for stream structure, decoded frames, frame metrics,
-perceptual video, and audio-track association. It remains proposed and does not
-authorize implementation.
+[RFC 0009](rfcs/0009-audio-and-video-comparison.md) also accepts video
+contracts for stream structure, decoded frames, frame metrics, perceptual
+video, and audio-track association as roadmap direction only. Video remains
+unimplemented and must wait for a later backend/worker amendment and the next
+schema successor before code.
 
 ### 6.7 PDF
 
 A PDF contains text, drawing instructions, fonts, images, and page layout. The system should provide three composable views: extracted-text comparison, PDF object and metadata comparison, and image comparison of rendered pages. Different generators can create radically different internal objects while producing visually identical pages, so binary diff alone is insufficient.
 
-[RFC 0008](rfcs/0008-source-code-and-pdf-comparison.md) proposes explicit PDF
+[RFC 0008](rfcs/0008-source-code-and-pdf-comparison.md) accepts explicit PDF
 view contracts for binary, extracted text, objects/metadata, and rendered pages.
-It remains proposed and does not authorize implementation.
+It remains unimplemented and requires separate gate authorization before code.
 
 ### 6.8 Tables, arrays, and statistical data
 
@@ -298,8 +299,14 @@ gate authorization. Every other modality and renderer below is planned. Phase 5
 image contracts are accepted in
 [RFC 0007](rfcs/0007-image-comparison.md); acceptance does not authorize
 implementation, and the actual merged schema-v3 predecessor must be revalidated
-first. Phase 7 audio/video contracts are proposed in
-[RFC 0009](rfcs/0009-audio-and-video-comparison.md); they are not implemented.
+first. Phase 6 source/PDF contracts are accepted in
+[RFC 0008](rfcs/0008-source-code-and-pdf-comparison.md); schema-v5 allocation
+is accepted but still requires implementation and compatibility fixtures. Phase 7
+audio contracts and video roadmap direction are accepted in
+[RFC 0009](rfcs/0009-audio-and-video-comparison.md); it accepts schema v6 for
+audio only, while video waits for a later backend/worker amendment and the next
+successor. They are not implemented, and public schema merges must respect
+predecessor order even when design and backend research proceed concurrently.
 
 ### v0.1: Core loop
 
