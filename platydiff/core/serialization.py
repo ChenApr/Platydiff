@@ -3266,6 +3266,30 @@ def _validate_array_result(result: DiffResult, spec: ArrayCompareSpec) -> None:
             raise SerializationError(
                 "schema-v3 array compare-work resource is inconsistent"
             )
+    if result.changes.completeness is ChangeCompleteness.COMPLETE:
+        resources = {item.name: item for item in result.provenance.resources}
+        before_rank = resources["before_rank"].used
+        after_rank = resources["after_rank"].used
+        before_elements = resources["before_elements"].used
+        after_elements = resources["after_elements"].used
+        shape_replaced = "shape_replace" in schema_operations
+        if not shape_replaced and before_rank != after_rank:
+            raise SerializationError("schema-v3 array rank resources are inconsistent")
+        if not shape_replaced and before_elements != after_elements:
+            raise SerializationError(
+                "schema-v3 array element resources are inconsistent"
+            )
+        if not schema_operations and counts["compared_elements"] != before_elements:
+            raise SerializationError(
+                "schema-v3 array compared count disagrees with element resources"
+            )
+        expected_work = max(before_rank, after_rank) + 1
+        if not schema_operations:
+            expected_work += counts["compared_elements"]
+        if resources["compare_work"].used != expected_work:
+            raise SerializationError(
+                "schema-v3 array compare-work resource is inconsistent"
+            )
     _validate_contract_truncation(
         result,
         max_change_items=spec.limits.max_change_items,

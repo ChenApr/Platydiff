@@ -1066,6 +1066,125 @@ def test_array_element_counts_are_covered_by_resources_and_compare_work() -> Non
         outcome_to_data(_with_resource_usage(outcome, compare_work=1))
 
 
+def _array_outcome_with_schema_changes(
+    outcome: CompletedOutcomeV3,
+    changes: tuple[ArrayChange, ...],
+) -> CompletedOutcomeV3:
+    changed_items = len(changes)
+    metrics = tuple(
+        replace(metric, value=FiniteValue(changed_items))
+        if metric.name == "array.changed_items"
+        else replace(metric, value=FiniteValue(0))
+        if metric.name
+        in (
+            "array.compared_elements",
+            "array.equal_elements",
+            "array.changed_elements",
+            "array.missing_pairs",
+            "array.nan_pairs",
+            "array.infinity_pairs",
+            "array.finite_numeric_pairs",
+        )
+        else metric
+        for metric in outcome.result.metrics
+    )
+    counts = tuple(
+        replace(count, value=changed_items)
+        if count.name == "changed_items"
+        else replace(count, value=0)
+        for count in outcome.result.summary.counts
+    )
+    change_set = ChangeSet(
+        ChangeCompleteness.COMPLETE,
+        changes,
+        changed_items,
+        changed_items,
+        0,
+        ChangeSelection.ALL,
+        None,
+    )
+    changed = replace(
+        outcome,
+        result=replace(
+            outcome.result,
+            relation=Relation.DIFFERENT,
+            verdict=Verdict.FAIL,
+            summary=DiffSummary(changed_items, counts),
+            changes=change_set,
+            metrics=metrics,
+            evaluations=(
+                replace(
+                    outcome.result.evaluations[0],
+                    verdict=Verdict.FAIL,
+                    observed=FiniteValue(changed_items),
+                ),
+            ),
+        ),
+    )
+    return _with_resource_usage(
+        changed,
+        compare_work=2,
+        change_items=changed_items,
+        change_payload_bytes=sum(serialized_change_size(item) for item in changes),
+    )
+
+
+def test_complete_array_element_results_require_exact_resource_identities() -> None:
+    outcome = _contract_outcome(ArrayCompareSpec())
+    outcome_to_data(outcome)
+
+    with pytest.raises(SerializationError, match="rank resources"):
+        outcome_to_data(_with_resource_usage(outcome, before_rank=2, compare_work=4))
+    with pytest.raises(SerializationError, match="element resources"):
+        outcome_to_data(
+            _with_resource_usage(
+                outcome,
+                before_elements=2,
+                after_elements=2,
+            )
+        )
+    with pytest.raises(SerializationError, match="compare-work resource"):
+        outcome_to_data(_with_resource_usage(outcome, compare_work=2))
+    with pytest.raises(SerializationError, match="compare-work resource"):
+        outcome_to_data(_with_resource_usage(outcome, compare_work=4))
+
+
+def test_complete_array_schema_results_bind_rank_element_and_work_resources() -> None:
+    outcome = _contract_outcome(ArrayCompareSpec())
+    dtype = ArrayChange("dtype_replace", None, "1" * 64, "2" * 64)
+    dtype_outcome = _array_outcome_with_schema_changes(outcome, (dtype,))
+    outcome_to_data(dtype_outcome)
+
+    with pytest.raises(SerializationError, match="rank resources"):
+        outcome_to_data(
+            _with_resource_usage(dtype_outcome, before_rank=2, compare_work=3)
+        )
+    with pytest.raises(SerializationError, match="element resources"):
+        outcome_to_data(_with_resource_usage(dtype_outcome, before_elements=2))
+    with pytest.raises(SerializationError, match="compare-work resource"):
+        outcome_to_data(_with_resource_usage(dtype_outcome, compare_work=3))
+
+    shape = ArrayChange("shape_replace", None, "3" * 64, "4" * 64)
+    shape_outcome = _array_outcome_with_schema_changes(outcome, (shape,))
+    outcome_to_data(
+        _with_resource_usage(
+            shape_outcome,
+            before_rank=2,
+            before_elements=2,
+            compare_work=3,
+        )
+    )
+    with pytest.raises(SerializationError, match="compare-work resource"):
+        outcome_to_data(
+            _with_resource_usage(
+                shape_outcome,
+                before_rank=2,
+                before_elements=2,
+                compare_work=4,
+            )
+        )
+
+
 def test_new_contract_wire_order_and_literal_change_bytes_are_frozen() -> None:
     table_encoded = dumps_outcome(_contract_outcome(TableCompareSpec(dialect="csv")))
     assert (
