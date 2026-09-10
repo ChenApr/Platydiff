@@ -1717,6 +1717,33 @@ class ColumnOrderFact:
 type TableFact = ScalarFact | TableRowFact | ColumnSchemaFact | ColumnOrderFact
 
 
+def _validate_table_scalar_contract(fact: ScalarFact) -> None:
+    """Validate scalar grammar that is specific to table evidence."""
+
+    if fact.lexical is not None:
+        raise ValueError("table scalar facts must not carry JSON lexical text")
+    if fact.kind != "float64":
+        return
+    if not isinstance(fact.value, str):
+        raise ValueError("table scalar float64 facts require canonical C99 hex")
+    try:
+        numeric = float.fromhex(fact.value)
+    except ValueError as error:
+        raise ValueError(
+            "table scalar float64 facts require canonical C99 hex"
+        ) from error
+    if not math.isfinite(numeric) or numeric.hex() != fact.value:
+        raise ValueError("table scalar float64 facts require canonical C99 hex")
+
+
+def _validate_table_fact_scalar_contract(fact: TableFact) -> None:
+    if isinstance(fact, ScalarFact):
+        _validate_table_scalar_contract(fact)
+    elif isinstance(fact, TableRowFact):
+        for _, cell in fact.cells:
+            _validate_table_scalar_contract(cell)
+
+
 @dataclass(frozen=True, slots=True)
 class StructuredChange:
     """One deterministic JSON-Pointer observation, not a patch operation."""
@@ -1822,6 +1849,7 @@ class TableChange:
                     "integer",
                 ):
                     raise ValueError("table keys require string/integer scalar facts")
+                _validate_table_scalar_contract(key_fact)
         if self.row is not None and self.key_ordinal is not None:
             raise ValueError("table row coordinates cannot mix position and key")
         if self.column is not None:
@@ -1885,6 +1913,8 @@ class TableChange:
                 operation_fact, expected_fact_type
             ):
                 raise ValueError("table change fact type does not match its operation")
+            if operation_fact is not None:
+                _validate_table_fact_scalar_contract(operation_fact)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1934,6 +1964,15 @@ class ArrayChange:
                 raise ValueError(
                     "relative_error must be finite non-negative or positive infinity"
                 )
+        if (self.absolute_error is None) != (self.relative_error is None):
+            raise ValueError("array element errors must both be present or both absent")
+        if isinstance(self.relative_error, PositiveInfinityValue) and (
+            not isinstance(self.absolute_error, FiniteValue)
+            or self.absolute_error.value <= 0
+        ):
+            raise ValueError(
+                "infinite relative_error requires a positive absolute_error"
+            )
 
 
 type Change = (

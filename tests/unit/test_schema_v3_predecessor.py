@@ -657,6 +657,64 @@ def test_table_changes_reject_illegal_operation_fields(constructor: object) -> N
         constructor()  # type: ignore[operator]
 
 
+@pytest.mark.parametrize(
+    "constructor",
+    [
+        lambda: TableChange(
+            operation="cell_replace",
+            row=1,
+            column="value",
+            before_digest="1" * 64,
+            after_digest="2" * 64,
+            before_fact=ScalarFact("integer", "1", lexical="1"),
+            after_fact=ScalarFact("string", "value"),
+        ),
+        lambda: TableChange(
+            operation="cell_replace",
+            row=1,
+            column="value",
+            before_digest="1" * 64,
+            after_digest="2" * 64,
+            before_fact=ScalarFact("float64", "banana"),
+            after_fact=ScalarFact("float64", "0x1.0000000000000p+0"),
+        ),
+        lambda: TableChange(
+            operation="row_add",
+            key_ordinal=1,
+            key=(ScalarFact("integer", "1", lexical="1"),),
+            after_digest="1" * 64,
+            after_fact=TableRowFact((("value", ScalarFact("float64", "0x1p+0")),)),
+        ),
+    ],
+)
+def test_detached_table_changes_reject_json_lexical_and_noncanonical_float_facts(
+    constructor: object,
+) -> None:
+    with pytest.raises(ValueError, match="table scalar"):
+        constructor()  # type: ignore[operator]
+
+
+def test_table_change_reader_applies_detached_scalar_fact_grammar() -> None:
+    change = TableChange(
+        operation="cell_replace",
+        row=1,
+        column="value",
+        before_digest="1" * 64,
+        after_digest="2" * 64,
+        before_fact=ScalarFact("string", "before"),
+        after_fact=ScalarFact("string", "after"),
+    )
+    data = _change_to_data(change)
+    data["before_fact"] = {"kind": "integer", "value": "1", "lexical": "1"}
+    with pytest.raises(SerializationError, match="table scalar"):
+        _change_from_data(data, schema_version=3)
+
+    data = _change_to_data(change)
+    data["after_fact"] = {"kind": "float64", "value": "0x1p+0"}
+    with pytest.raises(SerializationError, match="table scalar"):
+        _change_from_data(data, schema_version=3)
+
+
 def test_array_change_round_trip_uses_tagged_numeric_values_and_nulls() -> None:
     change = ArrayChange(
         operation="element_replace",
@@ -720,6 +778,28 @@ def test_array_change_round_trip_uses_tagged_numeric_values_and_nulls() -> None:
             after_digest="2" * 64,
             relative_error=FiniteValue(-1.0),
         ),
+        lambda: ArrayChange(
+            operation="element_replace",
+            index=(0,),
+            before_digest="1" * 64,
+            after_digest="2" * 64,
+            absolute_error=FiniteValue(1.0),
+        ),
+        lambda: ArrayChange(
+            operation="element_replace",
+            index=(0,),
+            before_digest="1" * 64,
+            after_digest="2" * 64,
+            relative_error=FiniteValue(1.0),
+        ),
+        lambda: ArrayChange(
+            operation="element_replace",
+            index=(0,),
+            before_digest="1" * 64,
+            after_digest="2" * 64,
+            absolute_error=FiniteValue(0.0),
+            relative_error=PositiveInfinityValue(),
+        ),
     ],
 )
 def test_array_changes_reject_invalid_matrix_and_errors(constructor: object) -> None:
@@ -749,6 +829,20 @@ def test_array_change_reader_requires_exact_keys_and_rejects_duplicate_json_keys
     extra: JsonObject = {**data, "before_shape": [1]}
     with pytest.raises(SerializationError, match="unexpected field"):
         _change_from_data(extra, schema_version=3)
+
+    element = _change_to_data(
+        ArrayChange(
+            "element_replace",
+            (0,),
+            "1" * 64,
+            "2" * 64,
+            FiniteValue(1),
+            FiniteValue(1),
+        )
+    )
+    element["relative_error"] = None
+    with pytest.raises(SerializationError, match="both be present"):
+        _change_from_data(element, schema_version=3)
 
     duplicate = (
         '{"schema_version":3,"schema_version":3,"kind":"failed",'
@@ -809,7 +903,14 @@ def test_new_nested_readers_reject_extra_fields() -> None:
 
     tagged: JsonObject = {"kind": "finite", "value": 1, "future": True}
     change = _change_to_data(
-        ArrayChange("element_replace", (0,), "1" * 64, "2" * 64, FiniteValue(1), None)
+        ArrayChange(
+            "element_replace",
+            (0,),
+            "1" * 64,
+            "2" * 64,
+            FiniteValue(1),
+            FiniteValue(1),
+        )
     )
     change["absolute_error"] = tagged
     with pytest.raises(SerializationError, match="unexpected field"):
@@ -954,6 +1055,15 @@ def test_array_schema_replacement_requires_zero_element_counts() -> None:
     )
     with pytest.raises(SerializationError, match="schema-replacement counts"):
         outcome_to_data(invalid)
+
+
+def test_array_element_counts_are_covered_by_resources_and_compare_work() -> None:
+    outcome = _contract_outcome(ArrayCompareSpec())
+
+    with pytest.raises(SerializationError, match="element resources"):
+        outcome_to_data(_with_resource_usage(outcome, before_elements=0))
+    with pytest.raises(SerializationError, match="compare-work resource"):
+        outcome_to_data(_with_resource_usage(outcome, compare_work=1))
 
 
 def test_new_contract_wire_order_and_literal_change_bytes_are_frozen() -> None:
@@ -1180,6 +1290,113 @@ def test_table_fact_context_handles_untyped_and_by_name_columns() -> None:
     _validate_table_fact_against_spec(fact, by_name)
 
 
+def test_untyped_keyed_table_requires_string_key_facts_on_write_and_read() -> None:
+    spec = TableCompareSpec(
+        dialect="csv",
+        alignment="key",
+        key_columns=("id",),
+    )
+    outcome = _contract_outcome(spec)
+    valid = TableChange(
+        operation="row_add",
+        key_ordinal=1,
+        key=(ScalarFact("string", "key-1"),),
+        after_digest="1" * 64,
+        after_fact=TableRowFact((("id", ScalarFact("string", "key-1")),)),
+    )
+    changes = ChangeSet(
+        ChangeCompleteness.COMPLETE,
+        (valid,),
+        1,
+        1,
+        0,
+        ChangeSelection.ALL,
+        None,
+    )
+    completed = _with_resource_usage(
+        _table_outcome_with_counts(
+            outcome,
+            changes,
+            changed_cells=0,
+            changed_items=1,
+        ),
+        change_items=1,
+        change_payload_bytes=serialized_change_size(valid),
+    )
+    data = outcome_to_data(completed)
+
+    invalid = replace(valid, key=(ScalarFact("integer", "1"),))
+    invalid_changes = replace(changes, items=(invalid,))
+    with pytest.raises(SerializationError, match="untyped table key"):
+        outcome_to_data(
+            _table_outcome_with_counts(
+                completed,
+                invalid_changes,
+                changed_cells=0,
+                changed_items=1,
+            )
+        )
+
+    result = cast(JsonObject, data["result"])
+    change_set = cast(JsonObject, result["changes"])
+    item = cast(JsonObject, cast(list[object], change_set["items"])[0])
+    key = cast(list[object], item["key"])
+    key[0] = {"kind": "integer", "value": "1"}
+    with pytest.raises(SerializationError, match="untyped table key"):
+        outcome_from_data(data)
+
+
+def test_untyped_column_reorder_facts_require_one_column_set() -> None:
+    outcome = _contract_outcome(TableCompareSpec(dialect="csv"))
+    reorder = TableChange(
+        operation="column_reorder",
+        before_digest="1" * 64,
+        after_digest="2" * 64,
+        before_fact=ColumnOrderFact(("a", "b")),
+        after_fact=ColumnOrderFact(("a", "c")),
+    )
+    with pytest.raises(SerializationError, match="column reorder facts disagree"):
+        outcome_to_data(_outcome_with_changes(outcome, (reorder,)))
+
+    valid = replace(reorder, after_fact=ColumnOrderFact(("b", "a")))
+    valid_changes = ChangeSet(
+        ChangeCompleteness.COMPLETE,
+        (valid,),
+        1,
+        1,
+        0,
+        ChangeSelection.ALL,
+        None,
+    )
+    valid_outcome = _with_resource_usage(
+        _table_outcome_with_counts(
+            outcome,
+            valid_changes,
+            changed_cells=0,
+            changed_items=1,
+        ),
+        before_columns=2,
+        after_columns=2,
+        change_items=1,
+        change_payload_bytes=serialized_change_size(valid),
+    )
+    outcome_to_data(valid_outcome)
+
+    typed = _contract_outcome(
+        TableCompareSpec(
+            dialect="csv",
+            columns=(ColumnSpec("a", "string"), ColumnSpec("b", "string")),
+        )
+    )
+    wrong_aligned = replace(
+        reorder,
+        before_fact=ColumnOrderFact(("a", "c")),
+        after_fact=ColumnOrderFact(("c", "a")),
+    )
+    with pytest.raises(SerializationError, match="disagree with aligned columns"):
+        outcome_to_data(_outcome_with_changes(typed, (wrong_aligned,)))
+
+
 def test_yaml_reader_does_not_guess_unavailable_parent_type_for_path_order() -> None:
     outcome = _contract_outcome(YamlCompareSpec())
     original = cast(StructuredChange, outcome.result.changes.items[0])
@@ -1223,16 +1440,15 @@ def test_table_key_and_float_facts_enforce_nonlexical_canonical_grammar() -> Non
         key_columns=("id",),
         columns=(ColumnSpec("id", "integer"),),
     )
-    outcome = _contract_outcome(keyed_spec)
-    lexical_key = TableChange(
-        operation="row_add",
-        key_ordinal=1,
-        key=(ScalarFact("integer", "1", lexical="1"),),
-        after_digest="1" * 64,
-        after_fact=TableRowFact((("id", ScalarFact("integer", "1")),)),
-    )
-    with pytest.raises(SerializationError, match="must not carry lexical"):
-        outcome_to_data(_outcome_with_changes(outcome, (lexical_key,)))
+    _contract_outcome(keyed_spec)
+    with pytest.raises(ValueError, match="must not carry JSON lexical"):
+        TableChange(
+            operation="row_add",
+            key_ordinal=1,
+            key=(ScalarFact("integer", "1", lexical="1"),),
+            after_digest="1" * 64,
+            after_fact=TableRowFact((("id", ScalarFact("integer", "1")),)),
+        )
 
     float_spec = TableCompareSpec(
         dialect="csv",

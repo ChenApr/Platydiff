@@ -2670,13 +2670,9 @@ def _validate_table_fact_against_spec(
     if (
         isinstance(fact, ScalarFact)
         and not spec.columns
-        and fact.kind
-        not in (
-            "string",
-            "missing",
-        )
+        and fact.kind not in ("string",)
     ):
-        raise SerializationError("untyped table cells must be string or missing facts")
+        raise SerializationError("untyped table cells must be string facts")
     if isinstance(fact, TableRowFact) and spec.columns:
         expected_names = tuple(column.name for column in spec.columns)
         if spec.column_order == "by_name":
@@ -2708,10 +2704,8 @@ def _validate_table_fact_against_spec(
             if len(name.encode("utf-8")) > spec.limits.max_cell_bytes:
                 raise SerializationError("table row column name exceeds its byte limit")
             _validate_table_scalar_fact(cell, spec)
-        if any(cell.kind not in ("string", "missing") for _, cell in fact.cells):
-            raise SerializationError(
-                "untyped table row cells must be string or missing facts"
-            )
+        if any(cell.kind != "string" for _, cell in fact.cells):
+            raise SerializationError("untyped table row cells must be string facts")
     elif isinstance(fact, ColumnSchemaFact):
         if len(fact.name.encode("utf-8")) > spec.limits.max_cell_bytes:
             raise SerializationError("table column fact name exceeds its byte limit")
@@ -2720,8 +2714,12 @@ def _validate_table_fact_against_spec(
         )
         if matching is None and spec.columns:
             raise SerializationError("table column fact is not declared by the spec")
-        if matching is None and fact.dtype != "string":
-            raise SerializationError("untyped table columns must use string facts")
+        if matching is None and (
+            fact.dtype != "string" or fact.missing_token_count != 0
+        ):
+            raise SerializationError(
+                "untyped table columns must use string facts without missing tokens"
+            )
         if matching is not None and (
             fact.dtype != matching.dtype
             or fact.missing_token_count != len(matching.missing_tokens)
@@ -2893,6 +2891,22 @@ def _validate_table_result(result: DiffResult, spec: TableCompareSpec) -> None:
         if spec.columns
         else next(iter(row_column_sets), ())
     )
+    for reorder_change in table_changes:
+        if reorder_change.operation != "column_reorder":
+            continue
+        before_order = reorder_change.before_fact
+        after_order = reorder_change.after_fact
+        if isinstance(before_order, ColumnOrderFact) and isinstance(
+            after_order, ColumnOrderFact
+        ):
+            before_names = set(before_order.names)
+            after_names = set(after_order.names)
+            if before_names != after_names:
+                raise SerializationError("table column reorder facts disagree")
+            if aligned_columns and before_names != set(aligned_columns):
+                raise SerializationError(
+                    "table column reorder facts disagree with aligned columns"
+                )
     operation_rank = {
         "column_add": 0,
         "column_remove": 1,
@@ -2973,6 +2987,10 @@ def _validate_table_result(result: DiffResult, spec: TableCompareSpec) -> None:
                         raise SerializationError(
                             "table key fact kind violates its declared column"
                         )
+                    if not spec.columns and key_fact.kind != "string":
+                        raise SerializationError(
+                            "untyped table key facts must be strings"
+                        )
             elif item.key is not None:
                 raise SerializationError("digest_only table change must omit its key")
             before_rows = table_resources.get("before_rows")
@@ -3011,12 +3029,32 @@ def _validate_table_result(result: DiffResult, spec: TableCompareSpec) -> None:
                     raise SerializationError("values table change is missing a fact")
                 if fact is not None:
                     _validate_table_fact_against_spec(fact, spec)
-                    if isinstance(fact, TableRowFact):
-                        cell_usage = table_resources.get(f"{side}_cells")
+                    cell_usage = table_resources.get(f"{side}_cells")
+                    column_usage = table_resources.get(f"{side}_columns")
+                    if isinstance(fact, ScalarFact):
+                        if cell_usage is not None and cell_usage.used < 1:
+                            raise SerializationError(
+                                f"table {side} cell resource does not cover cell fact"
+                            )
+                    elif isinstance(fact, TableRowFact):
                         if cell_usage is not None and len(fact.cells) > cell_usage.used:
                             raise SerializationError(
                                 f"table {side} cell resource does not cover row fact"
                             )
+                    elif isinstance(fact, ColumnSchemaFact):
+                        if column_usage is not None and column_usage.used < 1:
+                            raise SerializationError(
+                                f"table {side} column resource does not cover "
+                                "schema fact"
+                            )
+                    elif (
+                        isinstance(fact, ColumnOrderFact)
+                        and column_usage is not None
+                        and len(fact.names) > column_usage.used
+                    ):
+                        raise SerializationError(
+                            f"table {side} column resource does not cover order fact"
+                        )
                     if isinstance(fact, ColumnSchemaFact) and fact.name != item.column:
                         raise SerializationError(
                             "table column fact disagrees with its coordinate"
@@ -3215,6 +3253,19 @@ def _validate_array_result(result: DiffResult, spec: ArrayCompareSpec) -> None:
         },
         comparator_id="array",
     )
+    if not schema_operations:
+        resources = {item.name: item for item in result.provenance.resources}
+        if counts["compared_elements"] > min(
+            resources["before_elements"].used,
+            resources["after_elements"].used,
+        ):
+            raise SerializationError(
+                "schema-v3 array compared count exceeds element resources"
+            )
+        if resources["compare_work"].used < counts["compared_elements"] + 1:
+            raise SerializationError(
+                "schema-v3 array compare-work resource is inconsistent"
+            )
     _validate_contract_truncation(
         result,
         max_change_items=spec.limits.max_change_items,
