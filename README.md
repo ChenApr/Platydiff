@@ -11,7 +11,9 @@ renderer execution, schema-v2 provider provenance, CLI opt-in flags, and a
 compatibility receipt profile. The existing three-argument API and default CLI
 remain built-in-only; legacy text/binary/auto calls keep schema v1, while the
 explicit Phase 4 P4-A1 JSON path returns schema v3. The implementation remains
-unreleased.
+unreleased. Phase 4 correction gate P4-C1 completes the schema-v3 public
+contract union for YAML, tables, and arrays without adding executable routes for
+those modalities.
 
 ## Install for development
 
@@ -137,7 +139,8 @@ message on stderr, and exits `3`.
 
 ## Implemented and planned capabilities
 
-Implemented in Phases 1, 2, the P3-A/P3-B/P3-C plugin gates, and P4-A1:
+Implemented in Phases 1, 2, the P3-A/P3-B/P3-C plugin gates, P4-A1, and the
+P4-C1 contract correction:
 
 - Python 3.12+ library and `platydiff` CLI;
 - schema-v1 `CompareOutcome` and `DiffResult` JSON serialization;
@@ -163,10 +166,15 @@ Implemented in Phases 1, 2, the P3-A/P3-B/P3-C plugin gates, and P4-A1:
 - schema-v3 outcomes, explicit v1/v2-to-v3 migration, typed structured changes,
   strict bounded JSON decoding, value/lexical number semantics, JSON Pointer
   alignment, deterministic evidence digests, and explicit Python/CLI JSON routes.
+- the corrected schema-v3 YAML/table/array spec, fact, and change declarations,
+  canonical reader/writer validation, and frozen predecessor fixtures. These are
+  contract-only: the built-in registry, `compare()`, and CLI expose no new
+  YAML/table/array execution.
 
 Planned, not implemented:
 
-- YAML, tables, arrays, images, source code, PDF, audio, and video;
+- YAML, table, and array comparator execution; images, source code, PDF, audio,
+  and video;
 - stdin, directories, recursive comparison, and configuration files;
 - color, HTML, JUnit, and patch artifacts.
 

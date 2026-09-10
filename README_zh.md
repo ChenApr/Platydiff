@@ -8,7 +8,9 @@ Diff 引擎。Phase 1 与 Phase 2 已实现显式文本、精确二进制，以�
 detector、comparator 与有界 renderer 执行、schema-v2 provider provenance、CLI opt-in
 参数和 compatibility receipt profile。既有三参数 API 与默认 CLI 仍只使用内建能力并
 保持内建能力；既有 text/binary/auto 调用保持 schema-v1 contract，显式 Phase 4
-P4-A1 JSON 路径则返回 schema v3。当前仍未发布。
+P4-A1 JSON 路径则返回 schema v3。当前仍未发布。Phase 4 修正门禁 P4-C1 补全
+YAML、table 与 array 的 schema-v3 public contract union，但不为这些模态新增
+executable route。
 
 ## 开发环境安装
 
@@ -122,7 +124,8 @@ options 与有界 host sink。它产生的 text/bytes 不经 fallback 写入 std
 
 ## 已实现与计划能力
 
-Phase 1、Phase 2、P3-A/P3-B/P3-C 插件门禁与 P4-A1 已实现：
+Phase 1、Phase 2、P3-A/P3-B/P3-C 插件门禁、P4-A1 与 P4-C1 contract
+correction 已实现：
 
 - Python 3.12+ 库与 `platydiff` CLI；
 - schema-v1 `CompareOutcome` 和 `DiffResult` JSON 序列化；
@@ -146,10 +149,13 @@ Phase 1、Phase 2、P3-A/P3-B/P3-C 插件门禁与 P4-A1 已实现：
 - schema-v3 outcome、显式 v1/v2-to-v3 migration、typed structured change、严格有界 JSON
   decoding、value/lexical number semantics、JSON Pointer alignment、确定性 evidence digest，
   以及显式 Python/CLI JSON 路径。
+- 已修正的 schema-v3 YAML/table/array spec、fact 与 change declaration、canonical
+  reader/writer validation，以及冻结的 predecessor fixture。这些内容仅提供 contract；
+  built-in registry、`compare()` 与 CLI 不提供新的 YAML/table/array execution。
 
 计划中、尚未实现：
 
-- YAML、表格、数组、图片、源代码、PDF、音频和视频；
+- YAML、table 与 array comparator execution；图片、源代码、PDF、音频和视频；
 - stdin、目录、递归比较和配置文件；
 - color、HTML、JUnit 和 patch artifact。
 
