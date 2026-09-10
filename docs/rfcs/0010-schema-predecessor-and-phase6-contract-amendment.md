@@ -8,6 +8,7 @@
 - Approved decisions: SP1-SP6; Option A/P4-C1; P6C0-1-P6C0-10
 - Approved P4-C1 clarifications: P4C1-1-P4C1-5
 - P4-C1 clarification approval date: 2026-09-10
+- Proposed P6-C0 closure amendment: P6C0A-1-P6C0A-2; not accepted
 - Owners: Platydiff maintainers
 - Implementation dispatch: conditional human authorization recorded; coordinator
   dispatch only after RFC 0010 merges and the stated merge and clarification
@@ -31,6 +32,11 @@ fixture ambiguities. The clarifications P4C1-1 through P4C1-5 below were
 approved on 2026-09-10. They supplement but do not alter SP1-SP6,
 Option A/P4-C1, or P6C0-1 through P6C0-10. No code starts from this
 clarification approval.
+
+A P6-C0 closure review also found unresolved schema-v5 problem-registry and
+closed-union shape gaps. The proposed P6C0A-1 and P6C0A-2 amendments below are
+not accepted, do not alter P6C0-1 through P6C0-10, and do not authorize source
+or PDF implementation.
 
 The accepted decision is to treat the missing YAML, table, and array
 schema-v3 contract surface on `main` as a Phase 4 code defect, not as proof that
@@ -533,6 +539,265 @@ lowercase ASCII identifiers; `exit_status` is a signed integer or null when the
 process was terminated without an exit status. Invalid wire coordinates,
 unknown problem registry IDs, and malformed tagged payloads raise
 `SerializationError`; they do not fabricate runtime failed outcomes.
+
+### Proposed P6-C0 closure amendment
+
+The following P6C0A decisions are Proposed, not Accepted. They are draft
+closure criteria for P6-C0 only. They preserve P6-C0 as contract-only work:
+no source/PDF comparator, CLI route, backend worker, dependency, SDK, artifact,
+automatic detection, or UI implementation may start from these proposed
+decisions. P6-C0 still waits for RFC 0010, P4-C1, P5-A1/schema-v4, and
+compatibility fixtures to merge to `main`, followed by explicit coordinator
+dispatch.
+
+#### P6C0A-1: problem registry closure
+
+If accepted, schema-v5 source/PDF problems freeze the problem object wire order
+as `code`, `status_code`, `outcome`, `stage`, `retryable`, `details`.
+The registry key remains `schema-v5/<code>`, and serialized `code` remains the
+short stable code. `status_code` is an integer HTTP-like status. `outcome` is
+exactly `failed` or `unavailable`. `stage` is exactly `resolving`, `decoding`,
+`comparing`, or `rendering`. `retryable` is a boolean; it may be `true` only
+when the same inputs and spec could succeed after a changed environment,
+backend availability, or scheduler capacity.
+
+Canonical JSON emits `details` keys in the order listed below. Readers reject
+missing keys, extra keys, wrong types, and noncanonical key order in canonical
+fixtures.
+
+| Registry ID | Status code | Outcome | Stage | Retryable | Detail keys |
+| --- | --- | --- | --- | --- | --- |
+| `schema-v5/source_backend_unavailable` | `503` | `unavailable` | `resolving` | `true` | `source_relation`, `language`, `backend_id`, `reason_code` |
+| `schema-v5/source_decode_error` | `422` | `failed` | `decoding` | `false` | `source_relation`, `language`, `input_side`, `line`, `column`, `message_code` |
+| `schema-v5/source_compare_timeout` | `504` | `failed` | `comparing` | `false` | `source_relation`, `limit_seconds`, `elapsed_seconds` |
+| `schema-v5/source_resource_overflow` | `413` | `failed` | `comparing` | `false` | `source_relation`, `resource`, `limit`, `actual` |
+| `schema-v5/pdf_encrypted` | `422` | `failed` | `decoding` | `false` | `input_side`, `view`, `encryption_detected` |
+| `schema-v5/pdf_backend_unavailable` | `503` | `unavailable` | `resolving` | `true` | `view`, `backend_role`, `backend_id`, `reason_code` |
+| `schema-v5/pdf_worker_timeout` | `504` | `failed` | `decoding` | `false` | `view`, `limit_seconds`, `elapsed_seconds` |
+| `schema-v5/pdf_worker_stderr_overflow` | `502` | `failed` | `decoding` | `false` | `view`, `stream`, `limit_bytes`, `actual_bytes` |
+| `schema-v5/pdf_worker_temp_overflow` | `507` | `failed` | `decoding` | `false` | `view`, `limit_bytes`, `actual_bytes` |
+| `schema-v5/pdf_worker_decoded_output_overflow` | `413` | `failed` | `decoding` | `false` | `view`, `resource`, `limit_bytes`, `actual_bytes` |
+| `schema-v5/pdf_worker_rss_overflow` | `507` | `failed` | `decoding` | `false` | `view`, `limit_bytes`, `actual_bytes` |
+| `schema-v5/pdf_worker_concurrency_overflow` | `503` | `unavailable` | `resolving` | `true` | `view`, `limit_processes`, `actual_processes` |
+| `schema-v5/pdf_worker_spawn_overflow` | `507` | `failed` | `decoding` | `false` | `view`, `limit_processes`, `actual_processes` |
+| `schema-v5/pdf_worker_crash` | `502` | `failed` | `decoding` | `false` | `view`, `exit_status`, `signal` |
+| `schema-v5/pdf_worker_protocol_violation` | `502` | `failed` | `decoding` | `false` | `view`, `message_kind` |
+| `schema-v5/pdf_worker_invalid_output` | `502` | `failed` | `decoding` | `false` | `view`, `field` |
+
+Closed detail value types are:
+
+- `source_relation`: `lexical_text` or `syntax_tree`;
+- `view`: `binary`, `extracted_text`, `objects_metadata`, or
+  `rendered_pages`;
+- `input_side`: `before` or `after`;
+- `language`, `backend_id`, `backend_role`, `reason_code`, `message_code`,
+  `resource`, `stream`, and `message_kind`: stable lowercase ASCII identifiers
+  or null only where the table names a nullable field;
+- `line`, `column`, `limit`, `actual`, `limit_bytes`, `actual_bytes`,
+  `limit_processes`, and `actual_processes`: non-negative JSON integers or
+  null only for `line` and `column` when no source coordinate is available;
+- `limit_seconds` and `elapsed_seconds`: finite non-negative JSON numbers;
+- `encryption_detected`: boolean `true`;
+- `exit_status`: signed integer or null when the process has no exit status;
+- `signal`: stable lowercase ASCII signal identifier or null;
+- `field`: RFC 6901 JSON Pointer string naming the invalid output field.
+
+The rejected alternative is a generic resource-exhausted bucket with
+backend-specific strings and no integer `status_code`, `retryable` flag, or
+exact detail shape. If this proposed amendment is accepted, old provisional
+`pdf_worker_resource_exhausted` rows are replaced by the named stderr, temp,
+decoded-output, RSS, concurrency, and spawn problem codes above.
+
+#### P6C0A-2: source/PDF closed-union closure
+
+If accepted, schema-v5 freezes `SourceCodeChange` and `PdfChange` as mutually
+exclusive closed discriminated-union members:
+
+```text
+ChangeV5 =
+  TextHunk
+  | BinarySpan
+  | StructuredChange
+  | TableChange
+  | ArrayChange
+  | SourceCodeChange
+  | PdfChange
+  | ExtensionChange
+```
+
+`SourceCodeChange` has `kind="source_code_change"` and `change_variant` exactly
+`lexical_text` or `syntax_tree`. It never has `view`. `PdfChange` has
+`kind="pdf_change"` and `view` exactly `binary`, `extracted_text`,
+`objects_metadata`, or `rendered_pages`. It never has `change_variant`.
+Unknown discriminator combinations raise `SerializationError`. Extension
+changes must use namespaced extension kinds and cannot reuse either built-in
+kind.
+
+Source lexical changes have stable top-level field order:
+
+```text
+kind
+change_variant
+operation
+language
+relation
+coordinate_encoding
+column_unit
+before_range
+after_range
+lexical_text
+before_fact
+after_fact
+payload_digest
+```
+
+`operation` is `equal`, `insert`, `delete`, or `replace`. `insert` has null
+`before_range` and `before_fact`; `delete` has null `after_range` and
+`after_fact`; `replace` has both sides; `equal` has both sides and is allowed
+only in canonical fact and migration fixtures, not as a reported difference.
+Byte offsets are zero-based half-open offsets in decoded UTF-8 bytes before
+newline normalization. Line and column coordinates are over the normalized
+logical line sequence. `lexical_text.line_ending` is `lf`, `crlf`, `cr`,
+`mixed`, or `none`; line arrays omit terminators. Readers must not reconstruct
+byte offsets from normalized lines when `line_ending` is `mixed`.
+`before_fact` and `after_fact` are either null or lexical facts with
+`language`, `line_count`, `nonempty_line_count`, `line_ending`, and
+`content_digest` in that order.
+
+Source syntax changes have stable top-level field order:
+
+```text
+kind
+change_variant
+operation
+language
+relation
+parser_id
+parser_version
+node_path
+before_node
+after_node
+before_range
+after_range
+before_fact
+after_fact
+payload_digest
+```
+
+`operation` is `equal`, `node_insert`, `node_delete`, `node_replace`, or
+`node_move`. `node_path` is an RFC 6901 JSON Pointer over the parser's canonical
+tree. `before_node` and `after_node` are either null or node records with
+`node_kind`, `named`, `start_byte`, `end_byte`, `start_line`, `start_column`,
+`end_line`, `end_column`, `child_count`, and `subtree_digest` in that order.
+Syntax facts have `language`, `parser_id`, `parser_version`, `node_count`,
+`max_depth`, `parser_error_count`, `recovery_used`, and `root_digest` in that
+order. A syntax `equal` operation follows the same fixture-only rule as lexical
+`equal`.
+
+PDF binary changes have stable top-level field order:
+
+```text
+kind
+view
+binary_variant
+operation
+ranges
+before_fact
+after_fact
+payload_digest
+```
+
+`operation` is `equal`, `insert`, `delete`, or `replace`. Each range has
+`side`, `start_byte`, and `end_byte`; offsets are original PDF bytes before
+parsing, decryption, repair, or decompression. Binary facts have `byte_length`,
+`header_version`, `is_encrypted`, `xref_count`, and `content_digest`.
+
+PDF extracted-text changes have stable top-level field order:
+
+```text
+kind
+view
+operation
+page
+before_run
+after_run
+text
+before_fact
+after_fact
+payload_digest
+```
+
+`operation` is `equal`, `insert`, `delete`, `replace`, or `move`. Text-run
+coordinates use `pdf-text-run(page,run,start_offset,end_offset)`, where `page`
+is one-based, `run` is zero-based in canonical extraction order, and offsets
+are zero-based half-open Unicode scalar offsets within the extracted run text.
+Extracted-text facts have `page_count`, `run_count`, `char_count`,
+`extraction_digest`, and `backend_id`.
+
+PDF objects-metadata changes have stable top-level field order:
+
+```text
+kind
+view
+operation
+object_ref
+key_path
+before_entry
+after_entry
+before_fact
+after_fact
+payload_digest
+```
+
+`operation` is `equal`, `insert`, `delete`, or `replace`. `object_ref` uses
+`pdf-object(obj,generation)`. `key_path` is an RFC 6901 JSON Pointer over the
+canonical metadata object. Entries carry only bounded JSON scalar, array, or
+object values; oversized values are digest-only. Objects-metadata facts have
+`object_count`, `metadata_entry_count`, `stream_count`, `trailer_digest`, and
+`object_digest`.
+
+PDF rendered-pages changes have stable top-level field order:
+
+```text
+kind
+view
+operation
+page
+rect
+raster_space
+before_fact
+after_fact
+payload_digest
+```
+
+`operation` is `equal`, `page_insert`, `page_delete`, or `region_replace`.
+`rect` uses `pdf-raster-rect(page,x,y,width,height,dpi,colorspace)`. `x`, `y`,
+`width`, and `height` are zero-based pixel integers in the declared rendered
+page raster. Rendered-page facts have `page`, `width_px`, `height_px`, `dpi`,
+`colorspace`, `alpha_mode`, `render_backend_id`, and `raster_digest`.
+
+For every variant, operation-side rules are closed: insert operations serialize
+only after-side coordinates and facts, delete operations serialize only
+before-side coordinates and facts, replace and move operations serialize both
+sides, and equal operations serialize both sides with equal canonical facts and
+equal payload digests. P6-C0 fixtures may include equal facts to prove ordering,
+coordinates, and digests, but completed comparison outputs do not report equal
+operations as changed items.
+
+Contract-only provenance is also closed. P6-C0 fixtures may directly construct
+completed outcomes and failed or unavailable outcomes for reader/writer
+validation. They must record accepted comparator and algorithm IDs in
+provenance and compatibility receipts, but no registry route may execute them
+through public `compare()` or the CLI until P6-S1 or P6-P1a starts.
+
+Additional proposed canonical vectors are:
+
+| Domain | Tagged fields | Payload hex | SHA-256 |
+| --- | --- | --- | --- |
+| `source/node` | `kind=source_code_change`, `change_variant=syntax_tree`, `operation=node_replace`, `language=python`, `node_path=/module/body/0` | `000000000000000500000000000000046b696e640000000000000012736f757263655f636f64655f6368616e6765000000000000000e6368616e67655f76617269616e74000000000000000b73796e7461785f7472656500000000000000096f7065726174696f6e000000000000000c6e6f64655f7265706c61636500000000000000086c616e67756167650000000000000006707974686f6e00000000000000096e6f64655f70617468000000000000000e2f6d6f64756c652f626f64792f30` | `f02a4b5d1d25daa80effd720092cbb907486d0dc2356e8ce9b9d6ef1bffe2263` |
+| `pdf/text/run` | `kind=pdf_change`, `view=extracted_text`, `operation=replace`, `page=1`, `run=1` | `000000000000000500000000000000046b696e64000000000000000a7064665f6368616e6765000000000000000476696577000000000000000e6578747261637465645f7465787400000000000000096f7065726174696f6e00000000000000077265706c616365000000000000000470616765000000000000000131000000000000000372756e000000000000000131` | `01823198a9bc253ffb608e0bb885c3369b8570e38e38d687a88a4144406f8250` |
+| `pdf/object/entry` | `kind=pdf_change`, `view=objects_metadata`, `operation=replace`, `object_ref=1 0`, `key_path=/Type` | `000000000000000500000000000000046b696e64000000000000000a7064665f6368616e676500000000000000047669657700000000000000106f626a656374735f6d6574616461746100000000000000096f7065726174696f6e00000000000000077265706c616365000000000000000a6f626a6563745f726566000000000000000331203000000000000000086b65795f7061746800000000000000052f54797065` | `78aa7c0eb76337b083c767402b72307a6fd95dc6c59bacd94e849836b4da25e6` |
+| `pdf/render/region` | `kind=pdf_change`, `view=rendered_pages`, `operation=region_replace`, `page=1`, `x=0`, `y=0`, `width=1`, `height=1` | `000000000000000800000000000000046b696e64000000000000000a7064665f6368616e6765000000000000000476696577000000000000000e72656e64657265645f706167657300000000000000096f7065726174696f6e000000000000000e726567696f6e5f7265706c616365000000000000000470616765000000000000000131000000000000000178000000000000000130000000000000000179000000000000000130000000000000000577696474680000000000000001310000000000000006686569676874000000000000000131` | `4269f837257375fe6cba48cdc4ce6233c226180222e5baea86ecad0c1e846f67` |
 
 ### Fact presence and ordering
 

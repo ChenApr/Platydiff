@@ -14,6 +14,8 @@
 - Predecessor and contract amendment：RFC 0010 接受 Option A/P4-C1 与
   P6C0-1-P6C0-10；P6-C0 已记录条件授权，但 coordinator 须等待 RFC 0010、P4-C1、
   P5-A1/schema-v4 与 compatibility fixture 都合并到 `main` 后才能派发
+- Proposed closure amendment：RFC 0010 草拟 P6C0A-1-P6C0A-2，用于 P6-C0
+  problem-registry 与 closed-union closure；这些 decision 尚未接受
 
 ## 摘要与授权边界
 
@@ -27,7 +29,8 @@
 接受 P6X1-P6X11、SC1-SC10、PDF1-PDF10，以及 P6-C0 contract gate 定义。它只授权本文档
 PR。P6-C0 已记录条件授权，但 coordinator 须等待 RFC 0010、P4-C1、P5-A1/schema-v4 与
 compatibility fixture 都合并到 `main` 后才能派发。每个后续 source/PDF code gate 仍需要
-从更新后的 `main` 显式派发。
+从更新后的 `main` 显式派发。RFC 0010 还包含 proposed P6C0A-1 与 P6C0A-2 closure
+amendment，供未来 P6-C0 review 使用；它们尚未接受，也不启动代码。
 
 所有行为都保持显式启用。调用者必须直接选择 source-code 或 PDF spec。既有
 `AutoCompareSpec` 在 RFC 0003 的后继 RFC 接受新的探测语义之前，仍只支持 text/binary。
@@ -1041,8 +1044,9 @@ Gate：从更新后的 `main` 独立授权；predecessor v1-v4 reader、writer �
 通过；schema v5 在一个 closed union 中冻结 `SourceCodeCompareSpec`、`PdfCompareSpec`、
 `SourceCodeChange` 与 `PdfChange`；所有 source relation 与 PDF view 都有表示，即使初始为
 unavailable；canonical fact、digest domain、option serialization、resource-limit shape、
-problem code 与 spec validation 均冻结；不实现 source/PDF comparator、backend 或 CLI 行为。
-P6-C0 必须在 P6-S1、P6-P1a 或任何后续 Phase 6 comparator/backend gate 开始前合并。
+problem code 与 spec validation 均冻结；proposed RFC 0010 P6C0A-1 与 P6C0A-2 必须在
+implementation closure 前被接受或由后继方案取代；不实现 source/PDF comparator、backend 或 CLI
+行为。P6-C0 必须在 P6-S1、P6-P1a 或任何后续 Phase 6 comparator/backend gate 开始前合并。
 
 ### P6-S1：source-code lexical relation
 

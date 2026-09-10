@@ -8,6 +8,7 @@
 - Approved decisions: SP1-SP6; Option A/P4-C1; P6C0-1-P6C0-10
 - Approved P4-C1 clarifications：P4C1-1-P4C1-5
 - P4-C1 clarification approval date：2026-09-10
+- Proposed P6-C0 closure amendment：P6C0A-1-P6C0A-2；尚未接受
 - Owners: Platydiff 维护者
 - Implementation dispatch：已记录条件人工授权；只有在 RFC 0010 合并且指定 merge 与
   clarification gate 通过后，coordinator 才能派发
@@ -24,6 +25,10 @@ video、SDK v2、backend worker、artifact、automatic detection 或 UI 实现�
 一次 P4-C1 pre-implementation 只读检查发现了额外的 schema-v3 reader 与 fixture 歧义。
 下方 P4C1-1 到 P4C1-5 已于 2026-09-10 获批。它们补充但不修改 SP1-SP6、
 Option A/P4-C1 或 P6C0-1 到 P6C0-10。本 clarification approval 不启动任何代码。
+
+一次 P6-C0 closure review 还发现 schema-v5 problem registry 与 closed-union shape 仍有缺口。
+下方 proposed P6C0A-1 与 P6C0A-2 amendment 尚未接受，不修改 P6C0-1 到 P6C0-10，也不授权
+source 或 PDF 实现。
 
 已接受决策是：将 `main` 上缺失的 YAML、table、array schema-v3 contract surface 视为
 Phase 4 代码缺陷，而不是把它当作 RFC 0006 已接受契约错误的证据。必须先落地一个
@@ -458,6 +463,246 @@ view name 之一；`encryption_detected` 是 boolean `true`；`limit_seconds`、
 lowercase ASCII identifier；`exit_status` 是 signed integer，或在 process 被终止且无 exit status
 时为 null。Invalid wire coordinate、unknown problem registry ID 与 malformed tagged payload
 都会 raise `SerializationError`；它们不制造 runtime failed outcome。
+
+### Proposed P6-C0 closure amendment
+
+下列 P6C0A decision 是 Proposed，不是 Accepted。它们只是 P6-C0 的 draft closure criteria。
+它们保持 P6-C0 contract-only：不得从这些 proposed decision 启动 source/PDF comparator、
+CLI route、backend worker、dependency、SDK、artifact、automatic detection 或 UI 实现。
+P6-C0 仍须等待 RFC 0010、P4-C1、P5-A1/schema-v4 与 compatibility fixture 合并到 `main`，
+之后还需要明确 coordinator dispatch。
+
+#### P6C0A-1：problem registry closure
+
+如果被接受，schema-v5 source/PDF problem 会冻结 problem object wire order：
+`code`、`status_code`、`outcome`、`stage`、`retryable`、`details`。
+Registry key 仍是 `schema-v5/<code>`，serialized `code` 仍是短 stable code。
+`status_code` 是 HTTP-like integer status。`outcome` 只能是 `failed` 或 `unavailable`。
+`stage` 只能是 `resolving`、`decoding`、`comparing` 或 `rendering`。`retryable` 是 boolean；
+只有同一 input 与 spec 在环境、backend availability 或 scheduler capacity 改变后可能成功时，
+它才可以是 `true`。
+
+Canonical JSON 按下表顺序发出 `details` key。Reader 在 canonical fixture 中拒绝 missing key、
+extra key、错误 type 与非 canonical key order。
+
+| Registry ID | Status code | Outcome | Stage | Retryable | Detail keys |
+| --- | --- | --- | --- | --- | --- |
+| `schema-v5/source_backend_unavailable` | `503` | `unavailable` | `resolving` | `true` | `source_relation`, `language`, `backend_id`, `reason_code` |
+| `schema-v5/source_decode_error` | `422` | `failed` | `decoding` | `false` | `source_relation`, `language`, `input_side`, `line`, `column`, `message_code` |
+| `schema-v5/source_compare_timeout` | `504` | `failed` | `comparing` | `false` | `source_relation`, `limit_seconds`, `elapsed_seconds` |
+| `schema-v5/source_resource_overflow` | `413` | `failed` | `comparing` | `false` | `source_relation`, `resource`, `limit`, `actual` |
+| `schema-v5/pdf_encrypted` | `422` | `failed` | `decoding` | `false` | `input_side`, `view`, `encryption_detected` |
+| `schema-v5/pdf_backend_unavailable` | `503` | `unavailable` | `resolving` | `true` | `view`, `backend_role`, `backend_id`, `reason_code` |
+| `schema-v5/pdf_worker_timeout` | `504` | `failed` | `decoding` | `false` | `view`, `limit_seconds`, `elapsed_seconds` |
+| `schema-v5/pdf_worker_stderr_overflow` | `502` | `failed` | `decoding` | `false` | `view`, `stream`, `limit_bytes`, `actual_bytes` |
+| `schema-v5/pdf_worker_temp_overflow` | `507` | `failed` | `decoding` | `false` | `view`, `limit_bytes`, `actual_bytes` |
+| `schema-v5/pdf_worker_decoded_output_overflow` | `413` | `failed` | `decoding` | `false` | `view`, `resource`, `limit_bytes`, `actual_bytes` |
+| `schema-v5/pdf_worker_rss_overflow` | `507` | `failed` | `decoding` | `false` | `view`, `limit_bytes`, `actual_bytes` |
+| `schema-v5/pdf_worker_concurrency_overflow` | `503` | `unavailable` | `resolving` | `true` | `view`, `limit_processes`, `actual_processes` |
+| `schema-v5/pdf_worker_spawn_overflow` | `507` | `failed` | `decoding` | `false` | `view`, `limit_processes`, `actual_processes` |
+| `schema-v5/pdf_worker_crash` | `502` | `failed` | `decoding` | `false` | `view`, `exit_status`, `signal` |
+| `schema-v5/pdf_worker_protocol_violation` | `502` | `failed` | `decoding` | `false` | `view`, `message_kind` |
+| `schema-v5/pdf_worker_invalid_output` | `502` | `failed` | `decoding` | `false` | `view`, `field` |
+
+Closed detail value type 为：
+
+- `source_relation`：`lexical_text` 或 `syntax_tree`；
+- `view`：`binary`、`extracted_text`、`objects_metadata` 或 `rendered_pages`；
+- `input_side`：`before` 或 `after`；
+- `language`、`backend_id`、`backend_role`、`reason_code`、`message_code`、
+  `resource`、`stream` 与 `message_kind`：stable lowercase ASCII identifier，只有表中
+  允许 nullable 的字段可以是 null；
+- `line`、`column`、`limit`、`actual`、`limit_bytes`、`actual_bytes`、
+  `limit_processes` 与 `actual_processes`：non-negative JSON integer；只有没有 source
+  coordinate 时 `line` 与 `column` 可以是 null；
+- `limit_seconds` 与 `elapsed_seconds`：finite non-negative JSON number；
+- `encryption_detected`：boolean `true`；
+- `exit_status`：signed integer，或在 process 没有 exit status 时为 null；
+- `signal`：stable lowercase ASCII signal identifier 或 null；
+- `field`：命名 invalid output field 的 RFC 6901 JSON Pointer string。
+
+被拒绝的替代方案是 generic resource-exhausted bucket、backend-specific string、没有 integer
+`status_code`、没有 `retryable` flag、也没有精确 detail shape。如果本 proposed amendment 被接受，
+旧的 provisional `pdf_worker_resource_exhausted` row 会被上方 named stderr、temp、
+decoded-output、RSS、concurrency 与 spawn problem code 替代。
+
+#### P6C0A-2：source/PDF closed-union closure
+
+如果被接受，schema-v5 会把 `SourceCodeChange` 与 `PdfChange` 冻结为 mutually exclusive closed
+discriminated-union member：
+
+```text
+ChangeV5 =
+  TextHunk
+  | BinarySpan
+  | StructuredChange
+  | TableChange
+  | ArrayChange
+  | SourceCodeChange
+  | PdfChange
+  | ExtensionChange
+```
+
+`SourceCodeChange` 具有 `kind="source_code_change"`，且 `change_variant` 只能是
+`lexical_text` 或 `syntax_tree`。它绝不包含 `view`。`PdfChange` 具有 `kind="pdf_change"`，
+且 `view` 只能是 `binary`、`extracted_text`、`objects_metadata` 或 `rendered_pages`。它绝不包含
+`change_variant`。未知 discriminator combination 会 raise `SerializationError`。Extension
+change 必须使用 namespaced extension kind，且不能复用任一 built-in kind。
+
+Source lexical change 的 stable top-level field order 为：
+
+```text
+kind
+change_variant
+operation
+language
+relation
+coordinate_encoding
+column_unit
+before_range
+after_range
+lexical_text
+before_fact
+after_fact
+payload_digest
+```
+
+`operation` 是 `equal`、`insert`、`delete` 或 `replace`。`insert` 的 `before_range` 与
+`before_fact` 为 null；`delete` 的 `after_range` 与 `after_fact` 为 null；`replace` 两侧都有；
+`equal` 两侧都有，且只允许出现在 canonical fact 与 migration fixture 中，不作为 reported
+difference。Byte offset 是 newline normalization 前 decoded UTF-8 byte 中的 zero-based
+half-open offset。Line 与 column coordinate 基于 normalized logical line sequence。
+`lexical_text.line_ending` 是 `lf`、`crlf`、`cr`、`mixed` 或 `none`；line array 不含 terminator。
+当 `line_ending` 为 `mixed` 时，reader 不得从 normalized line 重建 byte offset。`before_fact`
+与 `after_fact` 要么是 null，要么是按 `language`、`line_count`、`nonempty_line_count`、
+`line_ending`、`content_digest` 排序的 lexical fact。
+
+Source syntax change 的 stable top-level field order 为：
+
+```text
+kind
+change_variant
+operation
+language
+relation
+parser_id
+parser_version
+node_path
+before_node
+after_node
+before_range
+after_range
+before_fact
+after_fact
+payload_digest
+```
+
+`operation` 是 `equal`、`node_insert`、`node_delete`、`node_replace` 或 `node_move`。
+`node_path` 是 parser canonical tree 上的 RFC 6901 JSON Pointer。`before_node` 与
+`after_node` 要么是 null，要么是 node record，其字段顺序为 `node_kind`、`named`、
+`start_byte`、`end_byte`、`start_line`、`start_column`、`end_line`、`end_column`、
+`child_count`、`subtree_digest`。Syntax fact 的字段顺序为 `language`、`parser_id`、
+`parser_version`、`node_count`、`max_depth`、`parser_error_count`、`recovery_used`、
+`root_digest`。Syntax `equal` operation 遵循与 lexical `equal` 相同的 fixture-only rule。
+
+PDF binary change 的 stable top-level field order 为：
+
+```text
+kind
+view
+binary_variant
+operation
+ranges
+before_fact
+after_fact
+payload_digest
+```
+
+`operation` 是 `equal`、`insert`、`delete` 或 `replace`。每个 range 都有 `side`、`start_byte`
+与 `end_byte`；offset 是 parsing、decryption、repair 或 decompression 前 original PDF byte
+上的 zero-based half-open offset。Binary fact 有 `byte_length`、`header_version`、
+`is_encrypted`、`xref_count` 与 `content_digest`。
+
+PDF extracted-text change 的 stable top-level field order 为：
+
+```text
+kind
+view
+operation
+page
+before_run
+after_run
+text
+before_fact
+after_fact
+payload_digest
+```
+
+`operation` 是 `equal`、`insert`、`delete`、`replace` 或 `move`。Text-run coordinate 使用
+`pdf-text-run(page,run,start_offset,end_offset)`，其中 `page` 是 one-based，`run` 是 canonical
+extraction order 中的 zero-based ordinal，offset 是 extracted run text 中的 zero-based
+half-open Unicode scalar offset。Extracted-text fact 有 `page_count`、`run_count`、
+`char_count`、`extraction_digest` 与 `backend_id`。
+
+PDF objects-metadata change 的 stable top-level field order 为：
+
+```text
+kind
+view
+operation
+object_ref
+key_path
+before_entry
+after_entry
+before_fact
+after_fact
+payload_digest
+```
+
+`operation` 是 `equal`、`insert`、`delete` 或 `replace`。`object_ref` 使用
+`pdf-object(obj,generation)`。`key_path` 是 canonical metadata object 上的 RFC 6901 JSON
+Pointer。Entry 只携带 bounded JSON scalar、array 或 object value；oversized value 为
+digest-only。Objects-metadata fact 有 `object_count`、`metadata_entry_count`、`stream_count`、
+`trailer_digest` 与 `object_digest`。
+
+PDF rendered-pages change 的 stable top-level field order 为：
+
+```text
+kind
+view
+operation
+page
+rect
+raster_space
+before_fact
+after_fact
+payload_digest
+```
+
+`operation` 是 `equal`、`page_insert`、`page_delete` 或 `region_replace`。`rect` 使用
+`pdf-raster-rect(page,x,y,width,height,dpi,colorspace)`。`x`、`y`、`width` 与 `height` 是 declared
+rendered page raster 中的 zero-based pixel integer。Rendered-page fact 有 `page`、`width_px`、
+`height_px`、`dpi`、`colorspace`、`alpha_mode`、`render_backend_id` 与 `raster_digest`。
+
+每个 variant 的 operation-side rule 都是 closed：insert operation 只序列化 after-side
+coordinate 与 fact；delete operation 只序列化 before-side coordinate 与 fact；replace 与 move
+operation 序列化两侧；equal operation 序列化两侧，且 canonical fact 与 payload digest 相等。
+P6-C0 fixture 可以包含 equal fact 来证明 ordering、coordinate 与 digest，但 completed comparison
+output 不把 equal operation 报告为 changed item。
+
+Contract-only provenance 也被关闭。P6-C0 fixture 可以直接构造 completed outcome 以及 failed 或
+unavailable outcome，用于 reader/writer validation。它们必须在 provenance 与 compatibility receipt
+中记录已接受的 comparator 与 algorithm ID，但在 P6-S1 或 P6-P1a 开始前，任何 registry route
+都不得通过 public `compare()` 或 CLI 执行这些 ID。
+
+额外 proposed canonical vector 为：
+
+| Domain | Tagged fields | Payload hex | SHA-256 |
+| --- | --- | --- | --- |
+| `source/node` | `kind=source_code_change`, `change_variant=syntax_tree`, `operation=node_replace`, `language=python`, `node_path=/module/body/0` | `000000000000000500000000000000046b696e640000000000000012736f757263655f636f64655f6368616e6765000000000000000e6368616e67655f76617269616e74000000000000000b73796e7461785f7472656500000000000000096f7065726174696f6e000000000000000c6e6f64655f7265706c61636500000000000000086c616e67756167650000000000000006707974686f6e00000000000000096e6f64655f70617468000000000000000e2f6d6f64756c652f626f64792f30` | `f02a4b5d1d25daa80effd720092cbb907486d0dc2356e8ce9b9d6ef1bffe2263` |
+| `pdf/text/run` | `kind=pdf_change`, `view=extracted_text`, `operation=replace`, `page=1`, `run=1` | `000000000000000500000000000000046b696e64000000000000000a7064665f6368616e6765000000000000000476696577000000000000000e6578747261637465645f7465787400000000000000096f7065726174696f6e00000000000000077265706c616365000000000000000470616765000000000000000131000000000000000372756e000000000000000131` | `01823198a9bc253ffb608e0bb885c3369b8570e38e38d687a88a4144406f8250` |
+| `pdf/object/entry` | `kind=pdf_change`, `view=objects_metadata`, `operation=replace`, `object_ref=1 0`, `key_path=/Type` | `000000000000000500000000000000046b696e64000000000000000a7064665f6368616e676500000000000000047669657700000000000000106f626a656374735f6d6574616461746100000000000000096f7065726174696f6e00000000000000077265706c616365000000000000000a6f626a6563745f726566000000000000000331203000000000000000086b65795f7061746800000000000000052f54797065` | `78aa7c0eb76337b083c767402b72307a6fd95dc6c59bacd94e849836b4da25e6` |
+| `pdf/render/region` | `kind=pdf_change`, `view=rendered_pages`, `operation=region_replace`, `page=1`, `x=0`, `y=0`, `width=1`, `height=1` | `000000000000000800000000000000046b696e64000000000000000a7064665f6368616e6765000000000000000476696577000000000000000e72656e64657265645f706167657300000000000000096f7065726174696f6e000000000000000e726567696f6e5f7265706c616365000000000000000470616765000000000000000131000000000000000178000000000000000130000000000000000179000000000000000130000000000000000577696474680000000000000001310000000000000006686569676874000000000000000131` | `4269f837257375fe6cba48cdc4ce6233c226180222e5baea86ecad0c1e846f67` |
 
 ### Fact presence 与 ordering
 
