@@ -231,10 +231,10 @@ DiffResult
 
 平移一个像素可能制造大面积差异，因此配准、裁剪和缩放属于独立的对齐阶段，不能隐藏在指标内部。
 
-[RFC 0007](rfcs/0007-image-comparison_zh.md) 接受更窄的首个图片切片：显式、内建地比较
+[RFC 0007](rfcs/0007-image-comparison_zh.md) 定义已接受的更窄首个图片切片：显式、内建地比较
 static 8-bit PNG 的 decoded sample；encoded identity 继续由 binary comparator 负责，且不提供
-隐式 orientation、color、alpha、resize、crop、artifact、plugin 或 detection 行为。该 RFC
-仍未实现，写代码前需要单独 gate authorization。
+隐式 orientation、color、alpha、resize、crop、artifact、plugin 或 detection 行为。接受该 RFC
+不授权实现。
 
 ### 6.5 音频
 
@@ -280,7 +280,7 @@ Phase 1 至 Phase 3 包含 Python 包、schema-v1/v2 契约、显式文本、有
 探测、精确二进制比较、CLI、terminal/JSON renderer 与显式 plugin boundary，且仍未
 发布。Phase 4 structured-data 契约已在
 [RFC 0006](rfcs/0006-structured-data-comparison_zh.md) 中接受，但仍未实现且需要单独门禁授权。
-Phase 5 图片契约已在 [RFC 0007](rfcs/0007-image-comparison_zh.md) 中接受；它不构成实现授权，
+Phase 5 图片契约已在 [RFC 0007](rfcs/0007-image-comparison_zh.md) 中接受；接受不构成实现授权，
 且必须先重新验证实际合并的 schema-v3 前驱。下列其他模态与 renderer 仍是计划能力。
 Phase 6 source/PDF 契约已在 [RFC 0008](rfcs/0008-source-code-and-pdf-comparison_zh.md)
 中接受；schema-v5 allocation 已接受，但仍需要 implementation 与 compatibility fixture。Phase 7 audio

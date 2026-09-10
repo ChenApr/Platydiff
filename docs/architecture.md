@@ -237,11 +237,11 @@ In exact mode, both images are decoded to an explicitly selected size, orientati
 
 A one-pixel translation can create a large apparent difference. Registration, cropping, and scaling therefore belong to a separate alignment stage and must never be hidden inside a metric implementation.
 
-[RFC 0007](rfcs/0007-image-comparison.md) accepts a narrower first image
-slice: explicit built-in comparison of static 8-bit PNG decoded samples, with
-encoded identity left to the binary comparator and no implicit orientation,
-color, alpha, resize, crop, artifact, plugin, or detection behavior. It remains
-unimplemented and requires separate gate authorization before code.
+[RFC 0007](rfcs/0007-image-comparison.md) defines the accepted narrower first
+image slice: an explicit built-in comparison of static 8-bit PNG decoded
+samples, with encoded identity left to the binary comparator and no implicit
+orientation, color, alpha, resize, crop, artifact, plugin, or detection behavior. Acceptance
+does not authorize implementation.
 
 ### 6.5 Audio
 
@@ -293,9 +293,9 @@ unreleased. Phase 4 structured-data contracts are accepted in
 [RFC 0006](rfcs/0006-structured-data-comparison.md) but remain unimplemented and
 require separate gate authorization. Every other modality and renderer below is
 planned. Phase 5 image contracts are accepted in
-[RFC 0007](rfcs/0007-image-comparison.md); they are not implementation
-authorization and require the actual merged schema-v3 predecessor to be
-revalidated first. Phase 6 source/PDF contracts are accepted in
+[RFC 0007](rfcs/0007-image-comparison.md); acceptance does not authorize
+implementation, and the actual merged schema-v3 predecessor must be revalidated
+first. Phase 6 source/PDF contracts are accepted in
 [RFC 0008](rfcs/0008-source-code-and-pdf-comparison.md); schema-v5 allocation
 is accepted but still requires implementation and compatibility fixtures. Phase 7
 audio contracts and video roadmap direction are accepted in
