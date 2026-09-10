@@ -10,6 +10,8 @@
 - Approved contract gate definition: P6-C0
 - Owners: Platydiff maintainers
 - Implementation owner: unassigned pending separate implementation authorization
+- Predecessor and contract amendment: RFC 0010 accepts Option A/P4-C1 and
+  P6C0-1-P6C0-10; P6-C0 implementation still requires separate authorization
 
 ## Summary and authorization boundary
 

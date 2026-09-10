@@ -227,12 +227,13 @@ structured changes, and deterministic evidence digests. The constrained YAML
 1.2 contract remains unimplemented behind P4-A2. JSON remains explicit-only and
 built-in-only; it does not expand text/binary automatic detection or SDK v1.1.
 
-[RFC 0010](rfcs/0010-schema-predecessor-and-phase6-contract-amendment.md) is a
-Proposed amendment that records a mismatch between the accepted RFC 0006
+[RFC 0010](rfcs/0010-schema-predecessor-and-phase6-contract-amendment.md) is an
+Accepted amendment that resolves the mismatch between the accepted RFC 0006
 schema-v3 closed union and the JSON-only schema-v3 surface currently on `main`.
-It recommends a Phase 4 correction gate before any schema-v4, schema-v5, or
-schema-v6 implementation treats v3 as a stable predecessor. Until accepted, it
-is not implementation authority.
+It selects Option A/P4-C1 as a Phase 4 correction gate before any schema-v4,
+schema-v5, or schema-v6 implementation treats v3 as a stable predecessor.
+RFC 0010 authorizes documentation only; P4-C1 code still requires separate
+dispatch after RFC 0010 merges.
 
 Syntactic equality does not imply runtime semantic equality. AST comparison must state its parser version, error-recovery behavior, and macro or preprocessing boundaries.
 
@@ -309,7 +310,7 @@ implementation, and the actual merged schema-v3 predecessor must be revalidated
 first. Phase 6 source/PDF contracts are accepted in
 [RFC 0008](rfcs/0008-source-code-and-pdf-comparison.md); schema-v5 allocation
 is accepted but still requires implementation, compatibility fixtures, and the
-P6-C0 contract-gap decisions proposed in
+P6-C0 contract-gap decisions accepted in
 [RFC 0010](rfcs/0010-schema-predecessor-and-phase6-contract-amendment.md). Phase 7
 audio contracts and video roadmap direction are accepted in
 [RFC 0009](rfcs/0009-audio-and-video-comparison.md); it accepts schema v6 for

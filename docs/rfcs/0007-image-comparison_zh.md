@@ -8,6 +8,8 @@
 - 接受日期：2026-09-10
 - Owners：Platydiff 维护者
 - 实现 owner：等待单独的实现授权后指派
+- Predecessor amendment：RFC 0010 接受 Option A/P4-C1；P5-A1 只有在其完成后才能把
+  schema v3 当作稳定前驱
 
 ## 摘要与授权边界
 

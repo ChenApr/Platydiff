@@ -8,6 +8,8 @@
 - Acceptance date: 2026-09-10
 - Owners: Platydiff maintainers
 - Implementation owner: unassigned pending separate implementation authorization
+- Predecessor amendment: RFC 0010 accepts Option A/P4-C1 before P5-A1 may treat
+  schema v3 as a stable predecessor
 
 ## Summary and authorization boundary
 

@@ -8,6 +8,8 @@
 - 已批准决策：P7X1-P7X8、A1-A7；V1-V6 仅为路线方向
 - Owners: Platydiff 维护者
 - Implementation owner: 尚未指派，等待单独的实现授权
+- Predecessor amendment：RFC 0010 接受 Option A/P4-C1；P7-A1 只有在其完成后才能把
+  schema v3 当作稳定前驱
 
 ## 摘要与授权边界
 

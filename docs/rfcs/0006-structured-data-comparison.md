@@ -9,6 +9,8 @@
 - Approved decisions: S1-S13
 - Owners: Platydiff maintainers
 - Implementation: P4-A1 implemented; P4-A2, P4-B1, and P4-B2 remain gated
+- Amendment: RFC 0010 accepts Option A/P4-C1 as the required pre-release
+  correction for missing schema-v3 YAML/table/array public contract surface
 
 ## Summary and authorization boundary
 

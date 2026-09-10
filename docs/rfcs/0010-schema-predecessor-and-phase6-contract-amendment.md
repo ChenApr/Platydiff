@@ -2,25 +2,32 @@
 
 [Chinese documentation](0010-schema-predecessor-and-phase6-contract-amendment_zh.md)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-10
+- Accepted: 2026-09-10
+- Approved decisions: SP1-SP6; Option A/P4-C1; P6C0-1-P6C0-10
 - Owners: Platydiff maintainers
 - Implementation owner: unassigned pending human approval
 
 ## Summary and authorization boundary
 
-This RFC is a proposed cross-RFC amendment for a schema predecessor
+This RFC is the accepted cross-RFC amendment for a schema predecessor
 contradiction found before Phase 5, Phase 6, or Phase 7 schema implementation
-starts. It proposes decisions only. It does not mark any decision Accepted,
-does not authorize code, does not change public schema behavior, and does not
-start implementation of structured data, image, source-code, PDF, audio, video,
-SDK v2, backend workers, artifacts, automatic detection, or UI work.
+starts. It accepts decisions SP1-SP6, selects Option A/P4-C1, and accepts
+P6C0-1 through P6C0-10 as Phase 6 contract decisions. It authorizes this
+documentation acceptance PR only. It does not authorize code, dependency
+changes, public schema implementation, or implementation of structured data,
+image, source-code, PDF, audio, video, SDK v2, backend workers, artifacts,
+automatic detection, or UI work.
 
-The recommended decision is to treat the missing YAML, table, and array
+The accepted decision is to treat the missing YAML, table, and array
 schema-v3 contract surface on `main` as a Phase 4 code defect, not as proof that
 the accepted RFC 0006 contract was wrong. A correction gate must land before
 schema v4 image, schema v5 source/PDF, schema v6 audio, or any later video
-successor can use v3 as a stable predecessor.
+successor can use v3 as a stable predecessor. P4-C1 code may start only after
+this RFC is merged to `main` and separately dispatched. P5-A1, P6-C0, P7-A1,
+and later video schema work remain conditional on the actual predecessor merges
+and compatibility fixtures.
 
 ## Evidence
 
@@ -55,12 +62,12 @@ once a writer, reader, migration fixture, downstream schema, or release treats a
 closed union as a predecessor, extending that same schema version creates
 ambiguous compatibility evidence.
 
-## Proposed decisions
+## Approved decisions
 
-| ID | Recommended decision | Alternative not selected |
+| ID | Accepted decision | Alternative not selected |
 | --- | --- | --- |
-| SP1 | Recognize the schema-v3 predecessor mismatch as blocking for P5-A1, P6-C0, P7-A1, and later video schema work until human approval resolves it. | Let downstream schemas choose whichever v3 definition is convenient. |
-| SP2 | Choose option A: treat the missing YAML/table/array schema-v3 contracts as a Phase 4 code defect and define correction gate P4-C1 before schema v4. | Treat current JSON-only code as the complete v3 contract without amending accepted RFCs. |
+| SP1 | Recognize the schema-v3 predecessor mismatch as blocking for P5-A1, P6-C0, P7-A1, and later video schema work until P4-C1 or an explicitly accepted successor resolution merges. | Let downstream schemas choose whichever v3 definition is convenient. |
+| SP2 | Choose Option A: treat the missing YAML/table/array schema-v3 contracts as a Phase 4 code defect and define correction gate P4-C1 before schema v4. | Treat current JSON-only code as the complete v3 contract without amending accepted RFCs. |
 | SP3 | Keep the accepted global allocation: v3 structured data, v4 image, v5 source/PDF, v6 audio, and a later video successor. | Renumber accepted image/source/PDF/audio allocations because P4-A1 shipped an incomplete v3 surface. |
 | SP4 | State that a closed union may not be extended after it has shipped as public release evidence or after a successor has depended on it; before release, P4-C1 may correct the incomplete v3 implementation to match accepted RFC 0006. | Allow same-version closed-union additions whenever a later gate wants them. |
 | SP5 | Require downstream predecessor fixtures to prove the corrected v3 union before schema-v4, schema-v5, or schema-v6 writer fixtures are accepted. | Use design acceptance alone as predecessor compatibility evidence. |
@@ -78,7 +85,7 @@ schema-v3 model, serializer, reader, migration, and fixture surface for
 only makes the v3 closed union match the accepted contract so later gates have
 one predecessor.
 
-This is the recommended option because it preserves already accepted schema
+This accepted option preserves already accepted schema
 allocations and keeps RFC 0006's structured-data contract intact. The
 compatibility cost is still real: v3 fixtures already on `main` must be
 expanded and revalidated before any v4/v5/v6 fixtures depend on them. The
@@ -96,7 +103,7 @@ new structured-data successor, but either choice changes the predecessor graph
 for RFC 0007, RFC 0008, and RFC 0009.
 
 Because the project is unreleased, option B is technically possible. It is not
-recommended unless humans decide the accepted RFC 0006 contract was too broad.
+selected unless humans later decide the accepted RFC 0006 contract was too broad.
 It requires explicit migration notes, updated RFC 0006 status text, amended
 Phase 5/6/7 predecessor language, and compatibility tests proving that old
 pre-release v3 JSON fixtures remain valid while the removed YAML/table/array
@@ -112,12 +119,12 @@ both `schema_version` and extension membership to know what built-in spec and
 change names are legal.
 
 This option is coherent only if the project deliberately moves away from
-schema-versioned closed unions. It is not recommended for the current
+schema-versioned closed unions. It is not selected for the current
 pre-release codebase.
 
 ## P4-C1 correction gate
 
-If option A is accepted, P4-C1 is the required correction gate before any schema
+Because Option A is accepted, P4-C1 is the required correction gate before any schema
 v4/v5/v6 implementation gate:
 
 1. `fix(core): complete schema-v3 structured contract models`
@@ -125,7 +132,7 @@ v4/v5/v6 implementation gate:
 3. `test(core): add schema-v3 YAML table array contract fixtures`
 4. `docs(rfc): record schema-v3 predecessor correction evidence`
 
-Gate: independently authorized from updated `main`; no YAML, table, or array
+Gate: separately authorized from updated `main` after this RFC merges; no YAML, table, or array
 comparator behavior is implemented; no CLI route, detector, plugin SDK,
 artifact, or renderer feature is added; `git diff --check`, formatting, lint,
 strict type checking, complete tests, schema-v1/v2/v3 compatibility fixtures,
@@ -135,11 +142,11 @@ this RFC.
 
 ## P6-C0 contract amendment
 
-P6-C0 remains blocked even after the v3 predecessor decision unless the
-following public contract details are accepted. These are proposed decision IDs
-for the Phase 6 amendment, not implementation authority.
+P6-C0 remains conditional on P4-C1 and predecessor compatibility fixtures. The
+following public contract details are accepted as Phase 6 contract decisions,
+not implementation authority.
 
-| ID | Proposed decision | Alternative not selected |
+| ID | Accepted decision | Alternative not selected |
 | --- | --- | --- |
 | P6C0-1 | Represent source `lexical_text` differences with a source-specific change kind that embeds RFC 0002 text ranges and also records source coordinate context; do not reuse bare `TextHunk` as a source-code change. | Make lexical source output indistinguishable from plain text output. |
 | P6C0-2 | Represent PDF binary differences with a PDF-specific binary-span change discriminator that records PDF document identity plus zero-based half-open byte ranges; do not reuse bare `BinarySpan` without a PDF discriminator. | Let PDF binary view produce generic binary changes that renderers cannot distinguish from ordinary binary comparison. |
@@ -152,11 +159,12 @@ for the Phase 6 amendment, not implementation authority.
 | P6C0-9 | Define fact presence invariants: every selected successful view emits its required facts, metrics, summaries, resources, and transformations; every unselected view is absent or explicitly null as specified; failed or unavailable views do not fabricate empty facts. | Permit partial facts without a schema-level invariant. |
 | P6C0-10 | Keep P6-C0 models/serialization only: public `compare()` and CLI behavior for source/PDF remain unavailable until P6-S1 or P6-P1a. P6-C0 fixtures may construct unavailable outcomes directly for reader/writer validation but must not expose a runnable source/PDF comparator route. | Add `compare()` behavior that returns unavailable for source/PDF during P6-C0. |
 
-### Proposed schema-v5 public shapes
+### Accepted schema-v5 public shapes for future P6-C0
 
-These shapes are part of the Proposed amendment. They are intentionally exact
-enough for a later P6-C0 implementation review, but they remain unauthorized
-until this RFC or a successor is Accepted.
+These shapes are accepted for the future P6-C0 implementation review, but they
+do not authorize implementation. P6-C0 may start only after this RFC is merged,
+P4-C1 and predecessor schema fixtures are present on `main`, and P6-C0 receives
+separate implementation authorization.
 
 Source lexical changes use the existing schema-v5 closed-union member
 `kind="source_code_change"` with lexical discriminator
@@ -230,7 +238,7 @@ after present coordinates.
 ### Digest framing and vectors
 
 Schema-v5 preserves RFC 0008's accepted evidence-digest framing. Changing this
-frame is a separate human decision and is not recommended by this proposal.
+frame would require a separate human decision and is not selected here.
 The frame is:
 
 ```text
@@ -300,7 +308,7 @@ P6-C0 must preserve these accepted RFC 0008 names exactly:
   `max_view_peak_concurrent_worker_processes`,
   `max_view_total_worker_processes_spawned`.
 
-RFC 0010 proposes only these missing stable IDs:
+RFC 0010 accepts only these missing stable IDs beyond RFC 0008:
 
 - implementation comparator IDs: `builtin.source.lexical_text.v1`,
   `builtin.source.syntax_tree.v1`, `builtin.pdf.binary.v1`,
@@ -379,24 +387,26 @@ Any accepted resolution must add tests for:
   summaries, metrics, problem details, digest vectors, and coordinate examples;
 - proof that P6-C0 does not add public `compare()` or CLI source/PDF behavior.
 
-If option B or C is accepted instead of option A, the migration tests must also
-prove that the removed or relocated YAML/table/array v3 names are rejected with
-a stable problem and that successor allocations are documented before code.
+Options B and C were not selected. If a future RFC supersedes Option A, its
+migration tests must also prove that removed or relocated YAML/table/array v3
+names are rejected with a stable problem and that successor allocations are
+documented before code.
 
-## Required human decisions
+## Accepted resolution and remaining authorization
 
-Human reviewers must decide:
+Human reviewers accepted:
 
-1. Is accepted RFC 0006 still the desired schema-v3 contract?
-2. Should P4-C1 correct current code to match RFC 0006 before schema v4, or
-   should RFC 0006 be amended to JSON-only v3?
-3. May pre-release schema-v3 fixtures be expanded before any successor depends
-   on them, and where is the no-later-extension line drawn?
-4. Are the global allocations v4 image, v5 source/PDF, v6 audio, and later
-   video successor still correct?
-5. Are P6C0-1 through P6C0-10 the right contract decisions before P6-C0
-   implementation starts?
+1. RFC 0006 remains the desired schema-v3 contract.
+2. P4-C1 must correct current code to match RFC 0006 before schema v4.
+3. Pre-release schema-v3 fixtures may be expanded only before any successor
+   depends on them and before release; after P4-C1 predecessor fixtures are
+   consumed by v4/v5/v6, v3 closed-union membership is frozen.
+4. The global allocations v4 image, v5 source/PDF, v6 audio, and later video
+   successor remain correct.
+5. P6C0-1 through P6C0-10 are accepted contract decisions before P6-C0
+   implementation starts.
 
-Until those decisions are accepted, this RFC is only a proposal and no
-downstream schema implementation should treat the current v3 predecessor as
-settled.
+This accepted RFC still does not authorize code. P4-C1 implementation requires
+a separate dispatch after this RFC is merged. P5-A1, P6-C0, P7-A1, and later
+video schema implementation remain blocked until their actual predecessor
+merges and compatibility fixtures are present on `main`.

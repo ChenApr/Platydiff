@@ -223,9 +223,10 @@ semantics、JSON Pointer alignment、typed structured change 与确定性 eviden
 不会扩展 text/binary automatic detection 或 SDK v1.1。
 
 [RFC 0010](rfcs/0010-schema-predecessor-and-phase6-contract-amendment_zh.md) 是一个
-Proposed amendment，记录已接受 RFC 0006 schema-v3 closed union 与当前 `main` 上 JSON-only
-schema-v3 surface 之间的不一致。它建议在任何 schema-v4、schema-v5 或 schema-v6 实现把 v3
-视为稳定前驱前，先设置 Phase 4 correction gate。在被接受前，它不是实现授权。
+Accepted amendment，解决已接受 RFC 0006 schema-v3 closed union 与当前 `main` 上 JSON-only
+schema-v3 surface 之间的不一致。它选择 Option A/P4-C1，作为任何 schema-v4、schema-v5 或
+schema-v6 实现把 v3 视为稳定前驱前的 Phase 4 correction gate。RFC 0010 只授权文档；
+P4-C1 code 仍需在 RFC 0010 合并后单独派发。
 
 语法相同不等于运行语义相同。AST 比较需要明确其解析器版本、错误恢复策略和宏/预处理边界。
 
@@ -293,7 +294,7 @@ Phase 5 图片契约已在 [RFC 0007](rfcs/0007-image-comparison_zh.md) 中接�
 且必须先重新验证实际合并的 schema-v3 前驱。下列其他模态与 renderer 仍是计划能力。
 Phase 6 source/PDF 契约已在 [RFC 0008](rfcs/0008-source-code-and-pdf-comparison_zh.md)
 中接受；schema-v5 allocation 已接受，但仍需要 implementation、compatibility fixture，以及
-[RFC 0010](rfcs/0010-schema-predecessor-and-phase6-contract-amendment_zh.md) 中提出的
+[RFC 0010](rfcs/0010-schema-predecessor-and-phase6-contract-amendment_zh.md) 中接受的
 P6-C0 contract-gap decision。Phase 7 audio
 契约和 video roadmap direction 已在 [RFC 0009](rfcs/0009-audio-and-video-comparison_zh.md) 中接受；
 它只为 audio 接受 schema v6，video 需等待后续 backend/worker amendment 与下一个 successor。

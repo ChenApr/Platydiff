@@ -8,6 +8,8 @@
 - Approved decisions: P7X1-P7X8, A1-A7; V1-V6 roadmap-only
 - Owners: Platydiff maintainers
 - Implementation owner: unassigned pending separate implementation authorization
+- Predecessor amendment: RFC 0010 accepts Option A/P4-C1 before P7-A1 may treat
+  schema v3 as a stable predecessor
 
 ## Summary and authorization boundary
 

@@ -2,22 +2,27 @@
 
 [English documentation](0010-schema-predecessor-and-phase6-contract-amendment.md)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-10
+- Accepted: 2026-09-10
+- Approved decisions: SP1-SP6; Option A/P4-C1; P6C0-1-P6C0-10
 - Owners: Platydiff 维护者
 - Implementation owner: 尚未指派，等待人工批准
 
 ## 摘要与授权边界
 
-本 RFC 是一个 cross-RFC 修订提案，用于处理在 Phase 5、Phase 6 或 Phase 7 schema
-实现开始前发现的 schema 前驱矛盾。它只提出决策，不把任何决策标记为 Accepted，
-不授权代码，不改变 public schema 行为，也不启动 structured data、image、source-code、PDF、
+本 RFC 是已接受的 cross-RFC amendment，用于处理在 Phase 5、Phase 6 或 Phase 7 schema
+实现开始前发现的 schema 前驱矛盾。它接受 SP1-SP6，选择 Option A/P4-C1，并接受
+P6C0-1 到 P6C0-10 作为 Phase 6 contract decision。它只授权本文档接受 PR，不授权代码、
+依赖变更、public schema implementation，也不启动 structured data、image、source-code、PDF、
 audio、video、SDK v2、backend worker、artifact、automatic detection 或 UI 实现。
 
-推荐决策是：将 `main` 上缺失的 YAML、table、array schema-v3 contract surface 视为
+已接受决策是：将 `main` 上缺失的 YAML、table、array schema-v3 contract surface 视为
 Phase 4 代码缺陷，而不是把它当作 RFC 0006 已接受契约错误的证据。必须先落地一个
 correction gate，然后 schema v4 image、schema v5 source/PDF、schema v6 audio 或后续
-video successor 才能把 v3 当作稳定前驱。
+video successor 才能把 v3 当作稳定前驱。P4-C1 code 只有在本 RFC 合并到 `main` 并被单独
+派发后才能启动。P5-A1、P6-C0、P7-A1 与后续 video schema work 仍取决于实际 predecessor
+merge 与 compatibility fixture。
 
 ## 证据
 
@@ -46,12 +51,12 @@ schema v5，并把完整 RFC 0006 v3 closed union 作为前驱。因此 P6-C0 �
 closed-union drift 无害：一旦 writer、reader、migration fixture、下游 schema 或 release
 把某个 closed union 当作前驱，再在同一 schema version 中扩展它就会制造含糊的兼容性证据。
 
-## 提议决策
+## 已批准决策
 
-| ID | 推荐决策 | 未选择的替代方案 |
+| ID | 已接受决策 | 未选择的替代方案 |
 | --- | --- | --- |
-| SP1 | 承认 schema-v3 前驱不一致会阻塞 P5-A1、P6-C0、P7-A1 与后续 video schema 工作，直到人工批准解决方案。 | 让下游 schema 选择方便的 v3 定义。 |
-| SP2 | 选择方案 A：把缺失的 YAML/table/array schema-v3 contract 当作 Phase 4 代码缺陷，并在 schema v4 前定义 correction gate P4-C1。 | 不修订已接受 RFC，就把当前 JSON-only 代码当作完整 v3 契约。 |
+| SP1 | 承认 schema-v3 前驱不一致会阻塞 P5-A1、P6-C0、P7-A1 与后续 video schema 工作，直到 P4-C1 或显式接受的后继解决方案合并。 | 让下游 schema 选择方便的 v3 定义。 |
+| SP2 | 选择 Option A：把缺失的 YAML/table/array schema-v3 contract 当作 Phase 4 代码缺陷，并在 schema v4 前定义 correction gate P4-C1。 | 不修订已接受 RFC，就把当前 JSON-only 代码当作完整 v3 契约。 |
 | SP3 | 保持已接受的全局 allocation：v3 structured data、v4 image、v5 source/PDF、v6 audio，以及后续 video successor。 | 因为 P4-A1 合入了不完整 v3 surface 而重新编号已接受的 image/source/PDF/audio allocation。 |
 | SP4 | 明确 closed union 在作为 public release 证据发布后，或在 successor 已依赖它后，不得继续扩展；发布前 P4-C1 可以修正不完整 v3 implementation，使其匹配已接受 RFC 0006。 | 允许后续 gate 需要时随意向同一 schema version 增加 closed-union 成员。 |
 | SP5 | 要求下游 predecessor fixture 在 schema-v4、schema-v5 或 schema-v6 writer fixture 被接受前证明已修正的 v3 union。 | 只把设计接受当作 predecessor compatibility 证据。 |
@@ -67,7 +72,7 @@ P4-C1 添加缺失的 public schema-v3 model、serializer、reader、migration �
 P4-C1 不实现 YAML、table 或 array comparator；它只让 v3 closed union 匹配已接受契约，
 使后续 gate 只有一个前驱。
 
-这是推荐方案，因为它保留已经接受的 schema allocation，也保持 RFC 0006 的 structured-data
+该已接受方案保留已经接受的 schema allocation，也保持 RFC 0006 的 structured-data
 契约完整。兼容性成本仍然存在：`main` 上已有的 v3 fixture 必须先扩展并重新验证，之后
 v4/v5/v6 fixture 才能依赖它们。项目尚未发布，因此这是 pre-release 缺陷修正，而不是
 public breaking change。
@@ -81,7 +86,7 @@ audio/video 之后，也可以组合进新的 structured-data successor，但任
 RFC 0007、RFC 0008、RFC 0009 的前驱图。
 
 因为项目尚未发布，方案 B 在技术上可行。但除非人工确认 RFC 0006 已接受契约过宽，否则
-不推荐。它需要明确 migration note、更新 RFC 0006 status text、修订 Phase 5/6/7 predecessor
+不选择。它需要明确 migration note、更新 RFC 0006 status text、修订 Phase 5/6/7 predecessor
 语言，并用兼容性测试证明旧 pre-release v3 JSON fixture 仍有效，而移除的 YAML/table/array
 名称不会被 v3 接受。
 
@@ -93,11 +98,11 @@ contract revision 或 capability-extension namespace。它避免重编号，却�
 `schema_version` 与 extension membership 才能判断哪些 built-in spec 与 change 名称合法。
 
 只有当项目有意离开 schema-versioned closed union 时，方案 C 才是连贯的。对于当前
-pre-release codebase，不推荐该方案。
+pre-release codebase，未选择该方案。
 
 ## P4-C1 correction gate
 
-如果方案 A 被接受，P4-C1 是任何 schema v4/v5/v6 implementation gate 前必须完成的
+因为 Option A 已接受，P4-C1 是任何 schema v4/v5/v6 implementation gate 前必须完成的
 correction gate：
 
 1. `fix(core): complete schema-v3 structured contract models`
@@ -105,7 +110,7 @@ correction gate：
 3. `test(core): add schema-v3 YAML table array contract fixtures`
 4. `docs(rfc): record schema-v3 predecessor correction evidence`
 
-Gate：从更新后的 `main` 独立授权；不实现 YAML、table 或 array comparator 行为；不新增 CLI
+Gate：本 RFC 合并后仍需从更新后的 `main` 单独授权；不实现 YAML、table 或 array comparator 行为；不新增 CLI
 route、detector、plugin SDK、artifact 或 renderer feature；`git diff --check`、formatting、lint、
 strict type checking、完整测试、schema-v1/v2/v3 compatibility fixture、unknown-kind rejection
 与 public-export check 全部通过。P5-A1、P6-C0、P7-A1 与后续 video schema gate 必须等待
@@ -113,10 +118,10 @@ P4-C1，或者等待本 RFC 中另一个方案被接受。
 
 ## P6-C0 契约修订
 
-即使 v3 前驱决策已经解决，P6-C0 仍会被下列 public contract 细节阻塞。这些是 Phase 6
-修订的提议决策 ID，不是实现授权。
+P6-C0 仍取决于 P4-C1 与 predecessor compatibility fixture。下列 public contract 细节已作为
+Phase 6 contract decision 接受，但不是实现授权。
 
-| ID | 提议决策 | 未选择的替代方案 |
+| ID | 已接受决策 | 未选择的替代方案 |
 | --- | --- | --- |
 | P6C0-1 | 用 source-specific change kind 表示 source `lexical_text` difference；它嵌入 RFC 0002 text range，并记录 source coordinate context；不要把裸 `TextHunk` 直接作为 source-code change。 | 让 lexical source output 与普通 text output 无法区分。 |
 | P6C0-2 | 用 PDF-specific binary-span change discriminator 表示 PDF binary difference，记录 PDF document identity 与 zero-based half-open byte range；不要在没有 PDF discriminator 时复用裸 `BinarySpan`。 | 让 PDF binary view 产出 renderer 无法与普通 binary comparison 区分的 generic binary change。 |
@@ -129,10 +134,11 @@ P4-C1，或者等待本 RFC 中另一个方案被接受。
 | P6C0-9 | 定义 fact presence invariant：每个 selected 且 successful 的 view 都发出其 required fact、metric、summary、resource 与 transformation；每个 unselected view 按规定 absent 或显式 null；failed 或 unavailable view 不伪造空 fact。 | 允许没有 schema-level invariant 的 partial fact。 |
 | P6C0-10 | P6-C0 保持 models/serialization only：source/PDF 的 public `compare()` 与 CLI 行为直到 P6-S1 或 P6-P1a 才可用。P6-C0 fixture 可以直接构造 unavailable outcome 用于 reader/writer validation，但不得暴露可运行 source/PDF comparator route。 | 在 P6-C0 添加返回 unavailable 的 source/PDF `compare()` 行为。 |
 
-### 提议的 schema-v5 public shape
+### 未来 P6-C0 的已接受 schema-v5 public shape
 
-这些 shape 属于 Proposed amendment。它们刻意具体到足以支持后续 P6-C0 implementation review，
-但在本 RFC 或后继 RFC 被 Accepted 前仍未授权。
+这些 shape 已作为 future P6-C0 implementation review 的契约被接受，但不授权实现。P6-C0 只有在
+本 RFC 已合并、P4-C1 与 predecessor schema fixture 已存在于 `main`，并且 P6-C0 获得单独实现
+授权后才能启动。
 
 Source lexical change 使用既有 schema-v5 closed-union member
 `kind="source_code_change"`，并使用 lexical discriminator
@@ -198,8 +204,8 @@ Canonical view ordering 是 `binary`、`extracted_text`、`objects_metadata`、`
 
 ### Digest framing 与 vector
 
-Schema-v5 保留 RFC 0008 已接受的 evidence-digest framing。改变该 frame 是单独的人工决策，
-且本提案不推荐。Frame 为：
+Schema-v5 保留 RFC 0008 已接受的 evidence-digest framing。改变该 frame 需要单独人工决策，
+且此处未选择。Frame 为：
 
 ```text
 SHA256(UTF8("platydiff/v5/" + domain) || 0x00 || U64BE(payload_length) || payload)
@@ -264,7 +270,7 @@ P6-C0 必须逐字保留这些已接受 RFC 0008 名称：
   `max_view_peak_concurrent_worker_processes`、
   `max_view_total_worker_processes_spawned`。
 
-RFC 0010 只提议下列缺失 stable ID：
+RFC 0010 只接受下列超出 RFC 0008 的缺失 stable ID：
 
 - implementation comparator ID：`builtin.source.lexical_text.v1`、
   `builtin.source.syntax_tree.v1`、`builtin.pdf.binary.v1`、
@@ -333,20 +339,21 @@ source/PDF `compare()` 或 CLI 行为的内容。
   与 coordinate example；
 - 证明 P6-C0 不新增 public `compare()` 或 CLI source/PDF 行为。
 
-如果接受方案 B 或 C 而不是方案 A，migration test 还必须证明被移除或迁移的 YAML/table/array
-v3 名称会以稳定 problem 被拒绝，并且 successor allocation 在代码前已写入文档。
+Option B 与 C 未被选择。如果后续 RFC supersede Option A，其 migration test 还必须证明被移除
+或迁移的 YAML/table/array v3 名称会以稳定 problem 被拒绝，并且 successor allocation 在代码前
+已写入文档。
 
-## 需要人工决策
+## 已接受解决方案与剩余授权
 
-人工 reviewer 必须决定：
+人工 reviewer 已接受：
 
-1. 已接受 RFC 0006 是否仍是期望的 schema-v3 契约？
-2. P4-C1 是否应在 schema v4 前修正当前代码以匹配 RFC 0006，或者 RFC 0006 应被修订为
-   JSON-only v3？
-3. 在任何 successor 依赖它们之前，是否允许扩展 pre-release schema-v3 fixture，以及
-   no-later-extension 边界在哪里？
-4. v4 image、v5 source/PDF、v6 audio 与后续 video successor 的全局 allocation 是否仍正确？
-5. P6-C0 implementation 前，P6C0-1 到 P6C0-10 是否是正确的契约决策？
+1. RFC 0006 仍是期望的 schema-v3 contract。
+2. P4-C1 必须在 schema v4 前修正当前代码以匹配 RFC 0006。
+3. Pre-release schema-v3 fixture 只能在任何 successor 依赖它们前、且 release 前扩展；
+   P4-C1 predecessor fixture 被 v4/v5/v6 消费后，v3 closed-union membership 冻结。
+4. v4 image、v5 source/PDF、v6 audio 与后续 video successor 的全局 allocation 仍正确。
+5. P6C0-1 到 P6C0-10 已作为 P6-C0 implementation 前的 contract decision 接受。
 
-在这些决策被接受前，本 RFC 只是提案，任何下游 schema implementation 都不应把当前 v3
-前驱视为已定。
+本已接受 RFC 仍不授权代码。P4-C1 implementation 需要在本 RFC 合并后单独派发。P5-A1、
+P6-C0、P7-A1 与后续 video schema implementation 仍被阻塞，直到其实际 predecessor merge 与
+compatibility fixture 已存在于 `main`。
