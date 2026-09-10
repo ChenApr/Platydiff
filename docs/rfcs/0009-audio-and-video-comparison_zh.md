@@ -7,7 +7,11 @@
 - Accepted: 2026-09-10
 - 已批准决策：P7X1-P7X8、A1-A7；V1-V6 仅为路线方向
 - Owners: Platydiff 维护者
-- Implementation owner: 尚未指派，等待单独的实现授权
+- Implementation owner：尚未指派；已记录条件授权，coordinator 只有在实际 predecessor
+  merge gate 通过后才能派发
+- Predecessor amendment：RFC 0010 记录 P7-A1 的条件授权；只有 RFC 0010、P4-C1/schema-v3、
+  P5-A1/schema-v4、P6-C0/schema-v5 与 compatibility fixture 都合并到 `main` 后才能派发；
+  P7-A1 不会自动启动
 
 ## 摘要与授权边界
 
@@ -170,9 +174,9 @@ source view、lifecycle stage、backend role、sandboxing、artifact authority�
 | 既有 `compare()` 与默认 CLI | v1 | text、binary、解析到二者的 auto | 无 | 既有 byte-stable fixture 继续有效。 |
 | 既有显式 `PluginHost` | v2 | text、binary、解析到二者的 auto | SDK v1.1 | 既有 v2 fixture 与 receipt 继续有效。 |
 | 已合并 Phase 4 P4-A1 path | v3 | 显式 JSON | 无 | 实际 v3 JSON model、migration 与 fixture 是前驱；YAML、table 与 array 仍是后续 gate。 |
-| 已接受 Phase 5 image path | v4 | 显式 static PNG image | 单独授权前无 | 媒体不得复用 v4，也不得要求 image 实现改变。 |
-| 已接受 Phase 6 source/PDF path | v5 | source-code/PDF | 单独授权前无 | Audio v6 implementation 等待已合并 v5 reader、writer、upgrader 与 fixture。 |
-| 已接受 Phase 7 audio path | v6，依赖 v5 predecessor availability | 显式 audio | 首批门禁无 | 单独实现授权后产生 validated audio spec、change、metric、transformation 与 failure。 |
+| 已接受 Phase 5 image path | v4 | 显式 static PNG image | 显式派发前无 | 媒体不得复用 v4，也不得要求 image 实现改变。 |
+| 已接受 Phase 6 source/PDF path | v5 | source-code/PDF | 显式派发前无 | Audio v6 implementation 等待已合并 v5 reader、writer、upgrader 与 fixture。 |
+| 已接受 Phase 7 audio path | v6，依赖 v5 predecessor availability | 显式 audio | 首批门禁无 | 在已记录条件授权且 coordinator 从实际 predecessor merge gate 派发后，产生 validated audio spec、change、metric、transformation 与 failure。 |
 | 已接受 Phase 7 video roadmap path | v6 之后的下一个全局 successor | 显式 video | 首批门禁无 | 后续 amendment 冻结 backend 与 worker contract 前保持 pending；video type 不加入 audio v6。 |
 | 对 media-looking bytes 使用既有 auto | v1 | 仅 text 或 binary | 仅既有规则 | detection evidence 与 result 不变。 |
 | 未来 SDK v2 或 media auto | 未指定 | 未指定 | 未指定 | 需要后继 RFC。 |
@@ -812,9 +816,10 @@ thumbnail、打开文件、获取 remote resource 或重新解释 relation/verdi
 
 ## 交付门禁、commit 与测试
 
-以下 gate 是已接受的交付计划，不是实现授权。P7-A1、P7-A2 与 P7-A3 需要基于更新后的
-`main` 获得单独人工授权。P7-A1 尤其必须在实现已接受 audio schema-v6 allocation 前，重新验证
-实际合并的 v3/v4/v5 前驱链。P7-V1、P7-V2 与 P7-V3 只是已接受的 roadmap direction，并在后续
+以下 gate 是已接受的交付计划，本身不启动代码。P7-A1 已记录条件授权；coordinator 须等待
+RFC 0010、P4-C1/schema-v3、P5-A1/schema-v4、P6-C0/schema-v5 与 compatibility fixture 都合并到
+`main` 后才能派发。P7-A1 尤其必须在实现已接受 audio schema-v6 allocation 前，重新验证实际
+合并的 v3/v4/v5 前驱链。P7-V1、P7-V2 与 P7-V3 只是已接受的 roadmap direction，并在后续
 video backend/worker amendment 接受下一个 schema successor 前保持 pending。
 
 ### P7-A1：audio schema 与 exact decoded PCM relation

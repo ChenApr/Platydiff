@@ -222,10 +222,20 @@ semantics、JSON Pointer alignment、typed structured change 与确定性 eviden
 受约束 YAML 1.2 contract 仍在未实现的 P4-A2 门禁之后。JSON 仍只允许显式、内建比较，
 不会扩展 text/binary automatic detection 或 SDK v1.1。
 
+[RFC 0010](rfcs/0010-schema-predecessor-and-phase6-contract-amendment_zh.md) 是一个
+Accepted amendment，解决已接受 RFC 0006 schema-v3 closed union 与当前 `main` 上 JSON-only
+schema-v3 surface 之间的不一致。它选择 Option A/P4-C1，作为任何 schema-v4、schema-v5 或
+schema-v6 实现把 v3 视为稳定前驱前的 Phase 4 correction gate。RFC 0010 acceptance 本身
+不启动代码。已记录条件人工授权，coordinator 只有在 RFC 0010 合并且指定 merge gate 通过后
+才能派发。RFC 0010 还记录了 P4C1-1-P4C1-5 reader 与 fixture clarification；这些
+clarification 已于 2026-09-10 获批。P4-C1 仍须等待 RFC 0010 merge 与 coordinator dispatch。
+
 语法相同不等于运行语义相同。AST 比较需要明确其解析器版本、错误恢复策略和宏/预处理边界。
 
 [RFC 0008](rfcs/0008-source-code-and-pdf-comparison_zh.md) 接受显式源代码比较契约与
-独立授权的 Phase 6 门禁。它仍未实现，写代码前需要单独 gate authorization。
+独立授权的 Phase 6 门禁。它仍未实现；RFC 0010 记录 P6-C0 的条件授权，但 coordinator
+只有在 RFC 0010、P4-C1、P5-A1/schema-v4 与 compatibility fixture 都合并到 `main` 后才能
+派发。
 
 ### 6.4 图片
 
@@ -244,7 +254,9 @@ static 8-bit PNG 的 decoded sample；encoded identity 继续由 binary comparat
 
 [RFC 0009](rfcs/0009-audio-and-video-comparison_zh.md) 接受 audio 的显式契约：
 encoded byte、decoded sample、waveform/numeric、spectral 与 perceptual relation，并接受
-audio-only schema v6。它仍未实现，写代码前需要单独 gate authorization。
+audio-only schema v6。它仍未实现；RFC 0010 记录 P7-A1 的条件授权，但 coordinator 只有在
+实际 schema-v3、schema-v4、schema-v5 与 compatibility fixture 前驱都合并到 `main` 后
+才能派发。
 
 ### 6.6 视频
 
@@ -260,8 +272,9 @@ successor。
 PDF 同时包含文本、绘制指令、字体、图片和页面布局。应提供三种可组合视角：提取文本比较、PDF 对象/元数据比较、页面渲染后的图片比较。不同生成器可能产生完全不同的内部对象但视觉页面一致，因此不能只做二进制 Diff。
 
 [RFC 0008](rfcs/0008-source-code-and-pdf-comparison_zh.md) 接受 PDF 的显式 view
-契约：binary、extracted text、objects/metadata 与 rendered pages。它仍未实现，写代码前需要
-单独 gate authorization。
+契约：binary、extracted text、objects/metadata 与 rendered pages。它仍未实现；RFC 0010
+记录 P6-C0 的条件授权，但 coordinator 只有在 RFC 0010、P4-C1、P5-A1/schema-v4 与
+compatibility fixture 都合并到 `main` 后才能派发。
 
 ### 6.8 表格、数组和统计数据
 
@@ -287,7 +300,9 @@ Phase 1 至 Phase 3 以及 Phase 4 门禁 P4-A1 包含 Python 包、schema-v1/v2
 Phase 5 图片契约已在 [RFC 0007](rfcs/0007-image-comparison_zh.md) 中接受；接受不构成实现授权，
 且必须先重新验证实际合并的 schema-v3 前驱。下列其他模态与 renderer 仍是计划能力。
 Phase 6 source/PDF 契约已在 [RFC 0008](rfcs/0008-source-code-and-pdf-comparison_zh.md)
-中接受；schema-v5 allocation 已接受，但仍需要 implementation 与 compatibility fixture。Phase 7 audio
+中接受；schema-v5 allocation 已接受，但仍需要 implementation、compatibility fixture，以及
+[RFC 0010](rfcs/0010-schema-predecessor-and-phase6-contract-amendment_zh.md) 中接受的
+P6-C0 contract-gap decision。Phase 7 audio
 契约和 video roadmap direction 已在 [RFC 0009](rfcs/0009-audio-and-video-comparison_zh.md) 中接受；
 它只为 audio 接受 schema v6，video 需等待后续 backend/worker amendment 与下一个 successor。
 它们尚未实现；即使 design 与 backend research 并发推进，public schema merge 也必须遵守前驱顺序。
