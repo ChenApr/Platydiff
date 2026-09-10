@@ -28,21 +28,24 @@ amendment 在被接受后均已 merge。
 | --- | --- | --- |
 | P7A-PC1 | 冻结 equal result 与 complete decoded-audio fact 的 public carrier field。 | 让 renderer 从 backend-local metadata 推断 equal audio identity。 |
 | P7A-PC2 | 冻结 sample 与 encoded-byte change 的连续分组规则，包括 `change_count`、`samples_changed` 与 `bytes_changed` 计数。 | 在没有稳定 aggregation rule 的情况下逐 sample 或逐 byte run 发出 change。 |
-| P7A-PC3 | 冻结 `max_compare_work`、`max_packets`、`max_decoded_bytes` 与 `max_resident_bytes` 的 resource limit name、range 和 unit，并区分 single-input 与 dual-input accounting。 | 使用 backend-dependent 或 host-dependent resource name 和 unit。 |
+| P7A-PC3 | 冻结每个 accepted `AudioResourceLimits` field 的 scope 与 unit clarification，同时保留 accepted name、default 和 zero-budget semantic。 | 用更小的 backend-specific limit set 取代 accepted resource object。 |
 | P7A-PC4 | 将 `encoded_bytes` 定义为 raw byte relation：绕过 WAV probe/decode，接受任意 byte stream，并允许 limit value `0` 表示不得比较任何 byte。 | 在 encoded-byte comparison 前要求 WAV valid。 |
 | P7A-PC5 | 冻结 timestamp、delay 与 padding chunk 识别清单，并要求所有用户可见解释只出现在 `problem.message`；结构化值只出现在 `problem.details`。 | 在 detail value 中重复解释性 prose。 |
 | P7A-PC6 | 保持 schema-v6 exclusively audio，并保持 video roadmap-only。 | 让本 closure 分配 video schema membership。 |
 
 ## Equal result carrier
 
-P7-A1 audio 的 equal result 仍是普通 schema-v6 `DiffResult`。Audio-specific equality 的
-public carrier 为：
+P7-A1 audio 的 equal result 仍是普通 schema-v6 `DiffResult`。RFC 0012 不替换 accepted
+schema-v6 `DiffResult` 或 `MediaViewEvaluation` hierarchy。Audio-specific equality 的 public
+carrier 是 accepted RFC 0009/RFC 0011 envelope：
 
 | Field | Required value |
 | --- | --- |
 | `schema_version` | `6` |
-| `modality` | `"audio"` |
-| `outcome` | `"equal"` |
+| `relation` | `"equal"` |
+| `verdict` | `"pass"` |
+| `fidelity` | `"full"` |
+| `completeness` | full count 已知后的 producer-side serialization truncation 未发生时为 `"complete"` |
 | `media_evaluations` | selected audio relation evaluation 的有序 list |
 | `changes.change_count` | `0` |
 | `changes.items` | empty list |
@@ -54,22 +57,31 @@ Equal decoded-sample comparison 的第一个 `media_evaluations` entry 为：
 | Field | Required value |
 | --- | --- |
 | `kind` | `"media_view_evaluation"` |
-| `modality` | `"audio"` |
-| `relation` | `"decoded_samples"` |
-| `status` | `"compared"` |
-| `comparison` | `"exact"` |
-| `backend` | `"stdlib_wave_pcm"` |
-| `profile` | `"p7_a1_wav_pcm"` |
-| `stream.index` | default insertion 后为 `null` 或 `0`，并在 provenance 中报告 selected stream `0` |
+| `media_kind` | `"audio"` |
+| `selector` | `"decoded_samples"` |
+| `relation` | `"equal"` |
+| `verdict` | `"pass"` |
+| `fidelity` | `"full"` |
+| `completeness` | `"complete"` |
+| `metric_names` | relation 使用的 metric name 排序 tuple |
+| `policy_rule_ids` | relation 使用的 policy rule ID 排序 tuple |
+| `transformation_ids` | relation 使用的 transformation ID 排序 tuple |
+| `warning_codes` | 除非记录 visible warning，否则为空 tuple |
+| `change_count` | `0` |
+| `failure_stage` | `null` |
+| `failure_code` | `null` |
 
-Complete decoded-audio fact carrier 是 closed object，key order 为：
+Backend、profile 与 `stream.index` 记录在 provenance 和 selected spec field 中，不作为替代
+`MediaViewEvaluation` field。
+
+Complete decoded-audio fact 保留 accepted `AudioFact` closed object。RFC 0012 不向
+`AudioFact` 增加 `source`、array 或 nested object。Key order 保持：
 
 ```text
-name, value, unit, stream_index, coordinate, source
+name, value, unit, stream_index, coordinate
 ```
 
-`source` 是 `"container"`、`"format"`、`"decode"`、`"derived"` 或 `"policy"`。
-Equal decoded-sample result 至少必须携带以下 fact：
+Equal decoded-sample result 至少必须携带以下 accepted `AudioFact` record：
 
 ```text
 container.form
@@ -94,14 +106,16 @@ encoder_padding_samples
 timestamp_origin
 ```
 
-Absent optional timing fact 使用 value `null`、unit `null`，并在 P7-A1 规定该 absence 时使用
-source `"policy"`。Recognized but unsupported metadata 使用 value `"unknown"` 和该 fact 文档化的
-unit。
+Absent optional timing fact 在 P7-A1 规定 absence 时使用 value `null` 和 unit `null`。
+Recognized but unsupported metadata 使用 value `"unknown"` 和该 fact 文档化的 unit。Fact
+provenance 保留在 result provenance 中，不进入 `AudioFact`。
 
 ## Change grouping and counts
 
-`ChangeSet.change_count` 是连续分组之后、renderer truncation 之前 emitted `AudioChange` item 的数量。
-Renderer truncation 可以缩短 `changes.items`，但不得改变 `change_count` 或 metric value。
+`ChangeSet.change_count` 是连续分组之后、producer-side serialization truncation 之前 emitted
+`AudioChange` item 的数量。Renderer 绝不得缩短 `changes.items`、mutate `change_count`，或 mutate
+overall relation/verdict/fidelity/completeness。Truncation 只是 producer serialization policy，并且在
+full count 已知后通过 accepted completeness/truncation metadata 体现。
 
 对于 `decoded_samples`，sample change 按以下字段相同的 maximal continuous run 分组：
 
@@ -110,8 +124,10 @@ relation, operation, stream_index, channel, before_step, after_step
 ```
 
 Replacement run 的 `before_step` 和 `after_step` 都是 `1`；deletion 为 `1` 和 `0`；insertion 为
-`0` 和 `1`。P7-A1 只启用 sample-index alignment，因此 insertion 和 deletion 保留到后续 gate，
-decoded-sample comparison 不得 emit。P7-A1 decoded-sample difference 因此是 `sample_update` run。
+`0` 和 `1`。P7-A1 保留 RFC 0009 的 length-difference semantics：重叠 sample position 上 decoded
+value 不同的部分分组为 `sample_update`；trailing before-only decoded sample 分组为
+`sample_delete`；trailing after-only decoded sample 分组为 `sample_insert`。Insert/delete run 只需要
+accepted RFC 0009 所规定的 present-side coordinate。
 
 对于 `encoded_bytes`，byte change 按以下字段相同的 maximal continuous byte run 分组：
 
@@ -126,7 +142,7 @@ Metric 计数规则：
 
 | Metric | Count rule |
 | --- | --- |
-| `audio.samples_changed` | 所有 channel 上 changed decoded sample position 的总数；grouping 不得改变 total。 |
+| `audio.samples_changed` | 所有 channel 上 changed decoded sample position 的总数；update 计 overlapping changed position，insert 计 after-side sample position，delete 计 before-side sample position。 |
 | `audio.bytes_changed` | changed encoded byte position 的总数；update 算一个 byte position，delete 算一个 before byte，insert 算一个 after byte。 |
 | `audio.samples_compared` | compared decoded sample position 数量乘以 selected channel count。 |
 | `audio.channels_compared` | 到达 comparison 的 selected channel 数量。 |
@@ -135,19 +151,35 @@ Metric 计数规则：
 ## Resource limits
 
 所有 resource limit 都是 non-negative integer。Unknown limit name 非法。Default value 由 schema-v6
-reader 在 comparison 前插入。
+reader 在 comparison 前插入。RFC 0012 不 rename、remove 或 narrow 任何 accepted
+`AudioResourceLimits` field；它只澄清 accepted object 的 accounting scope 与 unit。
 
-| Limit | Unit | Single-input range | Dual-input accounting | P7-A1 default |
-| --- | --- | --- | --- | --- |
-| `max_compare_work` | abstract work units | `0..2^63-1` | 两个 input 与 comparison work 的总和 | `100000000` |
-| `max_packets` | packet 或 chunk record | `0..2^31-1` | 从两个 input 读取的 packet/chunk 总和 | `1048576` |
-| `max_decoded_bytes` | decoded PCM bytes | `0..2^63-1` | 两个 input materialized decoded PCM byte 的总和 | `268435456` |
-| `max_resident_bytes` | resident memory bytes | `0..2^63-1` | 整个 comparison 的 simultaneous resident byte peak | `134217728` |
+| Limit | Unit | Accounting scope | P7-A1 default |
+| --- | --- | --- | --- |
+| `max_input_bytes` | source bytes per input | single input | `268435456` |
+| `max_streams` | stream count per input | single input | `32` |
+| `max_duration_seconds` | decoded duration seconds per input | single input | `3600` |
+| `max_sample_rate_hz` | samples per second per stream | single input | `384000` |
+| `max_channels` | channel count per stream | single input | `64` |
+| `max_decoded_samples_per_channel` | decoded samples per channel | single input | `50000000` |
+| `max_total_decoded_bytes` | decoded PCM bytes across both inputs | dual-input sum | `536870912` |
+| `max_resident_buffer_bytes` | simultaneous live decoded/sample buffer bytes | comparison peak | `134217728` |
+| `max_packets` | packet or chunk records read across both inputs | dual-input sum | `1000000` |
+| `max_metadata_entries` | metadata entries per input | single input | `10000` |
+| `max_metadata_value_bytes` | bytes per metadata value | single input | `1048576` |
+| `max_spectral_cells` | spectral cells per selected relation | relation scope | `20000000` |
+| `max_backend_seconds` | wall-clock backend seconds | comparison scope | `30` |
+| `max_stdout_stderr_bytes` | captured backend output bytes | comparison scope | `4194304` |
+| `max_temp_bytes` | temporary file bytes | comparison scope | `536870912` |
+| `max_materialized_bytes` | host-owned snapshot and materialized bytes | comparison scope | `536870912` |
+| `max_compare_work` | abstract comparison work units | comparison scope | `10000000` |
+| `max_change_items` | producer-emitted change items | relation scope | `10000` |
+| `max_change_payload_bytes` | producer-emitted change payload bytes | relation scope | `4194304` |
 
 `max_compare_work=0` 只允许可以用 zero relation work 完成的 comparison：identical empty encoded-byte
 input，或 relation work 开始前的 metadata-only failure。`max_packets=0` 禁止读取任何 packet 或
-WAV chunk record。`max_decoded_bytes=0` 禁止 decode PCM payload byte。`max_resident_bytes=0`
-要求 comparator 在分配 comparison buffer 前失败。
+WAV chunk record。`max_total_decoded_bytes=0` 对 decoded-sample relation 禁止 decode PCM payload
+byte。`max_resident_buffer_bytes=0` 要求 producer 在分配 decoded/sample comparison buffer 前失败。
 
 Limit failure 的 problem detail 使用：
 
@@ -217,23 +249,38 @@ Detail value 不得包含 backend stderr、exception class name、host path、so
 
 ## Canonical vectors
 
-这些 vector 是 acceptance test 的 normative example。它们表示 default insertion 后、renderer
-truncation 前的 canonical JSON fragment。
+这些 vector 是 acceptance test 的 normative example。它们表示 default insertion 后、任何
+producer-side serialization truncation 前的 schema-v6 envelope 或 complete accepted-shape fragment。
 
 ### Vector PC-A：equal empty encoded bytes
 
 ```json
 {
   "schema_version": 6,
-  "modality": "audio",
-  "outcome": "equal",
+  "relation": "equal",
+  "verdict": "pass",
+  "fidelity": "full",
+  "completeness": "complete",
   "media_evaluations": [
     {
       "kind": "media_view_evaluation",
-      "modality": "audio",
-      "relation": "encoded_bytes",
-      "status": "compared",
-      "comparison": "exact"
+      "media_kind": "audio",
+      "selector": "encoded_bytes",
+      "relation": "equal",
+      "verdict": "pass",
+      "fidelity": "full",
+      "completeness": "complete",
+      "metric_names": [
+        "audio.bytes_changed"
+      ],
+      "policy_rule_ids": [
+        "audio.policy.encoded_bytes.v1"
+      ],
+      "transformation_ids": [],
+      "warning_codes": [],
+      "change_count": 0,
+      "failure_stage": null,
+      "failure_code": null
     }
   ],
   "changes": {
@@ -250,28 +297,68 @@ truncation 前的 canonical JSON fragment。
 
 ```json
 {
-  "operation": "sample_update",
-  "before_coordinate": {
-    "stream_index": 0,
-    "channel_index": 0,
-    "channel_label": null,
-    "sample_start": 10,
-    "sample_count": 3,
-    "time_start_seconds": null,
-    "time_duration_seconds": null
-  },
-  "after_coordinate": {
-    "stream_index": 0,
-    "channel_index": 0,
-    "channel_label": null,
-    "sample_start": 10,
-    "sample_count": 3,
-    "time_start_seconds": null,
-    "time_duration_seconds": null
+  "schema_version": 6,
+  "relation": "different",
+  "verdict": "fail",
+  "fidelity": "full",
+  "completeness": "complete",
+  "media_evaluations": [
+    {
+      "kind": "media_view_evaluation",
+      "media_kind": "audio",
+      "selector": "decoded_samples",
+      "relation": "different",
+      "verdict": "fail",
+      "fidelity": "full",
+      "completeness": "complete",
+      "metric_names": [
+        "audio.samples_changed"
+      ],
+      "policy_rule_ids": [
+        "audio.policy.exact_decoded_samples.v1"
+      ],
+      "transformation_ids": [],
+      "warning_codes": [],
+      "change_count": 1,
+      "failure_stage": null,
+      "failure_code": null
+    }
+  ],
+  "changes": {
+    "change_count": 1,
+    "items": [
+      {
+        "kind": "audio_change",
+        "relation": "decoded_samples",
+        "operation": "sample_update",
+        "before_coordinate": {
+          "stream_index": 0,
+          "channel_index": 0,
+          "channel_label": null,
+          "sample_start": 10,
+          "sample_count": 3,
+          "time_start_seconds": null,
+          "time_duration_seconds": null
+        },
+        "after_coordinate": {
+          "stream_index": 0,
+          "channel_index": 0,
+          "channel_label": null,
+          "sample_start": 10,
+          "sample_count": 3,
+          "time_start_seconds": null,
+          "time_duration_seconds": null
+        },
+        "channel": 0,
+        "before_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        "after_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
+        "before_fact": null,
+        "after_fact": null
+      }
+    ]
   },
   "metrics": {
-    "audio.samples_changed": 3,
-    "change_count": 1
+    "audio.samples_changed": 3
   }
 }
 ```
@@ -280,23 +367,62 @@ truncation 前的 canonical JSON fragment。
 
 ```json
 {
-  "relation": "encoded_bytes",
-  "operation": "encoded_byte_insert",
-  "before_coordinate": null,
-  "after_coordinate": {
-    "stream_index": null,
-    "channel_index": null,
-    "channel_label": null,
-    "sample_start": null,
-    "sample_count": null,
-    "time_start_seconds": null,
-    "time_duration_seconds": null,
-    "byte_start": 4,
-    "byte_count": 2
+  "schema_version": 6,
+  "relation": "different",
+  "verdict": "fail",
+  "fidelity": "full",
+  "completeness": "complete",
+  "media_evaluations": [
+    {
+      "kind": "media_view_evaluation",
+      "media_kind": "audio",
+      "selector": "encoded_bytes",
+      "relation": "different",
+      "verdict": "fail",
+      "fidelity": "full",
+      "completeness": "complete",
+      "metric_names": [
+        "audio.bytes_changed"
+      ],
+      "policy_rule_ids": [
+        "audio.policy.encoded_bytes.v1"
+      ],
+      "transformation_ids": [],
+      "warning_codes": [],
+      "change_count": 1,
+      "failure_stage": null,
+      "failure_code": null
+    }
+  ],
+  "changes": {
+    "change_count": 1,
+    "items": [
+      {
+        "kind": "audio_change",
+        "relation": "encoded_bytes",
+        "operation": "encoded_byte_insert",
+        "before_coordinate": null,
+        "after_coordinate": {
+          "stream_index": null,
+          "channel_index": null,
+          "channel_label": null,
+          "sample_start": null,
+          "sample_count": null,
+          "time_start_seconds": null,
+          "time_duration_seconds": null,
+          "byte_start": 4,
+          "byte_count": 2
+        },
+        "channel": null,
+        "before_digest": null,
+        "after_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000003",
+        "before_fact": null,
+        "after_fact": null
+      }
+    ]
   },
   "metrics": {
-    "audio.bytes_changed": 2,
-    "change_count": 1
+    "audio.bytes_changed": 2
   }
 }
 ```
@@ -306,10 +432,10 @@ truncation 前的 canonical JSON fragment。
 ```json
 {
   "stage": "comparing",
-  "code": "resource_limit_exceeded",
-  "message": "audio comparison exceeded max_decoded_bytes",
+  "code": "compare_resource_limit",
+  "message": "audio comparison exceeded max_total_decoded_bytes",
   "details": {
-    "limit_name": "max_decoded_bytes",
+    "limit_name": "max_total_decoded_bytes",
     "limit_value": 0,
     "limit_unit": "decoded PCM bytes",
     "accounting_scope": "dual_input_sum",
@@ -328,9 +454,11 @@ truncation 前的 canonical JSON fragment。
 2. Schema-v6 仍 exclusively audio。
 3. Decoded-sample comparison 仍只限 stdlib WAV/PCM。
 4. `encoded_bytes` 绕过 WAV probe/decode，并接受任意 byte stream。
-5. Equal result carrier 与 complete decoded-audio fact carrier 是 closed 且 renderer-independent。
-6. Continuous grouping 和 metric count 是 deterministic，且不受 renderer truncation 影响。
-7. Resource limit name、range、unit 与 accounting scope 稳定。
+5. Equal result carrier 与 complete decoded-audio fact carrier 使用 accepted schema-v6、
+   `MediaViewEvaluation` 和 `AudioFact` shape。
+6. Continuous grouping 和 metric count 是 deterministic，且不受 producer-side serialization
+   truncation 影响。
+7. Accepted `AudioResourceLimits` object 保持完整；本 amendment 只增加 scope 与 unit clarification。
 8. Problem prose 只在 `problem.message`；structured data 只在 `problem.details`。
 9. 英文与中文文本保持一致。
 10. 本 Proposed amendment 不启动 P7-A1 implementation、video、UI、FFmpeg、dependency 或 PR 工作。

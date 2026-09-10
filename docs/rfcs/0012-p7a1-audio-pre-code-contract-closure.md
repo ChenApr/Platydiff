@@ -31,7 +31,7 @@ this amendment is explicitly accepted.
 | --- | --- | --- |
 | P7A-PC1 | Freeze the public carrier fields for equal results and complete decoded-audio facts. | Let renderers infer equal audio identity from backend-local metadata. |
 | P7A-PC2 | Freeze continuous grouping for sample and encoded-byte changes, including `change_count`, `samples_changed`, and `bytes_changed` counting. | Emit one change per sample or byte run without stable aggregation rules. |
-| P7A-PC3 | Freeze resource limit names, ranges, and units for `max_compare_work`, `max_packets`, `max_decoded_bytes`, and `max_resident_bytes`, with separate single-input and dual-input accounting. | Use backend-dependent or host-dependent resource names and units. |
+| P7A-PC3 | Freeze scope and unit clarifications for every accepted `AudioResourceLimits` field while preserving accepted names, defaults, and zero-budget semantics. | Replace the accepted resource object with a smaller backend-specific limit set. |
 | P7A-PC4 | Define `encoded_bytes` as a raw byte relation that bypasses WAV probing and decoding, accepts arbitrary byte streams, and allows limit value `0` to mean no bytes may be compared. | Require WAV validity before encoded-byte comparison. |
 | P7A-PC5 | Freeze the timestamp, delay, and padding chunk recognition list and require every user-facing explanation to appear only in `problem.message`; structured values appear only in `problem.details`. | Duplicate explanatory prose inside detail values. |
 | P7A-PC6 | Preserve schema-v6 as exclusively audio and keep video roadmap-only. | Let this closure allocate video schema membership. |
@@ -39,13 +39,17 @@ this amendment is explicitly accepted.
 ## Equal result carrier
 
 For P7-A1 audio, an equal result is still a normal schema-v6 `DiffResult`.
-The public carrier for audio-specific equality is:
+RFC 0012 does not replace the accepted schema-v6 `DiffResult` or
+`MediaViewEvaluation` hierarchy. The public carrier for audio-specific equality
+is the accepted RFC 0009/RFC 0011 envelope:
 
 | Field | Required value |
 | --- | --- |
 | `schema_version` | `6` |
-| `modality` | `"audio"` |
-| `outcome` | `"equal"` |
+| `relation` | `"equal"` |
+| `verdict` | `"pass"` |
+| `fidelity` | `"full"` |
+| `completeness` | `"complete"` unless producer-side serialization truncation has occurred after full counts are known |
 | `media_evaluations` | ordered list of selected audio relation evaluations |
 | `changes.change_count` | `0` |
 | `changes.items` | empty list |
@@ -57,22 +61,33 @@ For equal decoded-sample comparison, the first `media_evaluations` entry has:
 | Field | Required value |
 | --- | --- |
 | `kind` | `"media_view_evaluation"` |
-| `modality` | `"audio"` |
-| `relation` | `"decoded_samples"` |
-| `status` | `"compared"` |
-| `comparison` | `"exact"` |
-| `backend` | `"stdlib_wave_pcm"` |
-| `profile` | `"p7_a1_wav_pcm"` |
-| `stream.index` | `null` or `0` after default insertion, reported as selected stream `0` in provenance |
+| `media_kind` | `"audio"` |
+| `selector` | `"decoded_samples"` |
+| `relation` | `"equal"` |
+| `verdict` | `"pass"` |
+| `fidelity` | `"full"` |
+| `completeness` | `"complete"` |
+| `metric_names` | sorted tuple of metric names used by the relation |
+| `policy_rule_ids` | sorted tuple of policy rule IDs used by the relation |
+| `transformation_ids` | sorted tuple of transformation IDs used by the relation |
+| `warning_codes` | empty tuple unless a visible warning was recorded |
+| `change_count` | `0` |
+| `failure_stage` | `null` |
+| `failure_code` | `null` |
 
-Complete decoded-audio fact carriers are closed objects with key order:
+Backend, profile, and `stream.index` are recorded in provenance and selected
+spec fields, not as replacement `MediaViewEvaluation` fields.
+
+Complete decoded-audio facts preserve the accepted `AudioFact` closed object.
+RFC 0012 does not add `source`, arrays, or nested objects to `AudioFact`.
+Key order remains:
 
 ```text
-name, value, unit, stream_index, coordinate, source
+name, value, unit, stream_index, coordinate
 ```
 
-`source` is one of `"container"`, `"format"`, `"decode"`, `"derived"`, or
-`"policy"`. Equal decoded-sample results must carry, at minimum, facts for:
+Equal decoded-sample results must carry, at minimum, accepted `AudioFact`
+records for:
 
 ```text
 container.form
@@ -97,16 +112,19 @@ encoder_padding_samples
 timestamp_origin
 ```
 
-Absent optional timing facts use value `null`, unit `null`, and source
-`"policy"` when the absence is mandated by P7-A1. Recognized but unsupported
-metadata uses value `"unknown"` and the unit documented by the fact.
+Absent optional timing facts use value `null` and unit `null` when absence is
+mandated by P7-A1. Recognized but unsupported metadata uses value `"unknown"`
+and the unit documented by the fact. Fact provenance remains in result
+provenance, not inside `AudioFact`.
 
 ## Change grouping and counts
 
 `ChangeSet.change_count` is the number of emitted `AudioChange` items after
-continuous grouping and before renderer truncation. Renderer truncation may
-shorten `changes.items`, but it must not change `change_count` or metric
-values.
+continuous grouping and before producer-side serialization truncation. A
+renderer must never shorten `changes.items`, mutate `change_count`, or mutate
+the overall relation/verdict/fidelity/completeness. Truncation is a producer
+serialization policy only and is reflected by accepted completeness/truncation
+metadata after full counts are known.
 
 For `decoded_samples`, sample changes are grouped into maximal continuous runs
 with the same:
@@ -116,10 +134,12 @@ relation, operation, stream_index, channel, before_step, after_step
 ```
 
 `before_step` and `after_step` are each `1` for replacement runs, `1` and `0`
-for deletions, or `0` and `1` for insertions. P7-A1 only enables
-sample-index alignment, so insertions and deletions are reserved for later
-gates and must not be emitted by decoded-sample comparison. A P7-A1
-decoded-sample difference is therefore a `sample_update` run.
+for deletions, or `0` and `1` for insertions. P7-A1 preserves the RFC 0009
+length-difference semantics: overlapping sample positions with unequal decoded
+values are grouped as `sample_update`; trailing before-only decoded samples are
+grouped as `sample_delete`; trailing after-only decoded samples are grouped as
+`sample_insert`. Insert/delete runs require only the present-side coordinate as
+accepted by RFC 0009.
 
 For `encoded_bytes`, byte changes are grouped into maximal continuous byte runs
 with the same:
@@ -136,7 +156,7 @@ Metric counting rules:
 
 | Metric | Count rule |
 | --- | --- |
-| `audio.samples_changed` | Sum of changed decoded sample positions across all channels after grouping; grouping must not change the total. |
+| `audio.samples_changed` | Sum of changed decoded sample positions across all channels after grouping; an update counts overlapping changed positions, an insert counts after-side sample positions, and a delete counts before-side sample positions. |
 | `audio.bytes_changed` | Sum of changed encoded byte positions; an update counts one byte position, a delete counts one before byte, and an insert counts one after byte. |
 | `audio.samples_compared` | Number of decoded sample positions compared, multiplied by selected channel count. |
 | `audio.channels_compared` | Number of selected channels that reached comparison. |
@@ -145,21 +165,38 @@ Metric counting rules:
 ## Resource limits
 
 All resource limits are non-negative integers. Unknown limit names are invalid.
-Default values are inserted by the schema-v6 reader before comparison.
+Default values are inserted by the schema-v6 reader before comparison. RFC 0012
+does not rename, remove, or narrow any accepted `AudioResourceLimits` field; it
+only clarifies accounting scope and units for the accepted object.
 
-| Limit | Unit | Single-input range | Dual-input accounting | P7-A1 default |
-| --- | --- | --- | --- | --- |
-| `max_compare_work` | abstract work units | `0..2^63-1` | sum of both inputs plus comparison work | `100000000` |
-| `max_packets` | packet or chunk records | `0..2^31-1` | sum of packets/chunks read from both inputs | `1048576` |
-| `max_decoded_bytes` | decoded PCM bytes | `0..2^63-1` | sum of decoded PCM bytes materialized from both inputs | `268435456` |
-| `max_resident_bytes` | resident memory bytes | `0..2^63-1` | maximum simultaneous resident bytes for the whole comparison | `134217728` |
+| Limit | Unit | Accounting scope | P7-A1 default |
+| --- | --- | --- | --- |
+| `max_input_bytes` | source bytes per input | single input | `268435456` |
+| `max_streams` | stream count per input | single input | `32` |
+| `max_duration_seconds` | decoded duration seconds per input | single input | `3600` |
+| `max_sample_rate_hz` | samples per second per stream | single input | `384000` |
+| `max_channels` | channel count per stream | single input | `64` |
+| `max_decoded_samples_per_channel` | decoded samples per channel | single input | `50000000` |
+| `max_total_decoded_bytes` | decoded PCM bytes across both inputs | dual-input sum | `536870912` |
+| `max_resident_buffer_bytes` | simultaneous live decoded/sample buffer bytes | comparison peak | `134217728` |
+| `max_packets` | packet or chunk records read across both inputs | dual-input sum | `1000000` |
+| `max_metadata_entries` | metadata entries per input | single input | `10000` |
+| `max_metadata_value_bytes` | bytes per metadata value | single input | `1048576` |
+| `max_spectral_cells` | spectral cells per selected relation | relation scope | `20000000` |
+| `max_backend_seconds` | wall-clock backend seconds | comparison scope | `30` |
+| `max_stdout_stderr_bytes` | captured backend output bytes | comparison scope | `4194304` |
+| `max_temp_bytes` | temporary file bytes | comparison scope | `536870912` |
+| `max_materialized_bytes` | host-owned snapshot and materialized bytes | comparison scope | `536870912` |
+| `max_compare_work` | abstract comparison work units | comparison scope | `10000000` |
+| `max_change_items` | producer-emitted change items | relation scope | `10000` |
+| `max_change_payload_bytes` | producer-emitted change payload bytes | relation scope | `4194304` |
 
 `max_compare_work=0` permits only comparisons that can complete with zero
 relation work: identical empty encoded-byte inputs or metadata-only failures
 before relation work begins. `max_packets=0` forbids reading any packet or WAV
-chunk record. `max_decoded_bytes=0` forbids decoding PCM payload bytes.
-`max_resident_bytes=0` requires the comparator to fail before allocating
-comparison buffers.
+chunk record. `max_total_decoded_bytes=0` forbids decoding PCM payload bytes
+for decoded-sample relations. `max_resident_buffer_bytes=0` requires the
+producer to fail before allocating decoded/sample comparison buffers.
 
 Problem details for limit failures use:
 
@@ -237,23 +274,38 @@ dictionaries.
 ## Canonical vectors
 
 These vectors are normative examples for acceptance tests. They are expressed
-as canonical JSON fragments after default insertion and before renderer
-truncation.
+as schema-v6 envelopes or complete accepted-shape fragments after default
+insertion and before any producer-side serialization truncation.
 
 ### Vector PC-A: equal empty encoded bytes
 
 ```json
 {
   "schema_version": 6,
-  "modality": "audio",
-  "outcome": "equal",
+  "relation": "equal",
+  "verdict": "pass",
+  "fidelity": "full",
+  "completeness": "complete",
   "media_evaluations": [
     {
       "kind": "media_view_evaluation",
-      "modality": "audio",
-      "relation": "encoded_bytes",
-      "status": "compared",
-      "comparison": "exact"
+      "media_kind": "audio",
+      "selector": "encoded_bytes",
+      "relation": "equal",
+      "verdict": "pass",
+      "fidelity": "full",
+      "completeness": "complete",
+      "metric_names": [
+        "audio.bytes_changed"
+      ],
+      "policy_rule_ids": [
+        "audio.policy.encoded_bytes.v1"
+      ],
+      "transformation_ids": [],
+      "warning_codes": [],
+      "change_count": 0,
+      "failure_stage": null,
+      "failure_code": null
     }
   ],
   "changes": {
@@ -270,28 +322,68 @@ truncation.
 
 ```json
 {
-  "operation": "sample_update",
-  "before_coordinate": {
-    "stream_index": 0,
-    "channel_index": 0,
-    "channel_label": null,
-    "sample_start": 10,
-    "sample_count": 3,
-    "time_start_seconds": null,
-    "time_duration_seconds": null
-  },
-  "after_coordinate": {
-    "stream_index": 0,
-    "channel_index": 0,
-    "channel_label": null,
-    "sample_start": 10,
-    "sample_count": 3,
-    "time_start_seconds": null,
-    "time_duration_seconds": null
+  "schema_version": 6,
+  "relation": "different",
+  "verdict": "fail",
+  "fidelity": "full",
+  "completeness": "complete",
+  "media_evaluations": [
+    {
+      "kind": "media_view_evaluation",
+      "media_kind": "audio",
+      "selector": "decoded_samples",
+      "relation": "different",
+      "verdict": "fail",
+      "fidelity": "full",
+      "completeness": "complete",
+      "metric_names": [
+        "audio.samples_changed"
+      ],
+      "policy_rule_ids": [
+        "audio.policy.exact_decoded_samples.v1"
+      ],
+      "transformation_ids": [],
+      "warning_codes": [],
+      "change_count": 1,
+      "failure_stage": null,
+      "failure_code": null
+    }
+  ],
+  "changes": {
+    "change_count": 1,
+    "items": [
+      {
+        "kind": "audio_change",
+        "relation": "decoded_samples",
+        "operation": "sample_update",
+        "before_coordinate": {
+          "stream_index": 0,
+          "channel_index": 0,
+          "channel_label": null,
+          "sample_start": 10,
+          "sample_count": 3,
+          "time_start_seconds": null,
+          "time_duration_seconds": null
+        },
+        "after_coordinate": {
+          "stream_index": 0,
+          "channel_index": 0,
+          "channel_label": null,
+          "sample_start": 10,
+          "sample_count": 3,
+          "time_start_seconds": null,
+          "time_duration_seconds": null
+        },
+        "channel": 0,
+        "before_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        "after_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
+        "before_fact": null,
+        "after_fact": null
+      }
+    ]
   },
   "metrics": {
-    "audio.samples_changed": 3,
-    "change_count": 1
+    "audio.samples_changed": 3
   }
 }
 ```
@@ -300,23 +392,62 @@ truncation.
 
 ```json
 {
-  "relation": "encoded_bytes",
-  "operation": "encoded_byte_insert",
-  "before_coordinate": null,
-  "after_coordinate": {
-    "stream_index": null,
-    "channel_index": null,
-    "channel_label": null,
-    "sample_start": null,
-    "sample_count": null,
-    "time_start_seconds": null,
-    "time_duration_seconds": null,
-    "byte_start": 4,
-    "byte_count": 2
+  "schema_version": 6,
+  "relation": "different",
+  "verdict": "fail",
+  "fidelity": "full",
+  "completeness": "complete",
+  "media_evaluations": [
+    {
+      "kind": "media_view_evaluation",
+      "media_kind": "audio",
+      "selector": "encoded_bytes",
+      "relation": "different",
+      "verdict": "fail",
+      "fidelity": "full",
+      "completeness": "complete",
+      "metric_names": [
+        "audio.bytes_changed"
+      ],
+      "policy_rule_ids": [
+        "audio.policy.encoded_bytes.v1"
+      ],
+      "transformation_ids": [],
+      "warning_codes": [],
+      "change_count": 1,
+      "failure_stage": null,
+      "failure_code": null
+    }
+  ],
+  "changes": {
+    "change_count": 1,
+    "items": [
+      {
+        "kind": "audio_change",
+        "relation": "encoded_bytes",
+        "operation": "encoded_byte_insert",
+        "before_coordinate": null,
+        "after_coordinate": {
+          "stream_index": null,
+          "channel_index": null,
+          "channel_label": null,
+          "sample_start": null,
+          "sample_count": null,
+          "time_start_seconds": null,
+          "time_duration_seconds": null,
+          "byte_start": 4,
+          "byte_count": 2
+        },
+        "channel": null,
+        "before_digest": null,
+        "after_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000003",
+        "before_fact": null,
+        "after_fact": null
+      }
+    ]
   },
   "metrics": {
-    "audio.bytes_changed": 2,
-    "change_count": 1
+    "audio.bytes_changed": 2
   }
 }
 ```
@@ -326,10 +457,10 @@ truncation.
 ```json
 {
   "stage": "comparing",
-  "code": "resource_limit_exceeded",
-  "message": "audio comparison exceeded max_decoded_bytes",
+  "code": "compare_resource_limit",
+  "message": "audio comparison exceeded max_total_decoded_bytes",
   "details": {
-    "limit_name": "max_decoded_bytes",
+    "limit_name": "max_total_decoded_bytes",
     "limit_value": 0,
     "limit_unit": "decoded PCM bytes",
     "accounting_scope": "dual_input_sum",
@@ -351,10 +482,11 @@ following:
 4. `encoded_bytes` bypasses WAV probing and decoding and accepts arbitrary
    byte streams.
 5. Equal result carriers and complete decoded-audio fact carriers are closed
-   and renderer-independent.
+   and use accepted schema-v6, `MediaViewEvaluation`, and `AudioFact` shapes.
 6. Continuous grouping and metric counts are deterministic and independent of
-   renderer truncation.
-7. Resource limit names, ranges, units, and accounting scopes are stable.
+   producer-side serialization truncation.
+7. The accepted `AudioResourceLimits` object remains complete; only scope and
+   unit clarifications are added.
 8. Problem prose is only in `problem.message`; structured data is only in
    `problem.details`.
 9. English and Chinese texts are aligned.
