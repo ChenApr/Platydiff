@@ -28,5 +28,6 @@ This directory contains accepted and proposed design decisions for Platydiff. En
 | [0009](0009-audio-and-video-comparison.md) | Accepted | Accept explicit audio contracts and audio-only schema-v6 allocation; accept video contracts as roadmap direction only pending a later backend/worker amendment and successor schema |
 | [0010](0010-schema-predecessor-and-phase6-contract-amendment.md) | Accepted | Select Option A/P4-C1, accept P6-C0 contract-gap decisions, and approve P4C1-1-P4C1-5 reader/fixture clarifications |
 | [0011](0011-rfc-0009-audio-preflight-amendment.md) | Accepted | Amend RFC 0009 with P7-A1 audio preflight wire contracts, WAV/PCM profile rules, CLI/plugin rejection, and stable failure details; audio remains schema v6 only after RFC 0010 Option A/SP1-SP6 and P4-C1, P5-A1/schema-v4, and P6-C0/schema-v5 merge |
+| [0012](0012-p7a1-audio-pre-code-contract-closure.md) | Proposed | Close remaining P7-A1 pre-code audio contracts for equality carriers, change grouping/counts, resource limits, encoded-byte bypass behavior, timing facts, and problem detail boundaries |
 
 Planned behavior must remain explicitly marked as planned until implementation and verification are complete.
