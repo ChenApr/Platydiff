@@ -49,6 +49,8 @@ from platydiff.core.models import (
     PositiveInfinityValue,
     Relation,
     ResourceUsage,
+    StructuredChange,
+    StructuredDetailMode,
     SummaryCount,
     TransformationRecord,
     Verdict,
@@ -828,7 +830,7 @@ def test_new_nested_readers_reject_extra_fields() -> None:
 
 def _outcome_with_changes(
     outcome: CompletedOutcomeV3,
-    changes: tuple[TableChange | ArrayChange, ...],
+    changes: tuple[StructuredChange | TableChange | ArrayChange, ...],
 ) -> CompletedOutcomeV3:
     total = len(changes)
     return replace(
@@ -1173,3 +1175,64 @@ def test_table_fact_context_handles_untyped_and_by_name_columns() -> None:
         (("a", ScalarFact("integer", "1")), ("b", ScalarFact("string", "v")))
     )
     _validate_table_fact_against_spec(fact, by_name)
+
+
+def test_yaml_reader_does_not_guess_unavailable_parent_type_for_path_order() -> None:
+    outcome = _contract_outcome(YamlCompareSpec())
+    original = cast(StructuredChange, outcome.result.changes.items[0])
+    paths = (
+        ("/2", "/10"),  # legal sequence preorder
+        ("/10", "/2"),  # legal mapping-key Unicode order
+        ("/~1", "/~0"),  # decoded mapping keys `/` then `~`
+    )
+    for first, second in paths:
+        changes = (replace(original, path=first), replace(original, path=second))
+        invalid_only_after_path_validation = _outcome_with_changes(outcome, changes)
+        with pytest.raises(SerializationError, match="count identities"):
+            outcome_to_data(invalid_only_after_path_validation)
+
+
+def test_table_result_orders_removed_rows_before_added_rows() -> None:
+    spec = TableCompareSpec(
+        dialect="csv",
+        alignment="key",
+        key_columns=("id",),
+        columns=(ColumnSpec("id", "integer"),),
+        detail_mode=StructuredDetailMode.DIGEST_ONLY,
+    )
+    outcome = _contract_outcome(spec)
+    row_add = TableChange(operation="row_add", key_ordinal=1, after_digest="1" * 64)
+    row_remove = TableChange(
+        operation="row_remove", key_ordinal=2, before_digest="2" * 64
+    )
+    with pytest.raises(SerializationError, match="not in canonical order"):
+        outcome_to_data(_outcome_with_changes(outcome, (row_add, row_remove)))
+
+
+def test_table_key_and_float_facts_enforce_nonlexical_canonical_grammar() -> None:
+    keyed_spec = TableCompareSpec(
+        dialect="csv",
+        alignment="key",
+        key_columns=("id",),
+        columns=(ColumnSpec("id", "integer"),),
+    )
+    outcome = _contract_outcome(keyed_spec)
+    lexical_key = TableChange(
+        operation="row_add",
+        key_ordinal=1,
+        key=(ScalarFact("integer", "1", lexical="1"),),
+        after_digest="1" * 64,
+        after_fact=TableRowFact((("id", ScalarFact("integer", "1")),)),
+    )
+    with pytest.raises(SerializationError, match="must not carry lexical"):
+        outcome_to_data(_outcome_with_changes(outcome, (lexical_key,)))
+
+    float_spec = TableCompareSpec(
+        dialect="csv",
+        columns=(ColumnSpec("value", "float64", numeric=NumericPolicy()),),
+    )
+    with pytest.raises(SerializationError, match="canonical C99 hex"):
+        _validate_table_fact_against_spec(ScalarFact("float64", "banana"), float_spec)
+    _validate_table_fact_against_spec(
+        ScalarFact("float64", "0x1.0000000000000p+0"), float_spec
+    )

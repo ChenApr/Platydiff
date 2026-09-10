@@ -2552,10 +2552,11 @@ def _validate_yaml_result(result: DiffResult, spec: YamlCompareSpec) -> None:
     yaml_paths = tuple(
         item.path for item in result.changes.items if isinstance(item, StructuredChange)
     )
-    if yaml_paths != tuple(sorted(yaml_paths)) or len(yaml_paths) != len(
-        set(yaml_paths)
-    ):
-        raise SerializationError("schema-v3 YAML changes are not in canonical order")
+    # A pointer alone cannot reveal whether a numeric token belongs to a mapping
+    # (`"10"` before `"2"`) or a sequence (`2` before `10`). The reader can
+    # prove uniqueness; full preorder remains a producer invariant.
+    if len(yaml_paths) != len(set(yaml_paths)):
+        raise SerializationError("schema-v3 YAML change paths must be unique")
     digest_spec = JsonCompareSpec(
         encoding=spec.encoding,
         number_mode=JsonNumberMode.VALUE,
@@ -2637,8 +2638,8 @@ def _validate_table_fact_against_spec(
     fact: TableFact,
     spec: TableCompareSpec,
 ) -> None:
-    if isinstance(fact, ScalarFact) and fact.lexical is not None:
-        raise SerializationError("table scalar facts must not carry lexical text")
+    if isinstance(fact, ScalarFact):
+        _validate_table_scalar_fact(fact, spec)
     if (
         isinstance(fact, ScalarFact)
         and not spec.columns
@@ -2658,6 +2659,7 @@ def _validate_table_fact_against_spec(
         columns_by_name = {column.name: column for column in spec.columns}
         for name, cell in fact.cells:
             column = columns_by_name[name]
+            _validate_table_scalar_fact(cell, spec)
             allowed = {
                 "string": ("string", "missing"),
                 "integer": ("integer", "missing"),
@@ -2672,16 +2674,20 @@ def _validate_table_fact_against_spec(
             }[column.dtype]
             if cell.kind not in allowed:
                 raise SerializationError("table row fact cell kind violates the spec")
-            if cell.lexical is not None:
-                raise SerializationError(
-                    "table scalar facts must not carry lexical text"
-                )
     elif isinstance(fact, TableRowFact):
+        if len(fact.cells) > spec.limits.max_columns:
+            raise SerializationError("table row fact exceeds its column limit")
+        for name, cell in fact.cells:
+            if len(name.encode("utf-8")) > spec.limits.max_cell_bytes:
+                raise SerializationError("table row column name exceeds its byte limit")
+            _validate_table_scalar_fact(cell, spec)
         if any(cell.kind not in ("string", "missing") for _, cell in fact.cells):
             raise SerializationError(
                 "untyped table row cells must be string or missing facts"
             )
     elif isinstance(fact, ColumnSchemaFact):
+        if len(fact.name.encode("utf-8")) > spec.limits.max_cell_bytes:
+            raise SerializationError("table column fact name exceeds its byte limit")
         matching = next(
             (column for column in spec.columns if column.name == fact.name), None
         )
@@ -2695,9 +2701,38 @@ def _validate_table_fact_against_spec(
             or fact.numeric != matching.numeric
         ):
             raise SerializationError("table column fact violates the spec")
-    elif isinstance(fact, ColumnOrderFact) and spec.columns:
-        if set(fact.names) != {column.name for column in spec.columns}:
+    elif isinstance(fact, ColumnOrderFact):
+        if len(fact.names) > spec.limits.max_columns or any(
+            len(name.encode("utf-8")) > spec.limits.max_cell_bytes
+            for name in fact.names
+        ):
+            raise SerializationError("table column-order fact exceeds its limits")
+        if spec.columns and set(fact.names) != {column.name for column in spec.columns}:
             raise SerializationError("table column-order fact violates the spec")
+
+
+def _validate_table_scalar_fact(fact: ScalarFact, spec: TableCompareSpec) -> None:
+    if fact.lexical is not None:
+        raise SerializationError("table scalar facts must not carry lexical text")
+    if isinstance(fact.value, str) and (
+        len(fact.value.encode("utf-8")) > spec.limits.max_cell_bytes
+    ):
+        raise SerializationError("table scalar fact exceeds its cell-byte limit")
+    if (
+        fact.kind == "integer"
+        and isinstance(fact.value, str)
+        and len(fact.value.removeprefix("-")) > spec.limits.max_number_digits
+    ):
+        raise SerializationError("table integer fact exceeds its digit limit")
+    if fact.kind == "float64" and isinstance(fact.value, str):
+        try:
+            numeric = float.fromhex(fact.value)
+        except ValueError as error:
+            raise SerializationError(
+                "table float64 fact is not canonical C99 hex"
+            ) from error
+        if not math.isfinite(numeric) or numeric.hex() != fact.value:
+            raise SerializationError("table float64 fact is not canonical C99 hex")
 
 
 def _table_column_policy_digest(spec: TableCompareSpec) -> str:
@@ -2723,6 +2758,15 @@ def _validate_table_result(result: DiffResult, spec: TableCompareSpec) -> None:
         comparator_id="table",
         algorithm_id="table.delimited.align.v1",
     )
+    if len(spec.columns) > spec.limits.max_columns or any(
+        len(column.name.encode("utf-8")) > spec.limits.max_cell_bytes
+        or any(
+            len(token.encode("utf-8")) > spec.limits.max_cell_bytes
+            for token in column.missing_tokens
+        )
+        for column in spec.columns
+    ):
+        raise SerializationError("schema-v3 table column policy exceeds its limits")
     expected_transformations: list[tuple[str, str, JsonObject]] = [
         (
             "decoding",
@@ -2785,12 +2829,12 @@ def _validate_table_result(result: DiffResult, spec: TableCompareSpec) -> None:
         else next(iter(row_column_sets), ())
     )
     operation_rank = {
-        "column_remove": 0,
         "column_add": 0,
-        "column_reorder": 0,
-        "row_remove": 1,
-        "row_add": 1,
-        "cell_replace": 2,
+        "column_remove": 1,
+        "column_reorder": 2,
+        "row_remove": 3,
+        "row_add": 4,
+        "cell_replace": 5,
     }
     order_keys = tuple(
         (
@@ -2824,6 +2868,7 @@ def _validate_table_result(result: DiffResult, spec: TableCompareSpec) -> None:
                 if item.key is None or len(item.key) != len(spec.key_columns):
                     raise SerializationError("values table change has an invalid key")
                 for name, key_fact in zip(spec.key_columns, item.key, strict=True):
+                    _validate_table_scalar_fact(key_fact, spec)
                     column = columns_by_name.get(name)
                     if column is not None and key_fact.kind != column.dtype:
                         raise SerializationError(
