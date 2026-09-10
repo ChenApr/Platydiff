@@ -239,11 +239,11 @@ In exact mode, both images are decoded to an explicitly selected size, orientati
 
 A one-pixel translation can create a large apparent difference. Registration, cropping, and scaling therefore belong to a separate alignment stage and must never be hidden inside a metric implementation.
 
-[RFC 0007](rfcs/0007-image-comparison.md) proposes a narrower first image
-slice: explicit built-in comparison of static 8-bit PNG decoded samples, with
-encoded identity left to the binary comparator and no implicit orientation,
-color, alpha, resize, crop, artifact, plugin, or detection behavior. It remains
-Proposed and does not authorize implementation.
+[RFC 0007](rfcs/0007-image-comparison.md) defines the accepted narrower first
+image slice: an explicit built-in comparison of static 8-bit PNG decoded
+samples, with encoded identity left to the binary comparator and no implicit
+orientation, color, alpha, resize, crop, artifact, plugin, or detection behavior. Acceptance
+does not authorize implementation.
 
 ### 6.5 Audio
 
@@ -291,13 +291,14 @@ Phases 1 through 3 and Phase 4 gate P4-A1 contain the Python package,
 schema-v1/v2/v3 contracts, explicit
 text, bounded text/binary detection, exact binary comparison, CLI,
 terminal/JSON renderers, the explicit plugin boundary, and explicit semantic
-JSON comparison. They remain unreleased. The remaining Phase 4 YAML, table, and
-array gates in [RFC 0006](rfcs/0006-structured-data-comparison.md) remain
-unimplemented and require separate authorization. Every other modality and
-renderer below is planned. Phase 5 image contracts are proposed in
-[RFC 0007](rfcs/0007-image-comparison.md); they are not implementation
-authorization and require the actual merged schema-v3 predecessor to be
-revalidated first. Phase 7 audio/video contracts are proposed in
+JSON comparison. They remain unreleased. Phase 4 structured-data contracts are
+accepted in [RFC 0006](rfcs/0006-structured-data-comparison.md), but its
+remaining YAML, table, and array gates are unimplemented and require separate
+gate authorization. Every other modality and renderer below is planned. Phase 5
+image contracts are accepted in
+[RFC 0007](rfcs/0007-image-comparison.md); acceptance does not authorize
+implementation, and the actual merged schema-v3 predecessor must be revalidated
+first. Phase 7 audio/video contracts are proposed in
 [RFC 0009](rfcs/0009-audio-and-video-comparison.md); they are not implemented.
 
 ### v0.1: Core loop
