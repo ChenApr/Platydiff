@@ -3423,45 +3423,45 @@ def dumps_outcome(outcome: AnyCompareOutcome, *, pretty: bool = False) -> str:
     )
 
 
-def _ordered_schema_v3_contract_data(value: JsonValue) -> JsonValue:
+def _ordered_schema_v3_contract_data(
+    value: JsonValue, path: tuple[str, ...] = ()
+) -> JsonValue:
     """Sort legacy objects while preserving RFC-ordered new contract objects."""
     if isinstance(value, list):
-        return [_ordered_schema_v3_contract_data(item) for item in value]
+        return [_ordered_schema_v3_contract_data(item, (*path, "[]")) for item in value]
     if not isinstance(value, dict):
         return value
     kind = value.get("kind")
-    preserve_kind = isinstance(kind, str) and kind in {
+    in_contract_spec = path[:3] == ("result", "provenance", "spec")
+    in_contract_change = path[:4] == ("result", "changes", "items", "[]")
+    preserve_spec = path == ("result", "provenance", "spec") and kind in (
         "yaml",
         "table",
         "array",
-        "structured_change",
-        "table_change",
-        "array_change",
-        "null",
-        "boolean",
-        "integer",
-        "decimal",
-        "string",
-        "missing",
-        "float64",
-        "nan",
-        "positive_infinity",
-        "negative_infinity",
-        "sequence",
-        "mapping",
-        "table_row",
-        "table_column_schema",
-        "table_column_order",
-    }
-    preserve_shape = set(value) in (
-        {"name", "dtype", "missing_tokens", "numeric"},
-        {"atol", "rtol", "relative_reference", "nan_equal", "signed_zero_equal"},
-        set(YamlResourceLimits.__dataclass_fields__),
-        set(TableResourceLimits.__dataclass_fields__),
-        set(ArrayResourceLimits.__dataclass_fields__),
     )
-    keys = tuple(value) if preserve_kind or preserve_shape else tuple(sorted(value))
-    return {key: _ordered_schema_v3_contract_data(value[key]) for key in keys}
+    preserve_spec_component = in_contract_spec and (
+        path[-1] in ("limits", "numeric") or path[-2:] == ("columns", "[]")
+    )
+    preserve_change = in_contract_change and (
+        path == ("result", "changes", "items", "[]")
+        or path[-1]
+        in (
+            "before_fact",
+            "after_fact",
+            "absolute_error",
+            "relative_error",
+        )
+        or "cells" in path
+        or "key" in path
+    )
+    keys = (
+        tuple(value)
+        if preserve_spec or preserve_spec_component or preserve_change
+        else tuple(sorted(value))
+    )
+    return {
+        key: _ordered_schema_v3_contract_data(value[key], (*path, key)) for key in keys
+    }
 
 
 def loads_outcome(payload: str) -> AnyCompareOutcome:

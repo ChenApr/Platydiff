@@ -38,6 +38,8 @@ from platydiff.core.models import (
     ChangeSelection,
     ChangeSet,
     ComparisonProvenanceV2,
+    Diagnostic,
+    DiagnosticSeverity,
     DiffSummary,
     FiniteValue,
     JsonObject,
@@ -1126,3 +1128,30 @@ def test_downgrade_validates_before_rejecting_phase4_change_under_legacy_spec() 
     malformed = _outcome_with_changes(legacy, (phase4_change,))
     with pytest.raises(SerializationError, match="legacy schema-v3 result"):
         downgrade_outcome_v3_to_v2(malformed)
+
+
+def test_contract_encoder_sorts_arbitrary_nested_details_lexicographically() -> None:
+    outcome = _contract_outcome(ArrayCompareSpec())
+
+    def with_details(details: JsonObject) -> CompletedOutcomeV3:
+        return replace(
+            outcome,
+            execution=replace(
+                outcome.execution,
+                diagnostics=(
+                    Diagnostic(
+                        "contract_note",
+                        DiagnosticSeverity.WARNING,
+                        None,
+                        "note",
+                        details,
+                    ),
+                ),
+            ),
+        )
+
+    first = dumps_outcome(with_details({"kind": "string", "z": 1, "a": 2}))
+    second = dumps_outcome(with_details({"a": 2, "z": 1, "kind": "string"}))
+
+    assert first == second
+    assert '"details":{"a":2,"kind":"string","z":1}' in first
