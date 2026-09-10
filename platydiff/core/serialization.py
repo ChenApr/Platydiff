@@ -114,6 +114,10 @@ class SerializationError(ValueError):
     """Untrusted JSON does not satisfy schema v1."""
 
 
+class _DuplicateKeyError(SerializationError):
+    """A canonical outcome object contained the same member twice."""
+
+
 def _coerce_json(value: object) -> JsonValue:
     if value is None or isinstance(value, (bool, int)):
         return value
@@ -155,7 +159,7 @@ def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     result: dict[str, object] = {}
     for key, value in pairs:
         if key in result:
-            raise SerializationError(f"duplicate JSON object key: {key}")
+            raise _DuplicateKeyError(f"duplicate JSON object key: {key}")
         result[key] = value
     return result
 
@@ -346,6 +350,16 @@ def spec_from_data(value: JsonValue) -> CompareSpecV3:
     limits_data = _object(_required(data, "limits"), "spec.limits")
     try:
         if kind == "yaml":
+            _exact_keys(
+                data,
+                ("kind", "profile", "encoding", "detail_mode", "limits"),
+                "YAML spec",
+            )
+            _exact_keys(
+                limits_data,
+                tuple(YamlResourceLimits.__dataclass_fields__),
+                "YAML limits",
+            )
             profile = _string(_required(data, "profile"), "profile")
             if profile != "yaml12_core_safe":
                 raise SerializationError(f"unknown YAML profile: {profile}")
@@ -367,6 +381,27 @@ def spec_from_data(value: JsonValue) -> CompareSpecV3:
                 ),
             )
         if kind == "table":
+            _exact_keys(
+                data,
+                (
+                    "kind",
+                    "dialect",
+                    "encoding",
+                    "header",
+                    "alignment",
+                    "key_columns",
+                    "column_order",
+                    "columns",
+                    "detail_mode",
+                    "limits",
+                ),
+                "table spec",
+            )
+            _exact_keys(
+                limits_data,
+                tuple(TableResourceLimits.__dataclass_fields__),
+                "table limits",
+            )
             dialect = _string(_required(data, "dialect"), "dialect")
             header = _string(_required(data, "header"), "header")
             alignment = _string(_required(data, "alignment"), "alignment")
@@ -386,6 +421,11 @@ def spec_from_data(value: JsonValue) -> CompareSpecV3:
             columns: list[ColumnSpec] = []
             for raw_column in _array(_required(data, "columns"), "columns"):
                 column = _object(raw_column, "column spec")
+                _exact_keys(
+                    column,
+                    ("name", "dtype", "missing_tokens", "numeric"),
+                    "column spec",
+                )
                 dtype = _string(_required(column, "dtype"), "column dtype")
                 if dtype not in ("string", "integer", "float64", "boolean"):
                     raise SerializationError(f"unknown column dtype: {dtype}")
@@ -431,6 +471,16 @@ def spec_from_data(value: JsonValue) -> CompareSpecV3:
                 ),
             )
         if kind == "array":
+            _exact_keys(
+                data,
+                ("kind", "alignment", "numeric", "limits"),
+                "array spec",
+            )
+            _exact_keys(
+                limits_data,
+                tuple(ArrayResourceLimits.__dataclass_fields__),
+                "array limits",
+            )
             alignment = _string(_required(data, "alignment"), "alignment")
             if alignment != "position":
                 raise SerializationError(f"unknown array alignment: {alignment}")
@@ -592,6 +642,11 @@ def _numeric_policy_from_data(
             return None
         raise SerializationError("numeric policy must be an object")
     data = _object(value, "numeric policy")
+    _exact_keys(
+        data,
+        ("atol", "rtol", "relative_reference", "nan_equal", "signed_zero_equal"),
+        "numeric policy",
+    )
     reference = _string(_required(data, "relative_reference"), "relative_reference")
     if reference != "before":
         raise SerializationError(f"unknown relative reference: {reference}")
@@ -615,10 +670,12 @@ def _numeric_to_data(value: NumericValue) -> JsonObject:
     return {"kind": value.kind}
 
 
-def _numeric_from_data(value: JsonValue) -> NumericValue:
+def _numeric_from_data(value: JsonValue, *, strict: bool = False) -> NumericValue:
     data = _object(value, "numeric value")
     kind = _string(_required(data, "kind"), "numeric kind")
     if kind == "finite":
+        if strict:
+            _exact_keys(data, ("kind", "value"), "finite numeric value")
         raw = _required(data, "value")
         if isinstance(raw, bool) or not isinstance(raw, (int, float)):
             raise SerializationError("finite numeric value must be a number")
@@ -627,10 +684,16 @@ def _numeric_from_data(value: JsonValue) -> NumericValue:
         except ValueError as error:
             raise SerializationError(str(error)) from error
     if kind == "nan":
+        if strict:
+            _exact_keys(data, ("kind",), "NaN numeric value")
         return NaNValue()
     if kind == "positive_infinity":
+        if strict:
+            _exact_keys(data, ("kind",), "positive-infinity numeric value")
         return PositiveInfinityValue()
     if kind == "negative_infinity":
+        if strict:
+            _exact_keys(data, ("kind",), "negative-infinity numeric value")
         return NegativeInfinityValue()
     raise SerializationError(f"unknown numeric kind: {kind}")
 
@@ -1402,6 +1465,11 @@ def _structured_fact_from_data(value: JsonValue) -> ScalarFact | SubtreeFact | N
     kind = _string(_required(data, "kind"), "structured fact kind")
     try:
         if kind in ("sequence", "mapping"):
+            _exact_keys(
+                data,
+                ("kind", "descendant_count", "scalar_count"),
+                "structured subtree fact",
+            )
             return SubtreeFact(
                 kind=cast(Literal["sequence", "mapping"], kind),
                 descendant_count=_integer(
@@ -1423,6 +1491,15 @@ def _structured_fact_from_data(value: JsonValue) -> ScalarFact | SubtreeFact | N
         )
         if kind not in allowed:
             raise SerializationError(f"unknown structured fact kind: {kind}")
+        expected = (
+            ("kind", "value", "lexical")
+            if "lexical" in data
+            else (
+                "kind",
+                "value",
+            )
+        )
+        _exact_keys(data, expected, "structured scalar fact")
         raw_value = _required(data, "value")
         fact_value: bool | str | None
         if raw_value is None or isinstance(raw_value, (bool, str)):
@@ -1745,12 +1822,12 @@ def _change_from_data(
                 absolute_error=(
                     None
                     if raw_absolute_error is None
-                    else _numeric_from_data(raw_absolute_error)
+                    else _numeric_from_data(raw_absolute_error, strict=True)
                 ),
                 relative_error=(
                     None
                     if raw_relative_error is None
-                    else _numeric_from_data(raw_relative_error)
+                    else _numeric_from_data(raw_relative_error, strict=True)
                 ),
             )
         except ValueError as error:
@@ -1834,6 +1911,11 @@ def _result_from_data(
     value: JsonValue, *, schema_version: Literal[1, 2, 3] = 1
 ) -> DiffResult:
     data = _object(value, "result")
+    strict_numeric = False
+    if schema_version == 3:
+        raw_provenance = _object(_required(data, "provenance"), "provenance")
+        raw_spec = _object(_required(raw_provenance, "spec"), "spec")
+        strict_numeric = raw_spec.get("kind") in ("yaml", "table", "array")
     summary_data = _object(_required(data, "summary"), "summary")
     counts: list[SummaryCount] = []
     for raw in _array(_required(summary_data, "counts"), "summary counts"):
@@ -1860,7 +1942,9 @@ def _result_from_data(
         metrics.append(
             Metric(
                 name=_string(_required(item, "name"), "metric name"),
-                value=_numeric_from_data(_required(item, "value")),
+                value=_numeric_from_data(
+                    _required(item, "value"), strict=strict_numeric
+                ),
                 unit=_string(_required(item, "unit"), "metric unit"),
                 direction=_enum_value(
                     MetricDirection,
@@ -1898,12 +1982,12 @@ def _result_from_data(
                 threshold=(
                     None
                     if threshold_value is None
-                    else _numeric_from_data(threshold_value)
+                    else _numeric_from_data(threshold_value, strict=strict_numeric)
                 ),
                 observed=(
                     None
                     if observed_value is None
-                    else _numeric_from_data(observed_value)
+                    else _numeric_from_data(observed_value, strict=strict_numeric)
                 ),
             )
         )
@@ -1968,6 +2052,13 @@ def _result_from_data(
             ),
         )
         if schema_version == 3:
+            if result.provenance.spec.get("kind") in ("yaml", "table", "array") and (
+                tuple(item.name for item in metrics)
+                != tuple(item.name for item in result.metrics)
+            ):
+                raise SerializationError(
+                    "schema-v3 structured metrics are not in canonical order"
+                )
             _validate_v3_result(result)
         return result
     except ValueError as error:
@@ -1977,7 +2068,10 @@ def _result_from_data(
 def _finite_count(metric: Metric, name: str) -> int:
     if not isinstance(metric.value, FiniteValue) or not metric.value.value.is_integer():
         raise SerializationError(f"{name} must be a finite integer count")
-    return int(metric.value.value)
+    count = int(metric.value.value)
+    if count < 0:
+        raise SerializationError(f"{name} must be non-negative")
+    return count
 
 
 def _structured_u64(value: int) -> bytes:
@@ -2193,12 +2287,12 @@ def _validate_v3_contract_attempt(
 
 def _validate_contract_transformations(
     result: DiffResult,
-    expected: tuple[tuple[str, str], ...],
+    expected: tuple[tuple[str, str, JsonObject], ...],
     *,
     comparator_id: str,
 ) -> None:
     actual = tuple(
-        (item.stage, item.transformation_id)
+        (item.stage, item.transformation_id, item.parameters)
         for item in result.provenance.transformations
     )
     if actual != expected:
@@ -2220,14 +2314,14 @@ def _validate_contract_counts(
 ) -> dict[str, int]:
     metrics = {item.name: item for item in result.metrics}
     required_names = {f"{prefix}.{name}" for name, _ in required}
-    optional_names = {
+    error_names = {
         f"{prefix}.maximum_absolute_error",
         f"{prefix}.maximum_relative_error",
     }
-    if (
-        not required_names <= set(metrics)
-        or not (set(metrics) - required_names) <= optional_names
-    ):
+    allowed_names = required_names | (
+        error_names if prefix in ("table", "array") else set()
+    )
+    if not required_names <= set(metrics) or not set(metrics) <= allowed_names:
         raise SerializationError(f"schema-v3 {prefix} metrics are not canonical")
     directions = dict(required)
     counts: dict[str, int] = {}
@@ -2242,7 +2336,13 @@ def _validate_contract_counts(
             raise SerializationError(
                 f"schema-v3 {prefix} metric metadata is not canonical"
             )
-    for name in optional_names & set(metrics):
+    finite_pairs = counts.get("finite_numeric_pairs")
+    expected_error_names = error_names if finite_pairs not in (None, 0) else set()
+    if set(metrics) - required_names != expected_error_names:
+        raise SerializationError(
+            f"schema-v3 {prefix} error metric applicability is not canonical"
+        )
+    for name in expected_error_names:
         metric = metrics[name]
         expected_unit = "numeric_values" if name.endswith("absolute_error") else "ratio"
         if (
@@ -2253,6 +2353,18 @@ def _validate_contract_counts(
             raise SerializationError(
                 f"schema-v3 {prefix} error metric metadata is not canonical"
             )
+        if name.endswith("absolute_error"):
+            valid_value = (
+                isinstance(metric.value, FiniteValue) and metric.value.value >= 0
+            )
+        else:
+            valid_value = (
+                isinstance(metric.value, FiniteValue) and metric.value.value >= 0
+            ) or isinstance(metric.value, PositiveInfinityValue)
+        if not valid_value:
+            raise SerializationError(
+                f"schema-v3 {prefix} error metric value is not canonical"
+            )
     compared = counts[compared_name]
     equal = counts[equal_name]
     changed = counts[changed_name]
@@ -2261,6 +2373,16 @@ def _validate_contract_counts(
         or result.changes.total_count != counts[change_count_name]
     ):
         raise SerializationError(f"schema-v3 {prefix} count identities do not hold")
+    for category in (
+        "missing_pairs",
+        "nan_pairs",
+        "infinity_pairs",
+        "finite_numeric_pairs",
+    ):
+        if category in counts and counts[category] > compared:
+            raise SerializationError(
+                f"schema-v3 {prefix} category count exceeds compared count"
+            )
     summary = {item.name: item for item in result.summary.counts}
     if set(summary) != set(counts) or any(
         summary[name].value != value or summary[name].unit != summary_unit
@@ -2328,6 +2450,35 @@ def _validate_contract_resources(
         )
 
 
+def _validate_contract_truncation(
+    result: DiffResult,
+    *,
+    max_change_items: int,
+    max_change_payload_bytes: int,
+    comparator_id: str,
+) -> None:
+    if result.changes.completeness is not ChangeCompleteness.TRUNCATED:
+        return
+    if result.changes.limit_reason == "change_items":
+        valid = (
+            result.changes.limit == max_change_items
+            and result.changes.returned_count == max_change_items
+        )
+    elif result.changes.limit_reason == "change_payload_bytes":
+        valid = (
+            result.changes.limit == max_change_payload_bytes
+            and result.changes.returned_count < max_change_items
+            and sum(serialized_change_size(item) for item in result.changes.items)
+            <= max_change_payload_bytes
+        )
+    else:
+        valid = False
+    if not valid:
+        raise SerializationError(
+            f"schema-v3 {comparator_id} truncation evidence is inconsistent"
+        )
+
+
 def _structured_contract_resources(
     limits: StructuredResourceLimits,
     *,
@@ -2371,16 +2522,26 @@ def _validate_yaml_result(result: DiffResult, spec: YamlCompareSpec) -> None:
         comparator_id="yaml",
         algorithm_id="yaml.structural.tree.v1",
     )
-    expected_transformations: list[tuple[str, str]] = []
+    expected_transformations: list[tuple[str, str, JsonObject]] = []
     if any(
         item.source_kind is not SourceKind.TEXT for item in result.provenance.inputs
     ):
-        expected_transformations.append(("decoding", "yaml.decode.utf8"))
+        expected_transformations.append(
+            (
+                "decoding",
+                "yaml.decode.utf8",
+                {"encoding": spec.encoding.value, "profile": spec.profile},
+            )
+        )
     expected_transformations.extend(
         (
-            ("normalizing", "yaml.presentation.elide"),
-            ("normalizing", "yaml.object_order.ignore"),
-            ("aligning", "yaml.pointer.position"),
+            ("normalizing", "yaml.presentation.elide", {}),
+            ("normalizing", "yaml.object_order.ignore", {}),
+            (
+                "aligning",
+                "yaml.pointer.position",
+                {"pointer": "rfc6901", "sequences": "positional"},
+            ),
         )
     )
     _validate_contract_transformations(
@@ -2388,10 +2549,36 @@ def _validate_yaml_result(result: DiffResult, spec: YamlCompareSpec) -> None:
     )
     if any(not isinstance(item, StructuredChange) for item in result.changes.items):
         raise SerializationError("schema-v3 YAML changes must be structured changes")
+    yaml_paths = tuple(
+        item.path for item in result.changes.items if isinstance(item, StructuredChange)
+    )
+    if yaml_paths != tuple(sorted(yaml_paths)) or len(yaml_paths) != len(
+        set(yaml_paths)
+    ):
+        raise SerializationError("schema-v3 YAML changes are not in canonical order")
+    digest_spec = JsonCompareSpec(
+        encoding=spec.encoding,
+        number_mode=JsonNumberMode.VALUE,
+        detail_mode=spec.detail_mode,
+        limits=StructuredResourceLimits(
+            max_input_bytes=spec.limits.max_input_bytes,
+            max_scalar_bytes=spec.limits.max_scalar_bytes,
+            max_depth=spec.limits.max_depth,
+            max_nodes=spec.limits.max_nodes,
+            max_number_digits=spec.limits.max_number_digits,
+            max_abs_exponent=spec.limits.max_abs_exponent,
+            max_compare_work=spec.limits.max_compare_work,
+            max_change_items=spec.limits.max_change_items,
+            max_change_payload_bytes=spec.limits.max_change_payload_bytes,
+        ),
+    )
     for item in result.changes.items:
         if not isinstance(item, StructuredChange):
             raise RuntimeError("YAML structured-change narrowing failed")
-        for fact in (item.before_fact, item.after_fact):
+        for digest, fact in (
+            (item.before_digest, item.before_fact),
+            (item.after_digest, item.after_fact),
+        ):
             if spec.detail_mode is StructuredDetailMode.DIGEST_ONLY:
                 if fact is not None:
                     raise SerializationError("digest_only YAML changes must omit facts")
@@ -2402,11 +2589,22 @@ def _validate_yaml_result(result: DiffResult, spec: YamlCompareSpec) -> None:
                 or fact.lexical is not None
             ):
                 raise SerializationError("YAML change contains an invalid scalar fact")
+            elif isinstance(fact, ScalarFact):
+                if digest is None or _scalar_fact_digest(fact, digest_spec) != digest:
+                    raise SerializationError(
+                        "YAML scalar fact does not match its evidence digest"
+                    )
+            elif fact.descendant_count >= spec.limits.max_nodes:
+                raise SerializationError("YAML subtree fact exceeds its node limit")
         if spec.detail_mode is StructuredDetailMode.VALUES:
             if item.before_type is not None and item.before_fact is None:
                 raise SerializationError("values YAML change is missing a before fact")
             if item.after_type is not None and item.after_fact is None:
                 raise SerializationError("values YAML change is missing an after fact")
+        for token in item.path.split("/")[1:]:
+            decoded_token = token.replace("~1", "/").replace("~0", "~")
+            if len(decoded_token.encode("utf-8")) > spec.limits.max_scalar_bytes:
+                raise SerializationError("YAML Pointer token exceeds its spec limit")
     required = (
         ("compared_values", MetricDirection.NEUTRAL),
         ("equal_values", MetricDirection.NEUTRAL),
@@ -2427,12 +2625,20 @@ def _validate_yaml_result(result: DiffResult, spec: YamlCompareSpec) -> None:
         _structured_contract_resources(spec.limits, yaml_limits=spec.limits),
         comparator_id="yaml",
     )
+    _validate_contract_truncation(
+        result,
+        max_change_items=spec.limits.max_change_items,
+        max_change_payload_bytes=spec.limits.max_change_payload_bytes,
+        comparator_id="yaml",
+    )
 
 
 def _validate_table_fact_against_spec(
     fact: TableFact,
     spec: TableCompareSpec,
 ) -> None:
+    if isinstance(fact, ScalarFact) and fact.lexical is not None:
+        raise SerializationError("table scalar facts must not carry lexical text")
     if isinstance(fact, TableRowFact) and spec.columns:
         if tuple(name for name, _ in fact.cells) != tuple(
             column.name for column in spec.columns
@@ -2453,10 +2659,16 @@ def _validate_table_fact_against_spec(
             }[column.dtype]
             if cell.kind not in allowed:
                 raise SerializationError("table row fact cell kind violates the spec")
+            if cell.lexical is not None:
+                raise SerializationError(
+                    "table scalar facts must not carry lexical text"
+                )
     elif isinstance(fact, ColumnSchemaFact):
         matching = next(
             (column for column in spec.columns if column.name == fact.name), None
         )
+        if matching is None and spec.columns:
+            raise SerializationError("table column fact is not declared by the spec")
         if matching is not None and (
             fact.dtype != matching.dtype
             or fact.missing_token_count != len(matching.missing_tokens)
@@ -2468,22 +2680,65 @@ def _validate_table_fact_against_spec(
             raise SerializationError("table column-order fact violates the spec")
 
 
+def _table_column_policy_digest(spec: TableCompareSpec) -> str:
+    columns = spec_to_data(spec)["columns"]
+    payload = json.dumps(
+        columns,
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    digest = hashlib.sha256()
+    digest.update(b"platydiff/v3/table/column-policy")
+    digest.update(b"\x00")
+    digest.update(_structured_u64(len(payload)))
+    digest.update(payload)
+    return digest.hexdigest()
+
+
 def _validate_table_result(result: DiffResult, spec: TableCompareSpec) -> None:
     _validate_contract_identity(
         result,
         comparator_id="table",
         algorithm_id="table.delimited.align.v1",
     )
-    expected_transformations: list[tuple[str, str]] = [
-        ("decoding", f"table.{spec.dialect}.decode"),
-        ("normalizing", "table.presentation.elide"),
+    expected_transformations: list[tuple[str, str, JsonObject]] = [
+        (
+            "decoding",
+            f"table.{spec.dialect}.decode",
+            {
+                "dialect": spec.dialect,
+                "encoding": spec.encoding.value,
+                "header": spec.header,
+            },
+        ),
+        (
+            "normalizing",
+            "table.presentation.elide",
+            {"quoting": "double", "record_terminators": "elided"},
+        ),
     ]
     if spec.columns:
-        expected_transformations.append(("normalizing", "table.cells.typed"))
+        expected_transformations.append(
+            (
+                "normalizing",
+                "table.cells.typed",
+                {"column_policy_digest": _table_column_policy_digest(spec)},
+            )
+        )
     expected_transformations.extend(
         (
-            ("aligning", f"table.columns.{spec.column_order}"),
-            ("aligning", f"table.rows.{spec.alignment}"),
+            (
+                "aligning",
+                f"table.columns.{spec.column_order}",
+                {"mode": spec.column_order},
+            ),
+            (
+                "aligning",
+                f"table.rows.{spec.alignment}",
+                {"key_columns": list(spec.key_columns), "mode": spec.alignment},
+            ),
         )
     )
     _validate_contract_transformations(
@@ -2491,9 +2746,54 @@ def _validate_table_result(result: DiffResult, spec: TableCompareSpec) -> None:
     )
     if any(not isinstance(item, TableChange) for item in result.changes.items):
         raise SerializationError("schema-v3 table changes must be table changes")
+    row_column_sets = {
+        tuple(name for name, _ in fact.cells)
+        for item in result.changes.items
+        if isinstance(item, TableChange)
+        for fact in (item.before_fact, item.after_fact)
+        if isinstance(fact, TableRowFact)
+    }
+    if len(row_column_sets) > 1:
+        raise SerializationError("table row facts disagree on aligned columns")
+    aligned_columns = (
+        tuple(
+            sorted(column.name for column in spec.columns)
+            if spec.column_order == "by_name"
+            else (column.name for column in spec.columns)
+        )
+        if spec.columns
+        else next(iter(row_column_sets), ())
+    )
+    operation_rank = {
+        "column_remove": 0,
+        "column_add": 0,
+        "column_reorder": 0,
+        "row_remove": 1,
+        "row_add": 1,
+        "cell_replace": 2,
+    }
+    order_keys = tuple(
+        (
+            operation_rank[item.operation],
+            item.key_ordinal if item.key_ordinal is not None else item.row or 0,
+            item.column or "",
+            item.operation,
+        )
+        for item in result.changes.items
+        if isinstance(item, TableChange)
+    )
+    if order_keys != tuple(sorted(order_keys)) or len(order_keys) != len(
+        set(order_keys)
+    ):
+        raise SerializationError("schema-v3 table changes are not in canonical order")
+    columns_by_name = {column.name: column for column in spec.columns}
     for item in result.changes.items:
         if not isinstance(item, TableChange):
             raise RuntimeError("table-change narrowing failed")
+        if item.operation == "column_reorder" and spec.column_order != "exact":
+            raise SerializationError(
+                "by-name table alignment must not emit column reorder changes"
+            )
         if spec.alignment == "position":
             if item.key_ordinal is not None or item.key is not None:
                 raise SerializationError("positional table change carries key data")
@@ -2503,8 +2803,20 @@ def _validate_table_result(result: DiffResult, spec: TableCompareSpec) -> None:
             if spec.detail_mode is StructuredDetailMode.VALUES:
                 if item.key is None or len(item.key) != len(spec.key_columns):
                     raise SerializationError("values table change has an invalid key")
+                for name, key_fact in zip(spec.key_columns, item.key, strict=True):
+                    column = columns_by_name.get(name)
+                    if column is not None and key_fact.kind != column.dtype:
+                        raise SerializationError(
+                            "table key fact kind violates its declared column"
+                        )
             elif item.key is not None:
                 raise SerializationError("digest_only table change must omit its key")
+        if (
+            item.operation == "cell_replace"
+            and aligned_columns
+            and item.column not in aligned_columns
+        ):
+            raise SerializationError("table cell coordinate is not an aligned column")
         if spec.detail_mode is StructuredDetailMode.DIGEST_ONLY:
             if item.before_fact is not None or item.after_fact is not None:
                 raise SerializationError("digest_only table change must omit facts")
@@ -2517,6 +2829,32 @@ def _validate_table_result(result: DiffResult, spec: TableCompareSpec) -> None:
                     raise SerializationError("values table change is missing a fact")
                 if fact is not None:
                     _validate_table_fact_against_spec(fact, spec)
+                    if isinstance(fact, ColumnSchemaFact) and fact.name != item.column:
+                        raise SerializationError(
+                            "table column fact disagrees with its coordinate"
+                        )
+                    if (
+                        item.operation == "cell_replace"
+                        and isinstance(fact, ScalarFact)
+                        and item.column in columns_by_name
+                    ):
+                        column = columns_by_name[item.column]
+                        allowed = {
+                            "string": ("string", "missing"),
+                            "integer": ("integer", "missing"),
+                            "float64": (
+                                "float64",
+                                "nan",
+                                "positive_infinity",
+                                "negative_infinity",
+                                "missing",
+                            ),
+                            "boolean": ("boolean", "missing"),
+                        }[column.dtype]
+                        if fact.kind not in allowed:
+                            raise SerializationError(
+                                "table cell fact kind violates its declared column"
+                            )
     required = (
         ("compared_cells", MetricDirection.NEUTRAL),
         ("equal_cells", MetricDirection.NEUTRAL),
@@ -2558,6 +2896,12 @@ def _validate_table_result(result: DiffResult, spec: TableCompareSpec) -> None:
         }
     )
     _validate_contract_resources(result, expected_resources, comparator_id="table")
+    _validate_contract_truncation(
+        result,
+        max_change_items=spec.limits.max_change_items,
+        max_change_payload_bytes=spec.limits.max_change_payload_bytes,
+        comparator_id="table",
+    )
 
 
 def _validate_array_result(result: DiffResult, spec: ArrayCompareSpec) -> None:
@@ -2568,11 +2912,49 @@ def _validate_array_result(result: DiffResult, spec: ArrayCompareSpec) -> None:
     )
     _validate_contract_transformations(
         result,
-        (("aligning", "array.elements.position"),),
+        (
+            (
+                "aligning",
+                "array.elements.position",
+                {"order": "c_row_major"},
+            ),
+        ),
         comparator_id="array",
     )
     if any(not isinstance(item, ArrayChange) for item in result.changes.items):
         raise SerializationError("schema-v3 array changes must be array changes")
+    operations = tuple(
+        item.operation for item in result.changes.items if isinstance(item, ArrayChange)
+    )
+    schema_operations = tuple(
+        operation
+        for operation in operations
+        if operation in ("shape_replace", "dtype_replace")
+    )
+    if schema_operations and any(
+        operation == "element_replace" for operation in operations
+    ):
+        raise SerializationError(
+            "schema-v3 array schema changes suppress element changes"
+        )
+    if schema_operations not in (
+        (),
+        ("shape_replace",),
+        ("dtype_replace",),
+        ("shape_replace", "dtype_replace"),
+    ):
+        raise SerializationError("schema-v3 array schema changes are not canonical")
+    element_indices: tuple[tuple[int, ...], ...] = tuple(
+        item.index
+        for item in result.changes.items
+        if isinstance(item, ArrayChange)
+        and item.operation == "element_replace"
+        and item.index is not None
+    )
+    if element_indices != tuple(sorted(element_indices)) or len(element_indices) != len(
+        set(element_indices)
+    ):
+        raise SerializationError("schema-v3 array indices are not in row-major order")
     required = (
         ("compared_elements", MetricDirection.NEUTRAL),
         ("equal_elements", MetricDirection.NEUTRAL),
@@ -2583,7 +2965,7 @@ def _validate_array_result(result: DiffResult, spec: ArrayCompareSpec) -> None:
         ("infinity_pairs", MetricDirection.NEUTRAL),
         ("finite_numeric_pairs", MetricDirection.NEUTRAL),
     )
-    _validate_contract_counts(
+    counts = _validate_contract_counts(
         result,
         prefix="array",
         required=required,
@@ -2593,6 +2975,28 @@ def _validate_array_result(result: DiffResult, spec: ArrayCompareSpec) -> None:
         changed_name="changed_elements",
         change_count_name="changed_items",
     )
+    if counts["missing_pairs"] != 0:
+        raise SerializationError("schema-v3 array missing-pair count must be zero")
+    if schema_operations:
+        if any(
+            counts[name] != 0
+            for name in (
+                "compared_elements",
+                "equal_elements",
+                "changed_elements",
+                "missing_pairs",
+                "nan_pairs",
+                "infinity_pairs",
+                "finite_numeric_pairs",
+            )
+        ) or counts["changed_items"] != len(schema_operations):
+            raise SerializationError(
+                "schema-v3 array schema-replacement counts are inconsistent"
+            )
+    elif counts["changed_items"] != counts["changed_elements"]:
+        raise SerializationError(
+            "schema-v3 array element-change counts are inconsistent"
+        )
     _validate_contract_resources(
         result,
         {
@@ -2604,6 +3008,12 @@ def _validate_array_result(result: DiffResult, spec: ArrayCompareSpec) -> None:
             "change_items": spec.limits.max_change_items,
             "change_payload_bytes": spec.limits.max_change_payload_bytes,
         },
+        comparator_id="array",
+    )
+    _validate_contract_truncation(
+        result,
+        max_change_items=spec.limits.max_change_items,
+        max_change_payload_bytes=spec.limits.max_change_payload_bytes,
         comparator_id="array",
     )
 
@@ -2998,14 +3408,60 @@ def outcome_from_data(value: JsonValue) -> AnyCompareOutcome:
 def dumps_outcome(outcome: AnyCompareOutcome, *, pretty: bool = False) -> str:
     """Serialize one outcome as strict UTF-8-compatible JSON text."""
     data = _coerce_json(outcome_to_data(outcome))
+    contract_kind: object = None
+    if isinstance(outcome, CompletedOutcomeV3):
+        contract_kind = outcome.result.provenance.spec.get("kind")
+    if contract_kind in ("yaml", "table", "array"):
+        data = _ordered_schema_v3_contract_data(data)
     return json.dumps(
         data,
         ensure_ascii=False,
         allow_nan=False,
-        sort_keys=True,
+        sort_keys=contract_kind not in ("yaml", "table", "array"),
         indent=2 if pretty else None,
         separators=None if pretty else (",", ":"),
     )
+
+
+def _ordered_schema_v3_contract_data(value: JsonValue) -> JsonValue:
+    """Sort legacy objects while preserving RFC-ordered new contract objects."""
+    if isinstance(value, list):
+        return [_ordered_schema_v3_contract_data(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    kind = value.get("kind")
+    preserve_kind = isinstance(kind, str) and kind in {
+        "yaml",
+        "table",
+        "array",
+        "structured_change",
+        "table_change",
+        "array_change",
+        "null",
+        "boolean",
+        "integer",
+        "decimal",
+        "string",
+        "missing",
+        "float64",
+        "nan",
+        "positive_infinity",
+        "negative_infinity",
+        "sequence",
+        "mapping",
+        "table_row",
+        "table_column_schema",
+        "table_column_order",
+    }
+    preserve_shape = set(value) in (
+        {"name", "dtype", "missing_tokens", "numeric"},
+        {"atol", "rtol", "relative_reference", "nan_equal", "signed_zero_equal"},
+        set(YamlResourceLimits.__dataclass_fields__),
+        set(TableResourceLimits.__dataclass_fields__),
+        set(ArrayResourceLimits.__dataclass_fields__),
+    )
+    keys = tuple(value) if preserve_kind or preserve_shape else tuple(sorted(value))
+    return {key: _ordered_schema_v3_contract_data(value[key]) for key in keys}
 
 
 def loads_outcome(payload: str) -> AnyCompareOutcome:
@@ -3016,7 +3472,7 @@ def loads_outcome(payload: str) -> AnyCompareOutcome:
             parse_constant=_reject_constant,
             object_pairs_hook=_unique_object,
         )
-    except SerializationError:
+    except _DuplicateKeyError:
         raise
     except (ValueError, UnicodeError) as error:
         raise SerializationError("invalid JSON") from error
@@ -3153,10 +3609,11 @@ def upgrade_outcome_v1_to_v3(outcome: CompareOutcome) -> CompareOutcomeV3:
 
 def downgrade_outcome_v3_to_v2(outcome: CompareOutcomeV3) -> CompareOutcomeV2:
     """Losslessly remove only the envelope version from a legacy-only v3 outcome."""
+    _validate_outcome_schema_for_encoding(outcome)
     if isinstance(outcome, CompletedOutcomeV3):
         spec_kind = outcome.result.provenance.spec.get("kind")
         if spec_kind not in ("auto", "text", "binary") or any(
-            isinstance(change, StructuredChange)
+            isinstance(change, (StructuredChange, TableChange, ArrayChange))
             for change in outcome.result.changes.items
         ):
             raise SerializationError("schema-v3 outcome is not legacy-only")

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import replace
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -22,6 +24,7 @@ from platydiff import (
     TableCompareSpec,
     TableResourceLimits,
     TableRowFact,
+    TextCompareSpec,
     TextEncoding,
     TextSource,
     UnavailableOutcomeV3,
@@ -52,12 +55,16 @@ from platydiff.core.serialization import (
     SerializationError,
     _change_from_data,
     _change_to_data,
+    _table_column_policy_digest,
+    downgrade_outcome_v3_to_v2,
     dumps_outcome,
     loads_outcome,
     outcome_from_data,
     outcome_to_data,
+    serialized_change_size,
     spec_from_data,
     spec_to_data,
+    upgrade_outcome_v1_to_v3,
 )
 from platydiff.plugins import PluginCatalogV1, PluginHost
 
@@ -65,7 +72,12 @@ from platydiff.plugins import PluginCatalogV1, PluginHost
 def _contract_outcome(
     spec: YamlCompareSpec | TableCompareSpec | ArrayCompareSpec,
 ) -> CompletedOutcomeV3:
-    base = compare(TextSource("0"), TextSource("0"), JsonCompareSpec())
+    yaml_difference = isinstance(spec, YamlCompareSpec)
+    base = compare(
+        TextSource("0"),
+        TextSource("1" if yaml_difference else "0"),
+        JsonCompareSpec(),
+    )
     assert isinstance(base, CompletedOutcomeV3)
     transformations: tuple[TransformationRecord, ...]
     if isinstance(spec, YamlCompareSpec):
@@ -73,8 +85,8 @@ def _contract_outcome(
         algorithm = "yaml.structural.tree.v1"
         count_values = {
             "compared_values": 1,
-            "equal_values": 1,
-            "changed_values": 0,
+            "equal_values": 0,
+            "changed_values": 1,
         }
         directions = {
             "compared_values": MetricDirection.NEUTRAL,
@@ -85,7 +97,11 @@ def _contract_outcome(
         transformations = (
             TransformationRecord("normalizing", "yaml.presentation.elide"),
             TransformationRecord("normalizing", "yaml.object_order.ignore"),
-            TransformationRecord("aligning", "yaml.pointer.position"),
+            TransformationRecord(
+                "aligning",
+                "yaml.pointer.position",
+                {"pointer": "rfc6901", "sequences": "positional"},
+            ),
         )
         resources: dict[str, tuple[int, int]] = {}
         for side in ("before", "after"):
@@ -108,10 +124,13 @@ def _contract_outcome(
         resources.update(
             {
                 "compare_work": (spec.limits.max_compare_work, 1),
-                "change_items": (spec.limits.max_change_items, 0),
+                "change_items": (spec.limits.max_change_items, 1),
                 "change_payload_bytes": (
                     spec.limits.max_change_payload_bytes,
-                    0,
+                    sum(
+                        serialized_change_size(item)
+                        for item in base.result.changes.items
+                    ),
                 ),
             }
         )
@@ -140,17 +159,41 @@ def _contract_outcome(
         }
         summary_unit = "cells"
         transformations_list = [
-            TransformationRecord("decoding", f"table.{spec.dialect}.decode"),
-            TransformationRecord("normalizing", "table.presentation.elide"),
+            TransformationRecord(
+                "decoding",
+                f"table.{spec.dialect}.decode",
+                {
+                    "dialect": spec.dialect,
+                    "encoding": spec.encoding.value,
+                    "header": spec.header,
+                },
+            ),
+            TransformationRecord(
+                "normalizing",
+                "table.presentation.elide",
+                {"quoting": "double", "record_terminators": "elided"},
+            ),
         ]
         if spec.columns:
             transformations_list.append(
-                TransformationRecord("normalizing", "table.cells.typed")
+                TransformationRecord(
+                    "normalizing",
+                    "table.cells.typed",
+                    {"column_policy_digest": _table_column_policy_digest(spec)},
+                )
             )
         transformations_list.extend(
             (
-                TransformationRecord("aligning", f"table.columns.{spec.column_order}"),
-                TransformationRecord("aligning", f"table.rows.{spec.alignment}"),
+                TransformationRecord(
+                    "aligning",
+                    f"table.columns.{spec.column_order}",
+                    {"mode": spec.column_order},
+                ),
+                TransformationRecord(
+                    "aligning",
+                    f"table.rows.{spec.alignment}",
+                    {"key_columns": list(spec.key_columns), "mode": spec.alignment},
+                ),
             )
         )
         transformations = tuple(transformations_list)
@@ -201,7 +244,13 @@ def _contract_outcome(
             for name in count_values
         }
         summary_unit = "elements"
-        transformations = (TransformationRecord("aligning", "array.elements.position"),)
+        transformations = (
+            TransformationRecord(
+                "aligning",
+                "array.elements.position",
+                {"order": "c_row_major"},
+            ),
+        )
         resources = {
             "before_rank": (spec.limits.max_rank, 1),
             "before_elements": (spec.limits.max_elements, 1),
@@ -221,6 +270,7 @@ def _contract_outcome(
         comparator_id=prefix,
         comparator_version="1",
         algorithm_id=algorithm,
+        implementation_version="1",
         resources=tuple(
             ResourceUsage(name, limit, used)
             for name, (limit, used) in resources.items()
@@ -238,10 +288,10 @@ def _contract_outcome(
     )
     result = replace(
         base.result,
-        relation=Relation.EQUAL,
-        verdict=Verdict.PASS,
+        relation=Relation.DIFFERENT if yaml_difference else Relation.EQUAL,
+        verdict=Verdict.FAIL if yaml_difference else Verdict.PASS,
         summary=DiffSummary(
-            0,
+            1 if yaml_difference else 0,
             tuple(
                 SummaryCount(name, value, summary_unit)
                 for name, value in count_values.items()
@@ -249,9 +299,9 @@ def _contract_outcome(
         ),
         changes=ChangeSet(
             ChangeCompleteness.COMPLETE,
-            (),
-            0,
-            0,
+            base.result.changes.items if yaml_difference else (),
+            1 if yaml_difference else 0,
+            1 if yaml_difference else 0,
             0,
             ChangeSelection.ALL,
             None,
@@ -260,17 +310,29 @@ def _contract_outcome(
         evaluations=(
             PolicyEvaluation(
                 rule_id,
-                Verdict.PASS,
+                Verdict.FAIL if yaml_difference else Verdict.PASS,
                 metric_name,
                 "eq",
                 FiniteValue(0),
-                FiniteValue(0),
+                FiniteValue(1 if yaml_difference else 0),
             ),
         ),
         provenance=provenance,
     )
     execution = replace(
         base.execution,
+        started_at="2026-09-10T00:00:00Z",
+        finished_at="2026-09-10T00:00:00Z",
+        duration_ns=0,
+        stages=tuple(
+            replace(
+                stage,
+                started_at="2026-09-10T00:00:00Z",
+                finished_at="2026-09-10T00:00:00Z",
+                duration_ns=0,
+            )
+            for stage in base.execution.stages
+        ),
         attempts=(
             CapabilityAttemptV2(
                 prefix,
@@ -310,15 +372,43 @@ def test_yaml_spec_round_trip_includes_all_effective_defaults() -> None:
 
 
 @pytest.mark.parametrize(
-    "spec",
-    [YamlCompareSpec(), TableCompareSpec(dialect="csv"), ArrayCompareSpec()],
+    ("spec", "fixture_name", "size", "sha256"),
+    [
+        (
+            YamlCompareSpec(),
+            "yaml_completed.json",
+            5249,
+            "fac9ac799dd9f28291b060da07541df60f09cec7cc315bcb6c3ecf3449223820",
+        ),
+        (
+            TableCompareSpec(dialect="csv"),
+            "table_completed.json",
+            5730,
+            "c0742af855211f1a8f94b98de9a209e010bfc3be85481fef1b0525a146fe65b5",
+        ),
+        (
+            ArrayCompareSpec(),
+            "array_completed.json",
+            4717,
+            "72940c50a759eb6968aac3cf5c169b5817507b3c9b2524b9be2c428da561dd25",
+        ),
+    ],
 )
 def test_contract_only_completed_fixtures_round_trip_canonically(
     spec: YamlCompareSpec | TableCompareSpec | ArrayCompareSpec,
+    fixture_name: str,
+    size: int,
+    sha256: str,
 ) -> None:
     outcome = _contract_outcome(spec)
     encoded = dumps_outcome(outcome)
+    fixture = (
+        Path(__file__).parents[1] / "fixtures" / "schema_v3" / fixture_name
+    ).read_bytes()
 
+    assert fixture == encoded.encode("utf-8") + b"\n"
+    assert len(encoded.encode("utf-8")) == size
+    assert hashlib.sha256(encoded.encode("utf-8")).hexdigest() == sha256
     assert loads_outcome(encoded) == outcome
     assert dumps_outcome(loads_outcome(encoded)) == encoded
 
@@ -672,3 +762,367 @@ def test_new_limit_records_reject_boolean_and_negative_values() -> None:
 def test_contract_module_has_no_optional_runtime_dependency() -> None:
     payload = json.dumps(spec_to_data(YamlCompareSpec()))
     assert '"kind": "yaml"' in payload
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [YamlCompareSpec(), TableCompareSpec(dialect="csv"), ArrayCompareSpec()],
+)
+def test_new_spec_readers_reject_extra_fields_recursively(
+    spec: YamlCompareSpec | TableCompareSpec | ArrayCompareSpec,
+) -> None:
+    data = spec_to_data(spec)
+    data["future"] = True
+    with pytest.raises(SerializationError, match="unexpected field"):
+        spec_from_data(data)
+
+    data = spec_to_data(spec)
+    cast(JsonObject, data["limits"])["future"] = 1
+    with pytest.raises(SerializationError, match="unexpected field"):
+        spec_from_data(data)
+
+
+def test_new_nested_readers_reject_extra_fields() -> None:
+    table = spec_to_data(
+        TableCompareSpec(
+            dialect="csv",
+            columns=(ColumnSpec("value", "float64", numeric=NumericPolicy()),),
+        )
+    )
+    column = cast(JsonObject, cast(list[object], table["columns"])[0])
+    column["future"] = True
+    with pytest.raises(SerializationError, match="unexpected field"):
+        spec_from_data(table)
+
+    numeric = spec_to_data(ArrayCompareSpec())
+    cast(JsonObject, numeric["numeric"])["future"] = True
+    with pytest.raises(SerializationError, match="unexpected field"):
+        spec_from_data(numeric)
+
+    tagged: JsonObject = {"kind": "finite", "value": 1, "future": True}
+    change = _change_to_data(
+        ArrayChange("element_replace", (0,), "1" * 64, "2" * 64, FiniteValue(1), None)
+    )
+    change["absolute_error"] = tagged
+    with pytest.raises(SerializationError, match="unexpected field"):
+        _change_from_data(change, schema_version=3)
+
+    fact_change = _change_to_data(
+        TableChange(
+            operation="cell_replace",
+            row=1,
+            column="x",
+            before_digest="1" * 64,
+            after_digest="2" * 64,
+            before_fact=ScalarFact("string", "a"),
+            after_fact=ScalarFact("string", "b"),
+        )
+    )
+    cast(JsonObject, fact_change["before_fact"])["future"] = True
+    with pytest.raises(SerializationError, match="unexpected field"):
+        _change_from_data(fact_change, schema_version=3)
+
+
+def _outcome_with_changes(
+    outcome: CompletedOutcomeV3,
+    changes: tuple[TableChange | ArrayChange, ...],
+) -> CompletedOutcomeV3:
+    total = len(changes)
+    return replace(
+        outcome,
+        result=replace(
+            outcome.result,
+            summary=replace(outcome.result.summary, change_count=total),
+            changes=ChangeSet(
+                ChangeCompleteness.COMPLETE,
+                changes,
+                total,
+                total,
+                0,
+                ChangeSelection.ALL,
+                None,
+            ),
+        ),
+    )
+
+
+def test_table_values_validate_declared_dtype_and_aligned_row_order() -> None:
+    spec = TableCompareSpec(
+        dialect="csv",
+        columns=(ColumnSpec("id", "integer"), ColumnSpec("name", "string")),
+    )
+    outcome = _contract_outcome(spec)
+    wrong_dtype = TableChange(
+        operation="cell_replace",
+        row=1,
+        column="id",
+        before_digest="1" * 64,
+        after_digest="2" * 64,
+        before_fact=ScalarFact("boolean", True),
+        after_fact=ScalarFact("integer", "1"),
+    )
+    with pytest.raises(SerializationError, match="declared column"):
+        outcome_to_data(_outcome_with_changes(outcome, (wrong_dtype,)))
+
+    wrong_order = TableChange(
+        operation="row_add",
+        row=1,
+        after_digest="2" * 64,
+        after_fact=TableRowFact(
+            (("name", ScalarFact("string", "n")), ("id", ScalarFact("integer", "1")))
+        ),
+    )
+    with pytest.raises(SerializationError, match="columns do not match"):
+        outcome_to_data(_outcome_with_changes(outcome, (wrong_order,)))
+
+
+def test_array_result_rejects_mixed_or_reversed_schema_changes() -> None:
+    outcome = _contract_outcome(ArrayCompareSpec())
+    shape = ArrayChange("shape_replace", None, "1" * 64, "2" * 64)
+    dtype = ArrayChange("dtype_replace", None, "3" * 64, "4" * 64)
+    element = ArrayChange("element_replace", (0,), "5" * 64, "6" * 64)
+
+    with pytest.raises(SerializationError, match="suppress element"):
+        outcome_to_data(_outcome_with_changes(outcome, (shape, element)))
+    with pytest.raises(SerializationError, match="schema changes are not canonical"):
+        outcome_to_data(_outcome_with_changes(outcome, (dtype, shape)))
+
+
+def test_yaml_result_binds_scalar_fact_digest_and_transformation_parameters() -> None:
+    outcome = _contract_outcome(YamlCompareSpec())
+    data = outcome_to_data(outcome)
+    result = cast(JsonObject, data["result"])
+    changes = cast(JsonObject, result["changes"])
+    item = cast(JsonObject, cast(list[object], changes["items"])[0])
+    item["after_digest"] = "f" * 64
+    with pytest.raises(SerializationError, match="does not match"):
+        outcome_from_data(data)
+
+    data = outcome_to_data(outcome)
+    result = cast(JsonObject, data["result"])
+    provenance = cast(JsonObject, result["provenance"])
+    transformations = cast(list[object], provenance["transformations"])
+    cast(JsonObject, transformations[0])["parameters"] = {"future": True}
+    with pytest.raises(SerializationError, match="transformations are not canonical"):
+        outcome_from_data(data)
+
+
+def test_array_schema_replacement_requires_zero_element_counts() -> None:
+    outcome = _contract_outcome(ArrayCompareSpec())
+    shape = ArrayChange("shape_replace", None, "1" * 64, "2" * 64)
+    changed = _outcome_with_changes(outcome, (shape,))
+    metrics = tuple(
+        replace(metric, value=FiniteValue(1))
+        if metric.name in ("array.changed_items", "array.changed_elements")
+        else replace(metric, value=FiniteValue(0))
+        if metric.name == "array.equal_elements"
+        else metric
+        for metric in changed.result.metrics
+    )
+    counts = tuple(
+        replace(count, value=1)
+        if count.name in ("changed_items", "changed_elements")
+        else replace(count, value=0)
+        if count.name == "equal_elements"
+        else count
+        for count in changed.result.summary.counts
+    )
+    invalid = replace(
+        changed,
+        result=replace(
+            changed.result,
+            relation=Relation.DIFFERENT,
+            verdict=Verdict.FAIL,
+            metrics=metrics,
+            summary=replace(changed.result.summary, counts=counts),
+            evaluations=(
+                replace(
+                    changed.result.evaluations[0],
+                    verdict=Verdict.FAIL,
+                    observed=FiniteValue(1),
+                ),
+            ),
+        ),
+    )
+    with pytest.raises(SerializationError, match="schema-replacement counts"):
+        outcome_to_data(invalid)
+
+
+def test_new_contract_wire_order_and_literal_change_bytes_are_frozen() -> None:
+    table_encoded = dumps_outcome(_contract_outcome(TableCompareSpec(dialect="csv")))
+    assert (
+        '"spec":{"kind":"table","dialect":"csv","encoding":"utf-8","header"'
+        in table_encoded
+    )
+    assert table_encoded.index('"table.compared_cells"') < table_encoded.index(
+        '"table.equal_cells"'
+    )
+
+    row_change = TableChange(
+        operation="row_add",
+        row=1,
+        after_digest="a" * 64,
+        after_fact=TableRowFact((("x", ScalarFact("string", "v")),)),
+    )
+    assert json.dumps(
+        _change_to_data(row_change), ensure_ascii=False, separators=(",", ":")
+    ) == (
+        '{"kind":"table_change","operation":"row_add","row":1,'
+        '"key_ordinal":null,"key":null,"column":null,"before_digest":null,'
+        '"after_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",'
+        '"before_fact":null,"after_fact":{"kind":"table_row","cells":'
+        '[["x",{"kind":"string","value":"v"}]]}}'
+    )
+    array_change = ArrayChange("shape_replace", None, "1" * 64, "2" * 64)
+    assert json.dumps(
+        _change_to_data(array_change), ensure_ascii=False, separators=(",", ":")
+    ) == (
+        '{"kind":"array_change","operation":"shape_replace","index":null,'
+        '"before_digest":"1111111111111111111111111111111111111111111111111111111111111111",'
+        '"after_digest":"2222222222222222222222222222222222222222222222222222222222222222",'
+        '"absolute_error":null,"relative_error":null}'
+    )
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [YamlCompareSpec(), TableCompareSpec(dialect="csv"), ArrayCompareSpec()],
+)
+def test_contract_results_reject_unknown_transformation_parameters(
+    spec: YamlCompareSpec | TableCompareSpec | ArrayCompareSpec,
+) -> None:
+    outcome = _contract_outcome(spec)
+    first = outcome.result.provenance.transformations[0]
+    invalid = replace(
+        outcome,
+        result=replace(
+            outcome.result,
+            provenance=replace(
+                cast(ComparisonProvenanceV2, outcome.result.provenance),
+                transformations=(
+                    replace(first, parameters={**first.parameters, "future": True}),
+                    *outcome.result.provenance.transformations[1:],
+                ),
+            ),
+        ),
+    )
+    with pytest.raises(SerializationError, match="transformations are not canonical"):
+        outcome_to_data(invalid)
+
+
+def test_error_metrics_follow_finite_pair_applicability_and_value_rules() -> None:
+    table = _contract_outcome(TableCompareSpec(dialect="csv"))
+    unexpected = replace(
+        table,
+        result=replace(
+            table.result,
+            metrics=(
+                *table.result.metrics,
+                Metric(
+                    "table.maximum_absolute_error",
+                    FiniteValue(0),
+                    "numeric_values",
+                    MetricDirection.LOWER_IS_BETTER,
+                    "maximum",
+                ),
+            ),
+        ),
+    )
+    with pytest.raises(SerializationError, match="applicability"):
+        outcome_to_data(unexpected)
+
+    array = _contract_outcome(ArrayCompareSpec())
+    metrics = (
+        *(
+            replace(metric, value=FiniteValue(1))
+            if metric.name == "array.finite_numeric_pairs"
+            else metric
+            for metric in array.result.metrics
+        ),
+        Metric(
+            "array.maximum_absolute_error",
+            PositiveInfinityValue(),
+            "numeric_values",
+            MetricDirection.LOWER_IS_BETTER,
+            "maximum",
+        ),
+        Metric(
+            "array.maximum_relative_error",
+            PositiveInfinityValue(),
+            "ratio",
+            MetricDirection.LOWER_IS_BETTER,
+            "maximum",
+        ),
+    )
+    summary = tuple(
+        replace(count, value=1) if count.name == "finite_numeric_pairs" else count
+        for count in array.result.summary.counts
+    )
+    invalid_value = replace(
+        array,
+        result=replace(
+            array.result,
+            metrics=metrics,
+            summary=replace(array.result.summary, counts=summary),
+        ),
+    )
+    with pytest.raises(SerializationError, match="error metric value"):
+        outcome_to_data(invalid_value)
+
+
+def test_table_truncation_evidence_uses_declared_limit_and_reason() -> None:
+    outcome = _contract_outcome(TableCompareSpec(dialect="csv"))
+    metrics = tuple(
+        replace(metric, value=FiniteValue(1))
+        if metric.name == "table.changed_items"
+        else metric
+        for metric in outcome.result.metrics
+    )
+    counts = tuple(
+        replace(count, value=1) if count.name == "changed_items" else count
+        for count in outcome.result.summary.counts
+    )
+    invalid = replace(
+        outcome,
+        result=replace(
+            outcome.result,
+            relation=Relation.DIFFERENT,
+            verdict=Verdict.FAIL,
+            summary=DiffSummary(1, counts),
+            changes=ChangeSet(
+                ChangeCompleteness.TRUNCATED,
+                (),
+                1,
+                0,
+                1,
+                ChangeSelection.SOURCE_ORDER_PREFIX,
+                999,
+                None,
+            ),
+            metrics=metrics,
+            evaluations=(
+                replace(
+                    outcome.result.evaluations[0],
+                    verdict=Verdict.FAIL,
+                    observed=FiniteValue(1),
+                ),
+            ),
+        ),
+    )
+    with pytest.raises(SerializationError, match="truncation evidence"):
+        outcome_to_data(invalid)
+
+
+def test_downgrade_validates_before_rejecting_phase4_change_under_legacy_spec() -> None:
+    legacy_v1 = compare(TextSource("same"), TextSource("same"), TextCompareSpec())
+    legacy = upgrade_outcome_v1_to_v3(legacy_v1)
+    assert isinstance(legacy, CompletedOutcomeV3)
+    phase4_change = TableChange(
+        operation="column_add",
+        column="x",
+        after_digest="a" * 64,
+        after_fact=ColumnSchemaFact("x", "string", 0, None),
+    )
+    malformed = _outcome_with_changes(legacy, (phase4_change,))
+    with pytest.raises(SerializationError, match="legacy schema-v3 result"):
+        downgrade_outcome_v3_to_v2(malformed)

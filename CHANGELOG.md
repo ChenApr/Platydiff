@@ -36,6 +36,11 @@ All notable changes to Platydiff are documented in this file.
 
 ### Fixed
 
+- Completed the pre-release schema-v3 closed union with the contract-only YAML,
+  table, and dense-array specs, facts, changes, strict canonical readers and
+  writers, reserved built-in provenance validation, and literal predecessor
+  fixtures. No YAML/table/array comparator, registry, Python comparison route,
+  CLI route, detection behavior, SDK v2, dependency, or UI was added.
 - Preserved the exact loaded-provider snapshot in schema-v2 CLI failures after
   discovery, and made compatibility-receipt evidence deeply immutable,
   path-free, and revalidated at emission.
@@ -66,8 +71,9 @@ All notable changes to Platydiff are documented in this file.
 - Safe separation of rendered outcomes on stdout from parser and renderer
   failures on stderr.
 
-YAML, tables, arrays, later modalities, HTML/UI rendering, configuration files,
-and automatic plugin installation remain planned.
+YAML, table, and array comparator execution, later modalities, HTML/UI
+rendering, configuration files, and automatic plugin installation remain
+planned.
 
 ### Changed
 

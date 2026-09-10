@@ -2008,6 +2008,12 @@ class ChangeSet:
         ]
         if structured_items and len(structured_items) != len(self.items):
             raise ValueError("built-in change kinds must not be mixed")
+        table_items = [item for item in self.items if isinstance(item, TableChange)]
+        if table_items and len(table_items) != len(self.items):
+            raise ValueError("built-in change kinds must not be mixed")
+        array_items = [item for item in self.items if isinstance(item, ArrayChange)]
+        if array_items and len(array_items) != len(self.items):
+            raise ValueError("built-in change kinds must not be mixed")
 
 
 def _validate_binary_spans(spans: tuple[BinarySpan, ...]) -> None:
@@ -2086,9 +2092,46 @@ class DiffResult:
         ).verdict
         if self.verdict is not expected:
             raise ValueError("verdict must equal the highest policy evaluation")
-        object.__setattr__(
-            self, "metrics", tuple(sorted(self.metrics, key=lambda x: x.name))
-        )
+        spec_kind = self.provenance.spec.get("kind")
+        metric_order = {
+            "yaml": (
+                "yaml.compared_values",
+                "yaml.equal_values",
+                "yaml.changed_values",
+            ),
+            "table": (
+                "table.compared_cells",
+                "table.equal_cells",
+                "table.changed_cells",
+                "table.changed_items",
+                "table.missing_pairs",
+                "table.nan_pairs",
+                "table.infinity_pairs",
+                "table.finite_numeric_pairs",
+                "table.maximum_absolute_error",
+                "table.maximum_relative_error",
+            ),
+            "array": (
+                "array.compared_elements",
+                "array.equal_elements",
+                "array.changed_elements",
+                "array.changed_items",
+                "array.missing_pairs",
+                "array.nan_pairs",
+                "array.infinity_pairs",
+                "array.finite_numeric_pairs",
+                "array.maximum_absolute_error",
+                "array.maximum_relative_error",
+            ),
+        }.get(spec_kind if isinstance(spec_kind, str) else "")
+        if metric_order is None:
+            normalized_metrics = tuple(sorted(self.metrics, key=lambda x: x.name))
+        else:
+            positions = {name: index for index, name in enumerate(metric_order)}
+            normalized_metrics = tuple(
+                sorted(self.metrics, key=lambda item: positions.get(item.name, 10**9))
+            )
+        object.__setattr__(self, "metrics", normalized_metrics)
         object.__setattr__(
             self,
             "evaluations",
