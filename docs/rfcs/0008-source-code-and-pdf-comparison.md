@@ -7,7 +7,7 @@
 - Accepted: 2026-09-10
 - Review revision: 2026-09-10
 - Approved decisions: P6X1-P6X11, SC1-SC10, PDF1-PDF10
-- Approved contract gate: P6-C0
+- Approved contract gate definition: P6-C0
 - Owners: Platydiff maintainers
 - Implementation owner: unassigned pending separate implementation authorization
 
