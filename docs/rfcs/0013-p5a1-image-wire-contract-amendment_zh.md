@@ -2,28 +2,29 @@
 
 [English documentation](0013-p5a1-image-wire-contract-amendment.md)
 
-- 状态：Proposed
+- 状态：Accepted
 - 日期：2026-09-10
+- 接受日期：2026-09-11
 - 负责人：Platydiff maintainers
-- 若获接受则修订：[RFC 0007](0007-image-comparison_zh.md)
+- 修订：[RFC 0007](0007-image-comparison_zh.md)
 - 前驱：[RFC 0010](0010-schema-predecessor-and-phase6-contract-amendment_zh.md)
 - 实现授权：无
 
 ## 摘要
 
-本 Proposed amendment 闭合 P5-A1 派发前必须决定的 wire-level contract，且不改变
+本 Accepted amendment 闭合 P5-A1 派发前必须决定的 wire-level contract，且不改变
 RFC 0007 已接受的 I1-I16 图片语义。它冻结 P5-A1 边界、public enum type、五种图片
 transformation payload、仅用于 schema 的 provenance specimen、
 `unsupported_image_profile` problem、terminal presentation、downgrade rule 与
 compatibility acceptance criteria。
 
-证据基线是 2026-09-10 的 `origin/main` `5f23bbf`。该基线已包含 RFC 0010；已审阅的
-P4-C1 candidate 为 `63b62d9`，但它**不是**该 `main` 的祖先，因此仍是未合并的前驱候选。
-可以现在审阅本 RFC，但接受或合并本文都不能满足 P5-A1 predecessor gate。
+当前证据基线是 2026-09-11 的 `origin/main` `b84603f`。PR #20 已合并独立审阅通过的
+P4-C1 实现及冻结 v1-v3 compatibility fixture，因此 schema predecessor gate 已满足。
+接受本 RFC 仍不授权或派发 P5-A1 实现。
 
 ## 授权边界
 
-P5-A1 严格为 contract-only。仅当本 amendment 获接受且前驱门禁随后通过时，P5-A1 才可添加：
+P5-A1 严格为 contract-only。仅当人类随后单独授权实现时，P5-A1 才可添加：
 
 - schema-v4 public model、validation、serialization 与显式 migration helper；
 - 由 public model 直接构造的 schema-v4 canonical compatibility fixture，以及
@@ -38,12 +39,13 @@ UI 或图片 corpus 文件。由于没有 runtime capability registration，
 `compare(..., ImageCompareSpec(...))` 仍不可用。Canonical `CompletedOutcomeV4` 是测试直接
 构造的 schema specimen，不是 PNG 已被 decode 或 compare 的证据。
 
-在实际 P4-C1 实现及其 v1-v3 compatibility fixture 合并到 `main`、经独立验证且与下述类型
-一致前，P5-A1 仍处于 blocked 状态。发现不一致时必须回调 RFC，不能在代码中顺手修补。
+实际 P4-C1 实现及其 v1-v3 compatibility fixture 现已合并到 `main`，并已针对下述
+类型完成独立验证。这只清除 predecessor condition。P5-A1 仍未实现，且在人类单独派发前
+不得启动；后续若发现 predecessor 不一致，必须回调本 RFC，不得在代码中顺手修补。
 
-## 需要批准的 Proposed decisions
+## 已接受的决策
 
-| ID | Proposed decision |
+| ID | Accepted decision |
 | --- | --- |
 | P5A1-1 | 按上述边界将 P5-A1 严格限定为 contract-only。 |
 | P5A1-2 | 可复用的 public 图片选项使用具名 `StrEnum`；只有 discriminator 与固定 tile-size 常量保留 `Literal`。 |
@@ -52,7 +54,8 @@ UI 或图片 corpus 文件。由于没有 runtime capability registration，
 | P5A1-5 | 只在 schema-v4 failed-problem allowlist 增加 `unsupported_image_profile`，其 details object 为 closed；v1-v3 reader 继续拒绝它。 |
 | P5A1-6 | 只增加下述有界 terminal projection；仅当所有事实都能无损表达于目标前驱时才允许 downgrade。 |
 
-在 human 明确批准相应 ID 并通过后续文档变更更新本 RFC 状态前，上表均不是 Accepted。
+用户已于 2026-09-11 批准 P5A1-1 至 P5A1-6 及本 RFC 的完整 closure rule。该批准
+接受 contract，但不授予实现权限。
 
 ## Public Python 与 wire enums
 
@@ -958,7 +961,7 @@ Implementation diff 不得包含说明性 test/doc 之外的 Pillow reference、
 decoder/scanner/comparator、capability registration、CLI image route、auto/SDK expansion、artifact、
 corpus image 或 UI code。
 
-Proposed P5-A1 commit boundary 为：
+P5-A1 commit boundary 为：
 
 1. `feat(core): add schema-v4 image comparison contracts`
 2. `feat(renderers): add bounded schema-v4 image projection`
@@ -975,7 +978,7 @@ actual sample/tile comparison、change/metric/resource producer evidence，并�
 comparator/capability ID `image`。二者独立派发，都不是隐藏的 P5-A1 acceptance gate。本
 amendment 不改变或授权 P5-C/P5-P/P5-F/P5-M/P5-H/P5-S callback。
 
-若获接受，本 RFC 全局 supersede RFC 0007 的 built-in comparator identity：`image` 在 schema
+本 RFC 全局 supersede RFC 0007 的 built-in comparator identity：`image` 在 schema
 fixture、attempt、provenance、migration 与所有未来 runtime gate 中取代
 `image.decoded_samples`，`image.decoded_samples.tiles.v1` 仍是 algorithm ID。本 RFC 也
 supersede RFC 0007 中仍开放的 P5-A1 enum representation、transformation JSON shape、schema-only

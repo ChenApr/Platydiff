@@ -2,32 +2,32 @@
 
 [Chinese documentation](0013-p5a1-image-wire-contract-amendment_zh.md)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-10
+- Accepted: 2026-09-11
 - Owners: Platydiff maintainers
-- Amends: [RFC 0007](0007-image-comparison.md), if accepted
+- Amends: [RFC 0007](0007-image-comparison.md)
 - Predecessor: [RFC 0010](0010-schema-predecessor-and-phase6-contract-amendment.md)
 - Implementation authorization: none
 
 ## Summary
 
-This proposed amendment closes the wire-level decisions needed before P5-A1
+This accepted amendment closes the wire-level decisions needed before P5-A1
 can be dispatched. It does not change the accepted I1-I16 image semantics in
 RFC 0007. It freezes the P5-A1 boundary, public enum types, five image
 transformation payloads, schema-only provenance specimens, the
 `unsupported_image_profile` problem, terminal presentation, downgrade rules,
 and compatibility acceptance criteria.
 
-The evidence baseline is `origin/main` `5f23bbf` on 2026-09-10. RFC 0010 is on
-that baseline. The reviewed P4-C1 candidate is `63b62d9`, and it is **not** an
-ancestor of that `main`. P4-C1 therefore remains an unmerged predecessor
-candidate. This RFC may be reviewed now, but neither acceptance nor merge of
-this document would satisfy the P5-A1 predecessor gate.
+The current evidence baseline is `origin/main` `b84603f` on 2026-09-11. PR #20
+merged the independently reviewed P4-C1 implementation and its frozen v1-v3
+compatibility fixtures, so the schema predecessor gate is satisfied. Acceptance
+of this RFC still does not authorize or dispatch P5-A1 implementation.
 
 ## Authorization boundary
 
-P5-A1 is strictly contract-only. If this amendment is accepted and the
-predecessor gate later passes, P5-A1 may add only:
+P5-A1 is strictly contract-only. If a human separately authorizes its
+implementation, P5-A1 may add only:
 
 - schema-v4 public models, validation, serialization, and explicit migration
   helpers;
@@ -45,14 +45,16 @@ because no runtime capability is registered. A canonical `CompletedOutcomeV4`
 is a schema specimen constructed by a test; it is not evidence that a PNG was
 decoded or compared.
 
-P5-A1 remains blocked until the actual P4-C1 implementation and its v1-v3
-compatibility fixtures are merged to `main`, independently verified, and found
-consistent with the types named below. Any mismatch returns to this RFC rather
-than being repaired opportunistically in code.
+The actual P4-C1 implementation and its v1-v3 compatibility fixtures are now
+merged to `main` and have been independently verified against the types named
+below. This clears only the predecessor condition. P5-A1 remains unimplemented
+and must not start without a separate human dispatch; any later predecessor
+mismatch returns to this RFC rather than being repaired opportunistically in
+code.
 
-## Proposed decisions requiring approval
+## Accepted decisions
 
-| ID | Proposed decision |
+| ID | Accepted decision |
 | --- | --- |
 | P5A1-1 | Make P5-A1 strictly contract-only under the boundary above. |
 | P5A1-2 | Use named `StrEnum` types for reusable public image choices; retain `Literal` only for discriminators and the invariant tile-size constant. |
@@ -61,8 +63,9 @@ than being repaired opportunistically in code.
 | P5A1-5 | Add `unsupported_image_profile` only to the schema-v4 failed-problem allowlist, with a closed details object; v1-v3 readers continue to reject it. |
 | P5A1-6 | Add only the bounded terminal projection below and permit downgrade only when every fact is losslessly representable in the target predecessor. |
 
-No proposal in this table is Accepted until a human explicitly approves its
-ID and this RFC status is changed in a later documentation change.
+The user approved P5A1-1 through P5A1-6 and the complete closure rules in this
+RFC on 2026-09-11. This approval accepts the contract but grants no
+implementation authority.
 
 ## Public Python and wire enums
 
@@ -1110,7 +1113,7 @@ tests/docs, dependency metadata, image decoder/scanner/comparator, capability
 registration, CLI image route, auto/SDK expansion, artifact, corpus image, or
 UI code.
 
-The proposed P5-A1 commit boundaries are:
+The P5-A1 commit boundaries are:
 
 1. `feat(core): add schema-v4 image comparison contracts`
 2. `feat(renderers): add bounded schema-v4 image projection`
@@ -1131,7 +1134,7 @@ comparator/capability ID `image`. Their dispatches are independent; neither is
 a hidden P5-A1 acceptance gate. This amendment does not alter the
 P5-C/P5-P/P5-F/P5-M/P5-H/P5-S callbacks or authorize any of them.
 
-If accepted, this RFC supersedes RFC 0007's built-in comparator identity
+This RFC supersedes RFC 0007's built-in comparator identity
 globally: `image` replaces `image.decoded_samples` in schema fixtures, attempts,
 provenance, migrations, and every future runtime gate, while
 `image.decoded_samples.tiles.v1` remains the algorithm ID. It also supersedes

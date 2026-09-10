@@ -7,14 +7,14 @@
 - Review revision: 2026-09-10
 - Acceptance date: 2026-09-10
 - Owners: Platydiff maintainers
-- Implementation owner: unassigned; conditional authorization recorded for
-  coordinator dispatch after the actual predecessor merge gate passes
-- Predecessor amendment: RFC 0010 records conditional authorization for P5-A1
-  dispatch only after RFC 0010, P4-C1/schema-v3, and predecessor compatibility
-  fixtures merge to `main`; P5-A1 does not start automatically
-- Proposed P5-A1 wire amendment: [RFC 0013](0013-p5a1-image-wire-contract-amendment.md)
-  closes enum, transformation, fixture, problem, terminal, and downgrade choices;
-  it has no effect unless separately accepted
+- Implementation owner: unassigned; P5-A1 still requires separate human
+  authorization and dispatch
+- Predecessor amendment: RFC 0010's P4-C1/schema-v3 correction and predecessor
+  compatibility fixtures merged to `main` in PR #20 at `b84603f`; satisfying
+  that predecessor condition does not start P5-A1
+- Accepted P5-A1 wire amendment: [RFC 0013](0013-p5a1-image-wire-contract-amendment.md)
+  closes enum, transformation, fixture, serializer-version, problem, terminal,
+  and downgrade choices without authorizing implementation
 
 ## Summary and authorization boundary
 
@@ -516,8 +516,9 @@ the six source facts and their limits apply independently to `before` and
 digests enter public/provenance data. Raw or excerpted chunk payloads, profile
 names, text keywords/values, EXIF values, and palette entries do not.
 
-Comparison provenance records input hashes, comparator
-`image.decoded_samples`, algorithm `image.decoded_samples.tiles.v1`, Platydiff
+Comparison provenance records input hashes, comparator `image` as superseded by
+[RFC 0013](0013-p5a1-image-wire-contract-amendment.md), algorithm
+`image.decoded_samples.tiles.v1`, Platydiff
 implementation version, Pillow version, relevant linked library versions where
 available, normalized spec, and every configured/effective/used resource.
 

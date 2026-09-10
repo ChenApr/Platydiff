@@ -247,10 +247,10 @@ schema-v4/v5/v6 implementation 必须消费这些实际 fixture，且不得重�
 [RFC 0007](rfcs/0007-image-comparison_zh.md) 定义已接受的更窄首个图片切片：显式、内建地比较
 static 8-bit PNG 的 decoded sample；encoded identity 继续由 binary comparator 负责，且不提供
 隐式 orientation、color、alpha、resize、crop、artifact、plugin 或 detection 行为。接受该 RFC
-不授权实现。Proposed
+不授权实现。Accepted
 [RFC 0013](rfcs/0013-p5a1-image-wire-contract-amendment_zh.md) 闭合 contract-only P5-A1 的
 enum、transformation、canonical-fixture provenance、problem-code、terminal、serializer-version 与
-downgrade decision；该 proposal 不授予实现权限。
+downgrade decision。其 acceptance 不授予实现权限；P5-A1 仍未实现，须等待人类单独派发。
 
 ### 6.5 音频
 
