@@ -305,9 +305,9 @@ YAML/table/array contract surface，但不使这些 comparator 可执行。
 Phase 5 图片契约已在 [RFC 0007](rfcs/0007-image-comparison_zh.md) 中接受；接受不构成实现授权，
 且必须先重新验证实际合并的 schema-v3 前驱。下列其他模态与 renderer 仍是计划能力。
 Phase 6 source/PDF 契约已在 [RFC 0008](rfcs/0008-source-code-and-pdf-comparison_zh.md)
-中接受；schema-v5 allocation 已接受，但仍需要 implementation、compatibility fixture，以及
-[RFC 0010](rfcs/0010-schema-predecessor-and-phase6-contract-amendment_zh.md) 中接受的
-P6-C0 contract-gap decision。Phase 7 audio
+中接受；schema-v5 allocation 与 [RFC 0014](rfcs/0014-phase6-source-pdf-contract-closure-amendment_zh.md)
+接受的 P6-C0 closure rule 都仅为 contract-only，仍需要 implementation、compatibility fixture 与
+独立 human dispatch。Phase 7 audio
 契约和 video roadmap direction 已在 [RFC 0009](rfcs/0009-audio-and-video-comparison_zh.md) 中接受；
 它只为 audio 接受 schema v6，video 需等待后续 backend/worker amendment 与下一个 successor。
 它们尚未实现；即使 design 与 backend research 并发推进，public schema merge 也必须遵守前驱顺序。

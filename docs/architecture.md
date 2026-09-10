@@ -324,9 +324,10 @@ image contracts are accepted in
 implementation, and the actual merged schema-v3 predecessor must be revalidated
 first. Phase 6 source/PDF contracts are accepted in
 [RFC 0008](rfcs/0008-source-code-and-pdf-comparison.md); schema-v5 allocation
-is accepted but still requires implementation, compatibility fixtures, and the
-P6-C0 contract-gap decisions accepted in
-[RFC 0010](rfcs/0010-schema-predecessor-and-phase6-contract-amendment.md). Phase 7
+and the P6-C0 closure rules accepted in
+[RFC 0014](rfcs/0014-phase6-source-pdf-contract-closure-amendment.md) are
+contract-only and still require implementation, compatibility fixtures, and
+independent human dispatch. Phase 7
 audio contracts and video roadmap direction are accepted in
 [RFC 0009](rfcs/0009-audio-and-video-comparison.md); it accepts schema v6 for
 audio only, while video waits for a later backend/worker amendment and the next
