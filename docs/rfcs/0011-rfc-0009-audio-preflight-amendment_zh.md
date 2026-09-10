@@ -7,23 +7,24 @@
 - Accepted: 2026-09-10
 - Amends: [RFC 0009](0009-audio-and-video-comparison_zh.md)
 - Approved decisions: P7A-AM1 到 P7A-AM10；P7A-W1 到 P7A-W5
-- Prerequisites: accepted RFC 0010 Option A/SP1-SP6，以及实际 merge 的 P4-C1、P5-A1/schema-v4、P6-C0/schema-v5 和 RFC 0011
-- Conditional implementation authorization: 已记录，但仅能在所有实际 predecessor merge 后由 coordinator dispatch
+- Schema prerequisites: accepted RFC 0010 Option A/SP1-SP6，以及实际 merge 的 P4-C1、P5-A1/schema-v4 和 P6-C0/schema-v5
+- Dispatch prerequisite: RFC 0011 itself has merged
+- Conditional implementation authorization: 已记录，但仅能在 schema prerequisite 和 dispatch prerequisite 均满足后由 coordinator dispatch
 - Owners: Platydiff 维护者
-- Implementation owner: 所有实际 predecessor merge 后由 coordinator dispatch
+- Implementation owner: schema prerequisite 与 RFC 0011 merge 后由 coordinator dispatch
 
 ## 摘要与授权边界
 
 本 RFC 提议为 RFC 0009 增加 P7-A1 audio implementation preflight blocker
 修订，且本修订已被 Accepted。RFC acceptance 本身不启动代码；conditional human authorization
-已记录，但 P7-A1 implementation 只能在所有实际 predecessor merge 后由 coordinator dispatch。
-Acceptance 不授权依赖变更、FFmpeg、artifact、UI、SDK v2、自动媒体探测、video implementation，
-或独立 schema renumbering。
+已记录，但 P7-A1 implementation 只能在 schema prerequisite 与 RFC 0011 itself merge 后由
+coordinator dispatch。Acceptance 不授权依赖变更、FFmpeg、artifact、UI、SDK v2、自动媒体探测、
+video implementation，或独立 schema renumbering。
 
 本修订保留 RFC 0009 的所有前驱门禁，并把全局 schema numbering 交给已批准路径：
 RFC 0010 Option A/SP1-SP6。只有 RFC 0010 Option A/SP1-SP6 先被 accepted，并且
-P4-C1、P5-A1/schema-v4、P6-C0/schema-v5 和 RFC 0011 predecessors 实际 merge 后，audio
-才保留 schema v6。必须从当前 `main` 复验 P4-A1 JSON/schema-v3，且 P7-A1 仍需等待所有
+P4-C1、P5-A1/schema-v4 和 P6-C0/schema-v5 predecessors 实际 merge 后，audio 才保留 schema
+v6。必须从当前 `main` 复验 P4-A1 JSON/schema-v3，且 P7-A1 仍需等待 RFC 0011 itself merged、
 predecessor implementation 与 compatibility fixture 可用后由 coordinator dispatch。Video 仍只是
 roadmap-only，并等待单独的 backend/worker amendment 和下一个 schema successor。
 
@@ -42,12 +43,12 @@ roadmap-only，并等待单独的 backend/worker amendment 和下一个 schema s
 | P7A-AM7 | 冻结 duration 与 timebase binary64 determinism，同时保留精确 rational fact。 | 允许平台相关 float formatting 或 extended precision。 |
 | P7A-AM8 | 冻结首批 CLI flag，并要求 SDK-v1 plugin audio flag 在 plugin execution 前被拒绝。 | 让 generic plugin 或 media flag 进入 SDK v1.1 host。 |
 | P7A-AM9 | 冻结 P7-A1 failure 的 stable problem detail key、value type、ordering 与 omission rule。 | 透传 backend-specific detail dictionary。 |
-| P7A-AM10 | 让 audio schema v6 取决于已批准的 RFC 0010 Option A/SP1-SP6，以及实际 P4-C1、P5-A1/schema-v4、P6-C0/schema-v5 和 RFC 0011 predecessor merges。 | 在这个 audio-specific amendment 中解决 cross-RFC closed-union numbering。 |
+| P7A-AM10 | 让 audio schema v6 取决于已批准的 RFC 0010 Option A/SP1-SP6，以及实际 P4-C1、P5-A1/schema-v4 和 P6-C0/schema-v5 merges。 | 在这个 audio-specific amendment 中解决 cross-RFC closed-union numbering。 |
 | P7A-W1 | 保持 classic PCM `fmt ` chunk size 16 作为 P7-A1 唯一可解码的 classic PCM form；valid size-18 且 `cbSize=0` 的 chunk 是 valid but unsupported。 | 接受 size-18 classic PCM，并把它视为等价于 size 16。 |
 | P7A-W2 | 保持 multiple `data` chunk 对 P7-A1 valid but unsupported。 | 拼接多个 `data` chunk，并增加显式 chunk-boundary fact。 |
 | P7A-W3 | 对 `valid_bits < container_bits` 的 WAVE_FORMAT_EXTENSIBLE，要求 profile 规定的 unused padding bit 为零，保留 valid-bits 与 container-bits fact，并精确比较已验证的 stored integer representation，不做 hidden masking；non-zero padding bit 是 malformed。 | 在 sample comparison 前 mask unused bit。 |
 | P7A-W4 | 同时暴露 `platydiff audio` 与 `platydiff compare --type audio`；二者构造相同的 `CompareSpec` 并执行相同 comparison path，以保持与其他 built-in 一致。 | 只保留 generic compare command。 |
-| P7A-W5 | 只有 RFC 0010 Option A/SP1-SP6 被接受，并且 P4-C1、P5-A1/schema-v4、P6-C0/schema-v5 和 RFC 0011 predecessor 实际 merge 后，才保留 audio schema v6。 | 在本 amendment 中独立分配 audio v6。 |
+| P7A-W5 | 只有 RFC 0010 Option A/SP1-SP6 被接受，并且 P4-C1、P5-A1/schema-v4 和 P6-C0/schema-v5 predecessors 实际 merge 后，才保留 audio schema v6。 | 在本 amendment 中独立分配 audio v6。 |
 
 ## Wire shape 与解析规则
 
@@ -387,11 +388,11 @@ Backend stderr、exception class、host path、source filename、safe label 和 
 本 accepted amendment 会在 P7-A1 代码开始前更新 RFC 0009。它不改变 schema v1-v5 payload，
 不为 video 分配 schema membership，也不独立选择 audio successor number。RFC acceptance 本身
 不启动代码；conditional human authorization 已记录，但仍需 RFC 0010、P4-C1、
-P5-A1/schema-v4、P6-C0/schema-v5 和 RFC 0011 实际 merge 后由 coordinator dispatch。最终 audio
-successor fixture 只有在这些 predecessor merge 后才使用 schema v6，并覆盖 omitted default、
-explicit default、unknown-key rejection、encoded-byte change、unsupported valid WAV profile、
-corrupt WAV input、absent versus unknown fact、duration determinism、CLI rejection，以及 stable
-problem detail object。
+P5-A1/schema-v4 和 P6-C0/schema-v5 实际 merge，且 RFC 0011 itself merged 后由 coordinator
+dispatch。最终 audio successor fixture 只有在 schema predecessor merge 后才使用 schema v6，
+并覆盖 omitted default、explicit default、unknown-key rejection、encoded-byte change、
+unsupported valid WAV profile、corrupt WAV input、absent versus unknown fact、duration
+determinism、CLI rejection，以及 stable problem detail object。
 
 ## Implementation test matrix
 
@@ -411,5 +412,5 @@ problem detail object。
 
 2026-09-10 已批准：P7A-AM1 到 P7A-AM10，以及 P7A-W1 到 P7A-W5。P7-A1 implementation 的
 conditional human authorization 已记录，但 RFC acceptance 本身不启动代码。P7-A1 仍受 gate
-约束，并且需要 RFC 0010、P4-C1、P5-A1/schema-v4、P6-C0/schema-v5 和 RFC 0011 实际 merge 后由
-coordinator dispatch。
+约束，并且需要 RFC 0010、P4-C1、P5-A1/schema-v4 和 P6-C0/schema-v5 实际 merge，且
+RFC 0011 itself merged 后由 coordinator dispatch。
