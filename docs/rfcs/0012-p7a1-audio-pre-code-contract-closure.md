@@ -91,17 +91,28 @@ Completed audio results never use `partial`. Result completeness is
 change counts are known and producer-owned result detail omitted whole change
 items after comparison. It never represents a failed comparison.
 
-Stable IDs remain exactly the IDs accepted by RFC 0011:
+Stable IDs accepted by RFC 0011 remain:
 
 | Purpose | Stable ID |
 | --- | --- |
 | Built-in comparator/capability | `builtin.audio` |
 | Decoded-sample algorithm | `audio.decoded_samples.exact.v1` |
 | Encoded-byte algorithm | `audio.encoded_bytes.exact.v1` |
-| Multi-relation aggregate algorithm | `audio.aggregate.selected_relations.v1` |
 | WAV/PCM decode transformation | `audio.decode.stdlib_wave_pcm.v1` |
 | Resource profile | `audio.resource.p7_a1.v1` |
 | Resource defaults | `audio.resource.p7_a1.defaults.v1` |
+
+RFC 0012 additionally proposes this schema-v6 audio registry entry:
+
+| Purpose | Stable ID |
+| --- | --- |
+| Multi-relation aggregate algorithm | `audio.aggregate.selected_relations.v1` |
+
+Schema-v6 audio readers must reject unknown comparator, algorithm,
+transformation, resource profile, and resource default IDs rather than aliasing
+or accepting them. Predecessor v1-v5 upgraders do not synthesize the aggregate
+algorithm ID; they only add the defaulted schema-v6 media carriers described
+below.
 
 RFC 0012 supersedes any earlier Proposed vector text that used
 `audio.comparator.stdlib_wave_pcm.v1`,
@@ -137,7 +148,7 @@ DiffResult.audio_facts
 a tuple of accepted `AudioFact` records sorted by:
 
 ```text
-stream_index, coordinate, name, unit, value_type_rank, value
+registry_order, stream_index, coordinate, unit, value_type_rank, value
 ```
 
 Audio results use it to carry relation-significant audio facts at result level
@@ -319,7 +330,7 @@ Metric counting rules:
 | Metric | Count rule |
 | --- | --- |
 | `audio.samples_changed` | Sum of changed decoded sample positions across all channels after grouping; an update counts overlapping changed positions, an insert counts after-side sample positions, and a delete counts before-side sample positions. |
-| `audio.bytes_changed` | Sum of changed encoded byte positions; an update counts one byte position, a delete counts one before byte, and an insert counts one after byte. |
+| `audio.bytes_changed` | Sum of actually unequal encoded byte positions; an update run counts positions whose before and after byte values differ, a delete counts one before byte, and an insert counts one after byte. This may be smaller than an `AudioChange` coordinate `byte_count` because canonical middle ranges preserve prefix/suffix determinism rather than splitting around equal bytes inside the middle. |
 | `audio.samples_compared` | Number of decoded sample positions compared, multiplied by selected channel count. |
 | `audio.channels_compared` | Number of selected channels that reached comparison. |
 | `change_count` | Number of grouped `AudioChange` items. |
@@ -445,9 +456,9 @@ Tie-breaks are deterministic:
    source order.
 
 Adjacent encoded-byte operations of the same operation and step pattern are
-grouped into one maximal run. `audio.bytes_changed` counts update positions,
-deleted before bytes, and inserted after bytes as defined above; grouping must
-not change the count.
+grouped into one maximal run. `audio.bytes_changed` counts actually unequal
+update positions, deleted before bytes, and inserted after bytes as defined
+above; grouping must not change the count.
 
 For `encoded_bytes` with limit value `0`, stage and counters are fixed:
 
@@ -507,13 +518,64 @@ digits only. Decimal finite JSON numbers may appear only where the table above
 allows finite numbers.
 
 P7-A1 duration is always derived from decoded `sample_count_per_channel` and
-`sample_rate`. `smpl.sample_period` is a consistency check only; it must not
-override duration. If `smpl.sample_period` conflicts with
-`sample_count_per_channel / sample_rate`, the outcome is
-`failed/resolving/decode_error` when proven by the bounded probe, otherwise
-`failed/decoding/decode_error`. Problem details include
-`media_kind="audio"`, `field="smpl.sample_period"`, `expected` as the
-sample-rate-derived rational, and `actual` as the `smpl` rational.
+`sample_rate`. `smpl.sample_period` is a consistency check only; it is an
+integer nanoseconds-per-sample declaration and must not be compared to total
+duration or override duration. Let `sample_period_ns` be the unsigned integer
+from `smpl.sample_period`, `sample_rate_hz` be the selected decoded sample
+rate, and:
+
+```text
+period_error = abs(sample_period_ns * sample_rate_hz - 1_000_000_000)
+```
+
+The `smpl.sample_period` value is consistent exactly when
+`2 * period_error <= sample_rate_hz`, which accepts the nearest integer
+nanosecond representation of rates such as 44.1 kHz without using binary
+floating point. If it conflicts, the outcome is
+`failed/resolving/decode_error` when the bounded resolving probe has proven both
+the sample rate and `smpl.sample_period`; otherwise it is
+`failed/decoding/decode_error` at the first decoding step that proves the
+conflict. Problem details include `media_kind="audio"`,
+`field="smpl.sample_period"`, `value_kind="integer"`, `expected` as the nearest
+accepted integer nanoseconds per sample, and `actual` as the declared
+`sample_period_ns`.
+
+Minimal `smpl.sample_period` consistency vectors:
+
+```json
+[
+  {
+    "case": "exact",
+    "sample_rate_hz": 8000,
+    "sample_period_ns": 125000,
+    "period_error": 0,
+    "consistent": true
+  },
+  {
+    "case": "rounded_44100",
+    "sample_rate_hz": 44100,
+    "sample_period_ns": 22676,
+    "period_error": 11600,
+    "consistent": true
+  },
+  {
+    "case": "conflict_44100",
+    "sample_rate_hz": 44100,
+    "sample_period_ns": 22675,
+    "period_error": 32500,
+    "consistent": false,
+    "failure_stage": "resolving",
+    "failure_code": "decode_error",
+    "details": {
+      "media_kind": "audio",
+      "field": "smpl.sample_period",
+      "value_kind": "integer",
+      "expected": 22676,
+      "actual": 22675
+    }
+  }
+]
+```
 
 All other chunks are metadata facts only when RFC 0011 already allows them as
 bounded chunk facts. They must not silently affect sample coordinates,
@@ -605,18 +667,23 @@ The PC-B decoded run is samples 10 through 12. Its RFC 0011
 | before | `2d835305250ffbf0bc5ee2278d5f9d015c7481547881cdcfdc09c325a4013ec6` |
 | after | `1c88a697051262817a32ed38cda1e89a62dd0eb5af31844914596374de180d06` |
 
-The same byte fixtures produce PC-G. Their encoded relation differs at source
-byte range `[64, 70)`, and their decoded relation differs at sample range
-`[10, 13)`.
+The same byte fixtures produce PC-G. Their encoded bytes are unequal at source
+offsets `64`, `66`, and `68`; the longest common suffix is one byte, so the
+canonical middle run is source byte range `[64, 69)`. The framed middle digests
+are before `5bd6bdbcf274f74dd10af75c59d9d1eba0b81f5bae04f0c20a1a3d2aaa393ef6`
+and after `31d9ec12b520aa2b3ab905224a6d9796602d5765de0d68f8d46ba57ecb44f805`.
+`audio.bytes_changed` is `3`, while the emitted change coordinate
+`byte_count` is `5`. Work remains `64` prefix comparisons, `1` suffix
+comparison, `5` middle grouping units, and `13` decoded-sample work units, for
+a total of `83`. The decoded relation differs at sample range `[10, 13)`.
 
 ## Canonical vectors
 
 These vectors are normative examples for acceptance tests. They are complete
-schema-v6 outcome envelopes after default insertion and before any
-producer-side result-detail truncation. PC-F is the explicit predecessor
+wire envelopes after default insertion. PC-F is the explicit predecessor
 upgrade vector: it shows the schema-v6 defaulted media fields that v1-v5
-upgraders add without inferring audio facts. PC-G through PC-I freeze
-canonical detail-limit truncation behavior.
+upgraders add without inferring audio facts. PC-G through PC-I are completed
+producer-side truncation results after comparison and aggregation.
 
 ### Vector PC-A: equal empty encoded bytes
 
@@ -2264,7 +2331,7 @@ canonical detail-limit truncation behavior.
             "time_start_seconds": null,
             "time_duration_seconds": null,
             "byte_start": 64,
-            "byte_count": 6
+            "byte_count": 5
           },
           "after_coordinate": {
             "stream_index": null,
@@ -2275,11 +2342,11 @@ canonical detail-limit truncation behavior.
             "time_start_seconds": null,
             "time_duration_seconds": null,
             "byte_start": 64,
-            "byte_count": 6
+            "byte_count": 5
           },
           "channel": null,
-          "before_digest": "sha256:b79b07c8795af378c6a0ed8cfb414c9d4585cb509295fd2551906e20ba70c5aa",
-          "after_digest": "sha256:bdcdfc6d38aa5feed8ac10cf0d12e49a55be1df0dc364c6044fc6b50f906eb6a",
+          "before_digest": "sha256:5bd6bdbcf274f74dd10af75c59d9d1eba0b81f5bae04f0c20a1a3d2aaa393ef6",
+          "after_digest": "sha256:31d9ec12b520aa2b3ab905224a6d9796602d5765de0d68f8d46ba57ecb44f805",
           "before_fact": null,
           "after_fact": null
         }
@@ -2296,7 +2363,7 @@ canonical detail-limit truncation behavior.
         "name": "audio.bytes_changed",
         "value": {
           "kind": "finite",
-          "value": 6
+          "value": 3
         },
         "unit": "bytes",
         "direction": "lower_is_better",

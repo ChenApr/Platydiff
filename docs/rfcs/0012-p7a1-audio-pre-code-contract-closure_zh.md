@@ -85,17 +85,26 @@ Schema-v6 为 audio 闭合 result-level `completeness` carrier：新增
 result detail 省略 whole change item 时，result completeness 才是 `"truncated"`。它绝不表示
 failed comparison。
 
-Stable ID 保持 RFC 0011 accepted ID：
+RFC 0011 accepted 的 stable ID 保持如下：
 
 | Purpose | Stable ID |
 | --- | --- |
 | Built-in comparator/capability | `builtin.audio` |
 | Decoded-sample algorithm | `audio.decoded_samples.exact.v1` |
 | Encoded-byte algorithm | `audio.encoded_bytes.exact.v1` |
-| Multi-relation aggregate algorithm | `audio.aggregate.selected_relations.v1` |
 | WAV/PCM decode transformation | `audio.decode.stdlib_wave_pcm.v1` |
 | Resource profile | `audio.resource.p7_a1.v1` |
 | Resource defaults | `audio.resource.p7_a1.defaults.v1` |
+
+RFC 0012 另行提出这个 schema-v6 audio registry entry：
+
+| Purpose | Stable ID |
+| --- | --- |
+| Multi-relation aggregate algorithm | `audio.aggregate.selected_relations.v1` |
+
+Schema-v6 audio reader 必须 reject unknown comparator、algorithm、transformation、resource
+profile 与 resource default ID，不得 alias 或接受它们。Predecessor v1-v5 upgrader 不生成
+aggregate algorithm ID；它们只添加下文描述的 defaulted schema-v6 media carrier。
 
 RFC 0012 supersede 任何早期 Proposed vector 中的
 `audio.comparator.stdlib_wave_pcm.v1`、`audio.decoded_samples.exact_grouped.v1`
@@ -129,7 +138,7 @@ DiffResult.audio_facts
 `AudioFact` record 的 tuple，按以下顺序排序：
 
 ```text
-stream_index, coordinate, name, unit, value_type_rank, value
+registry_order, stream_index, coordinate, unit, value_type_rank, value
 ```
 
 Audio result 用它在 result level 携带 relation-significant audio fact，使 equal decoded-sample
@@ -282,7 +291,7 @@ Metric 计数规则：
 | Metric | Count rule |
 | --- | --- |
 | `audio.samples_changed` | 所有 channel 上 changed decoded sample position 的总数；update 计 overlapping changed position，insert 计 after-side sample position，delete 计 before-side sample position。 |
-| `audio.bytes_changed` | changed encoded byte position 的总数；update 算一个 byte position，delete 算一个 before byte，insert 算一个 after byte。 |
+| `audio.bytes_changed` | actually unequal encoded byte position 的总数；update run 只统计 before/after byte value 不同的位置，delete 算一个 before byte，insert 算一个 after byte。因为 canonical middle range 保留 prefix/suffix determinism，而不是围绕 middle 内部相等 byte 再切分，所以该值可能小于 `AudioChange` coordinate 的 `byte_count`。 |
 | `audio.samples_compared` | compared decoded sample position 数量乘以 selected channel count。 |
 | `audio.channels_compared` | 到达 comparison 的 selected channel 数量。 |
 | `change_count` | grouped `AudioChange` item 的数量。 |
@@ -394,8 +403,8 @@ suffix。Tie-break deterministic：
 4. 否则按 source order emit 一个 `encoded_byte_delete` 和/或一个 `encoded_byte_insert`。
 
 相同 operation 与 step pattern 的 adjacent encoded-byte operation 分组为一个 maximal run。
-`audio.bytes_changed` 按上文定义计 update position、deleted before byte 与 inserted after byte；
-grouping 不得改变 count。
+`audio.bytes_changed` 按上文定义计 actually unequal update position、deleted before byte 与
+inserted after byte；grouping 不得改变 count。
 
 对于 limit value `0` 的 `encoded_bytes`，stage 与 counter 固定为：
 
@@ -451,11 +460,58 @@ Denominator 始终为正。Serialized rational 必须约分到 lowest terms，�
 且只能使用 ASCII digit。只有在表格允许 finite number 的位置才可使用 decimal finite JSON number。
 
 P7-A1 duration 始终由 decoded `sample_count_per_channel` 与 `sample_rate` 推导。
-`smpl.sample_period` 只是 consistency check；它不得覆盖 duration。若 `smpl.sample_period` 与
-`sample_count_per_channel / sample_rate` 冲突，bounded probe 证明时 outcome 为
-`failed/resolving/decode_error`，否则为 `failed/decoding/decode_error`。Problem details 包含
-`media_kind="audio"`、`field="smpl.sample_period"`、`expected` 为 sample-rate-derived
-rational、`actual` 为 `smpl` rational。
+`smpl.sample_period` 只是 consistency check；它是每样本整数 nanoseconds 声明，不能与 total
+duration 比较，也不得覆盖 duration。令 `sample_period_ns` 为 `smpl.sample_period` 中的 unsigned
+integer，`sample_rate_hz` 为 selected decoded sample rate，并定义：
+
+```text
+period_error = abs(sample_period_ns * sample_rate_hz - 1_000_000_000)
+```
+
+当且仅当 `2 * period_error <= sample_rate_hz` 时，`smpl.sample_period` 一致；该规则接受
+44.1 kHz 这类 rate 的 nearest integer nanosecond 表示，且不使用 binary floating point。若冲突，
+bounded resolving probe 已证明 sample rate 与 `smpl.sample_period` 时 outcome 为
+`failed/resolving/decode_error`；否则在第一个证明冲突的 decoding step 为
+`failed/decoding/decode_error`。Problem details 包含 `media_kind="audio"`、
+`field="smpl.sample_period"`、`value_kind="integer"`、`expected` 为 nearest accepted integer
+nanoseconds per sample、`actual` 为声明的 `sample_period_ns`。
+
+Minimal `smpl.sample_period` consistency vectors：
+
+```json
+[
+  {
+    "case": "exact",
+    "sample_rate_hz": 8000,
+    "sample_period_ns": 125000,
+    "period_error": 0,
+    "consistent": true
+  },
+  {
+    "case": "rounded_44100",
+    "sample_rate_hz": 44100,
+    "sample_period_ns": 22676,
+    "period_error": 11600,
+    "consistent": true
+  },
+  {
+    "case": "conflict_44100",
+    "sample_rate_hz": 44100,
+    "sample_period_ns": 22675,
+    "period_error": 32500,
+    "consistent": false,
+    "failure_stage": "resolving",
+    "failure_code": "decode_error",
+    "details": {
+      "media_kind": "audio",
+      "field": "smpl.sample_period",
+      "value_kind": "integer",
+      "expected": 22676,
+      "actual": 22675
+    }
+  }
+]
+```
 
 所有其他 chunk 只有在 RFC 0011 已允许它们作为 bounded chunk fact 时才是 metadata fact。它们不得静默影响
 sample coordinate、duration、alignment 或 equality。
@@ -540,15 +596,21 @@ PC-B decoded run 是 samples 10 through 12。其 RFC 0011
 | before | `2d835305250ffbf0bc5ee2278d5f9d015c7481547881cdcfdc09c325a4013ec6` |
 | after | `1c88a697051262817a32ed38cda1e89a62dd0eb5af31844914596374de180d06` |
 
-同一 byte fixture 产生 PC-G。其 encoded relation 在 source byte range `[64, 70)` 不同，
-decoded relation 在 sample range `[10, 13)` 不同。
+同一 byte fixture 产生 PC-G。其 encoded bytes 在 source offsets `64`、`66` 和 `68` 不同；
+longest common suffix 为 one byte，因此 canonical middle run 是 source byte range `[64, 69)`。
+framed middle digest 为 before
+`5bd6bdbcf274f74dd10af75c59d9d1eba0b81f5bae04f0c20a1a3d2aaa393ef6`、after
+`31d9ec12b520aa2b3ab905224a6d9796602d5765de0d68f8d46ba57ecb44f805`。
+`audio.bytes_changed` 是 `3`，而 emitted change coordinate 的 `byte_count` 是 `5`。Work 仍是
+`64` 个 prefix comparison、`1` 个 suffix comparison、`5` 个 middle grouping unit 与 `13` 个
+decoded-sample work unit，总计 `83`。decoded relation 在 sample range `[10, 13)` 不同。
 
 ## Canonical vectors
 
-这些 vector 是 acceptance test 的 normative example。它们是 default insertion 之后、任何
-producer-side result-detail truncation 之前的完整 schema-v6 outcome envelope。PC-F 是 explicit
-predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaulted media field，且
-不推断 audio fact。PC-G 到 PC-I 冻结 canonical detail-limit truncation behavior。
+这些 vector 是 acceptance test 的 normative example。它们是 default insertion 之后的完整 wire
+envelope。PC-F 是 explicit predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6
+defaulted media field，且不推断 audio fact。PC-G 到 PC-I 是 comparison 与 aggregation 后的
+completed producer-side truncation result。
 
 ### Vector PC-A： equal empty encoded bytes
 
@@ -2196,7 +2258,7 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
             "time_start_seconds": null,
             "time_duration_seconds": null,
             "byte_start": 64,
-            "byte_count": 6
+            "byte_count": 5
           },
           "after_coordinate": {
             "stream_index": null,
@@ -2207,11 +2269,11 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
             "time_start_seconds": null,
             "time_duration_seconds": null,
             "byte_start": 64,
-            "byte_count": 6
+            "byte_count": 5
           },
           "channel": null,
-          "before_digest": "sha256:b79b07c8795af378c6a0ed8cfb414c9d4585cb509295fd2551906e20ba70c5aa",
-          "after_digest": "sha256:bdcdfc6d38aa5feed8ac10cf0d12e49a55be1df0dc364c6044fc6b50f906eb6a",
+          "before_digest": "sha256:5bd6bdbcf274f74dd10af75c59d9d1eba0b81f5bae04f0c20a1a3d2aaa393ef6",
+          "after_digest": "sha256:31d9ec12b520aa2b3ab905224a6d9796602d5765de0d68f8d46ba57ecb44f805",
           "before_fact": null,
           "after_fact": null
         }
@@ -2228,7 +2290,7 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
         "name": "audio.bytes_changed",
         "value": {
           "kind": "finite",
-          "value": 6
+          "value": 3
         },
         "unit": "bytes",
         "direction": "lower_is_better",
