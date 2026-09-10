@@ -71,6 +71,9 @@ def test_built_distributions_use_explicit_content_boundaries(tmp_path: Path) -> 
         prefix + "tests/plugin_compatibility/test_discovery_profile.py" in sdist_names
     )
     assert prefix + "tests/unit/test_contracts.py" in sdist_names
+    assert prefix + "tests/fixtures/schema_v3/yaml_completed.json" in sdist_names
+    assert prefix + "tests/fixtures/schema_v3/table_completed.json" in sdist_names
+    assert prefix + "tests/fixtures/schema_v3/array_completed.json" in sdist_names
     assert not any("_to_delete" in name for name in sdist_names)
     assert not any("untracked-root-sentinel" in name for name in sdist_names)
 

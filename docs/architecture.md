@@ -227,16 +227,15 @@ structured changes, and deterministic evidence digests. The constrained YAML
 1.2 contract remains unimplemented behind P4-A2. JSON remains explicit-only and
 built-in-only; it does not expand text/binary automatic detection or SDK v1.1.
 
-[RFC 0010](rfcs/0010-schema-predecessor-and-phase6-contract-amendment.md) is an
+[RFC 0010](rfcs/0010-schema-predecessor-and-phase6-contract-amendment.md) is the
 Accepted amendment that resolves the mismatch between the accepted RFC 0006
-schema-v3 closed union and the JSON-only schema-v3 surface currently on `main`.
-It selects Option A/P4-C1 as a Phase 4 correction gate before any schema-v4,
-schema-v5, or schema-v6 implementation treats v3 as a stable predecessor.
-RFC 0010 acceptance itself does not start code. Conditional human authorization
-has been recorded, and coordinator dispatch may occur only after RFC 0010
-merges and the stated merge gates pass. RFC 0010 also accepts P4C1-1-P4C1-5
-reader and fixture clarifications, approved on 2026-09-10. P4-C1 still waits
-for RFC 0010 to merge and for coordinator dispatch.
+schema-v3 closed union and the earlier JSON-only implementation. Its authorized
+Option A/P4-C1 correction adds the missing YAML/table/array public spec, fact,
+change, reader/writer, validation, migration, and frozen predecessor-fixture
+surface. The correction remains contract-only: YAML/table/array comparator
+execution, registry entries, `compare()` routes, CLI commands, detection, SDK
+v2, and UI remain outside P4-C1. Schema-v4/v5/v6 implementation must consume
+the actual merged P4-C1 predecessor fixtures without rewriting their bytes.
 
 Syntactic equality does not imply runtime semantic equality. AST comparison must state its parser version, error-recovery behavior, and macro or preprocessing boundaries.
 
@@ -305,14 +304,15 @@ Statistical comparison can include KS tests, Wasserstein distance, chi-squared t
 
 The staged delivery plan and its implementation gates are defined by [RFC 0002](rfcs/0002-development-phases-and-text-slice.md). Phase 2 bounded detection, internal resolution, and exact binary comparison implement [RFC 0003](rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison.md). Phase 3 gates P3-A, P3-B, and P3-C implement SDK declaration/discovery, explicitly selected detector/comparator/renderer execution, schema-v2 provenance, explicit CLI opt-in, and compatibility receipts from [RFC 0005](rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility.md). The version groupings below describe product direction and do not imply that later capabilities are implemented.
 
-Phases 1 through 3 and Phase 4 gate P4-A1 contain the Python package,
+Phases 1 through 3 and Phase 4 gates P4-A1/P4-C1 contain the Python package,
 schema-v1/v2/v3 contracts, explicit
 text, bounded text/binary detection, exact binary comparison, CLI,
 terminal/JSON renderers, the explicit plugin boundary, and explicit semantic
-JSON comparison. They remain unreleased. Phase 4 structured-data contracts are
-accepted in [RFC 0006](rfcs/0006-structured-data-comparison.md), but its
-remaining YAML, table, and array gates are unimplemented and require separate
-gate authorization. Every other modality and renderer below is planned. Phase 5
+JSON comparison. P4-C1 completes the schema-v3 YAML/table/array contract surface
+without making those comparators executable. They remain unreleased. The
+remaining YAML, table, and array comparator gates in
+[RFC 0006](rfcs/0006-structured-data-comparison.md) are unimplemented and
+require separate gate authorization. Every other modality and renderer below is planned. Phase 5
 image contracts are accepted in
 [RFC 0007](rfcs/0007-image-comparison.md); acceptance does not authorize
 implementation, and the actual merged schema-v3 predecessor must be revalidated
