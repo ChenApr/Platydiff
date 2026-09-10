@@ -12,6 +12,7 @@ This directory contains accepted and proposed design decisions for Platydiff. En
   and covered by the required compatibility tests. Release status is tracked
   separately.
 - **Superseded**: replaced by another RFC; the replacement must be linked.
+- **Reserved**: RFC number allocated for a planned review; no design is accepted.
 
 ## Index
 
@@ -26,6 +27,10 @@ This directory contains accepted and proposed design decisions for Platydiff. En
 | [0007](0007-image-comparison.md) | Accepted | Define a schema-v4, explicit static-PNG decoded-sample slice and defer perceptual, artifact, plugin, and detection work |
 | [0008](0008-source-code-and-pdf-comparison.md) | Accepted | Define explicit source-code and PDF comparison contracts; RFC 0010 records conditional P6-C0 authorization behind predecessor merge gates |
 | [0009](0009-audio-and-video-comparison.md) | Accepted | Accept explicit audio contracts and audio-only schema-v6 allocation; accept video contracts as roadmap direction only pending a later backend/worker amendment and successor schema |
-| [0010](0010-schema-predecessor-and-phase6-contract-amendment.md) | Accepted | Select Option A/P4-C1, accept P6-C0 contract-gap decisions, and approve P4C1-1-P4C1-5 reader/fixture clarifications |
+| [0010](0010-schema-predecessor-and-phase6-contract-amendment.md) | Accepted | Select Option A/P4-C1, accept P6-C0 contract-gap decisions, approve P4C1-1-P4C1-5 reader/fixture clarifications, and backlink the proposed RFC 0014 closure |
+| 0011 | Reserved | Audio preflight allocation |
+| 0012 | Reserved | P7 closure allocation |
+| 0013 | Reserved | P5 closure allocation |
+| [0014](0014-phase6-source-pdf-contract-closure-amendment.md) | Proposed | Propose P6-C0 source/PDF problem-registry and closed-union closure; no implementation authorization |
 
 Planned behavior must remain explicitly marked as planned until implementation and verification are complete.
