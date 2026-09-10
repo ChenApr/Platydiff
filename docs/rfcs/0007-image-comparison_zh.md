@@ -2,29 +2,32 @@
 
 [English documentation](0007-image-comparison.md)
 
-- 状态：Proposed
+- 状态：Accepted
 - 日期：2026-09-10
+- 评审修订：2026-09-10
+- 接受日期：2026-09-10
 - Owners：Platydiff 维护者
-- 实现 owner：等待接受本 RFC 与单独授权后指派
+- 实现 owner：等待单独的实现授权后指派
 
 ## 摘要与授权边界
 
-本 RFC 提议 Phase 5 图片比较契约。它刻意从一个狭窄的可执行切片开始：显式、内建地
-比较单张静态 PNG 的解码 sample matrix。encoded-byte identity 继续使用既有 binary
+本 RFC 定义已接受的 Phase 5 图片比较契约。它刻意从一个狭窄的可执行切片开始：显式、
+内建地比较单张静态 PNG 的解码 sample matrix。encoded-byte identity 继续使用既有 binary
 契约。感知相似、色彩转换、配准、动画、artifact、plugin 执行与自动图片探测仍是彼此
 独立的后续门禁。
 
-本文只是设计评审资产。状态仍为 `Proposed` 时，不授权图片代码、依赖、SDK 修改、自动
-探测、UI 工作或 artifact 发布。接受本文只会批准下列决策；每个实现门禁仍须从更新后的
-`main` 单独派发。
+人类批准已将下列 I1-I16 接受为 Phase 5 设计契约。接受本文不授权图片代码、依赖、SDK
+修改、自动探测、UI 工作或 artifact 发布，也不启动 P5-R、P5-A1、P5-A2 或 P5-A3。每个
+实现门禁仍须从更新后的 `main` 单独派发。
 
 Phase 4 RFC 0006 已接受，但本 RFC 评审所依据的代码还没有 P4-A1/schema-v3 实现。因此
 Phase 5 有一个硬性重新验证前置条件：schema v3 必须先合并、按 RFC 0006 验证，并作为
-实际前驱。本文不假设或 stack 在未合并的 Phase 4 分支之上。
+实际前驱。本文不假设或 stack 在未合并的 Phase 4 分支之上；已接受的 evidence revision
+不存在 image product code，本次 acceptance-only 变更也不添加任何代码。
 
 ## 证据账本
 
-| 在 `main` `cbc7e36` 评审的证据 | Phase 5 约束 |
+| 在 `main` `fde2bd4` 评审的证据 | Phase 5 约束 |
 | --- | --- |
 | runtime code 只接受 outcome schema v1/v2；RFC 0006 接受 schema v3，但该 revision 尚未实现。 | 图片实现须等待合并后的 schema-v3 代码与 fixture 重新验证；之后图片 variant 使用 schema v4，不重新打开冻结的前驱。 |
 | 代码中的 public spec/change union 只有 text/binary variant。 | `ImageCompareSpec` 与 `ImageChange` 需要 schema successor 和严格 reader/writer 兼容测试。 |
@@ -52,11 +55,11 @@ Phase 5 有一个硬性重新验证前置条件：schema v3 必须先合并、�
 
 矩阵中的任何一行都不授予实现权限，也不改变旧 schema 的含义。
 
-## 提交人类批准的决策
+## 已接受的决策
 
-| ID | 推荐决策 | 未选择的替代方案 |
+| ID | 已接受的决策 | 未选择的替代方案 |
 | --- | --- | --- |
-| I1 | 人类批准 I1-I16 前保持 Proposed；接受后仍不自动启动实现。 | 把 roadmap 项目当作实现授权。 |
+| I1 | 接受 I1-I16 作为 Phase 5 设计契约；接受不启动 P5-R 或任何实现门禁。 | 把 RFC 接受或 roadmap 项目当作实现授权。 |
 | I2 | 任何 Phase 5 实现前，必须合并并独立验证 P4-A1/schema v3；随后使用 outcome schema v4。 | stack 在未合并代码上，或在未验证实际前驱时原地扩展 v2/v3。 |
 | I3 | Phase 5 只显式选择且只使用 built-in；不改变 auto detection 或 SDK v1.1。 | 让扩展名、Pillow sniffing 或已安装 plugin 静默选择图片语义。 |
 | I4 | encoded-byte identity 继续由 `BinaryCompareSpec` 负责；不增加为同一事实返回另一种形状的 image alias。 | 在 `ImageCompareSpec` 内复制 byte comparison。 |
@@ -94,7 +97,7 @@ Phase 5 不得用一个标签表示三种不同 predicate。
 `(x, y, channel)` coordinate 的 sample 完全相同。算法不能只凭 digest 建立 equality。
 
 这是 sample equality，不是 displayed-color、perceptual、structural 或 metadata equality。
-在提议的 native-profile 契约下，即使 integer sample 一致，unprofiled image 与 profiled
+在已接受的 native-profile 契约下，即使 integer sample 一致，unprofiled image 与 profiled
 image 仍不同，因为 sample 的声明解释不同。
 
 ### 感知相似
@@ -112,7 +115,8 @@ hardware、determinism 与 supply-chain 评审。不得把 PSNR 单独宣传为 
 
 ## Schema-v4 与兼容性契约
 
-在满足 I2 后，schema v4 是实际已合并 schema v3 的 additive semantic successor：
+按已接受决策 I2，在其前置条件满足后，schema v4 是实际已合并 schema v3 的 additive
+semantic successor：
 
 ```python
 CompareSpecV4 = CompareSpecV3 | ImageCompareSpec
@@ -139,14 +143,14 @@ ChangeV4 = ChangeV3 | ImageChange
 | 既有 `compare()`/default CLI | v1 | 无 | 既有 text/binary/auto payload 保持 byte-stable。 |
 | 既有 `PluginHost` | v2 | 无 | SDK v1.1 保持 text/binary-only；receipt 有效。 |
 | 已合并 Phase 4 built-in | v3 | 无 | 实际 v3 model、migration 与 fixture 是前驱。 |
-| 提议的 built-in image path | v4 | 仅显式 static PNG | strict v4 validation 与继承 invariant。 |
+| 已接受的 built-in image path | v4 | 仅显式 static PNG | strict v4 validation 与继承 invariant。 |
 | `PluginHost` + `ImageCompareSpec` | 无 | 不支持 | Python 返回 resolving-stage unavailable；CLI plugin flag + image 为 usage exit 2。 |
 | 既有 auto 遇到 PNG byte | v1 | 无 | 既有 text/binary evidence 与 selection 不变。 |
 | 未来 image auto/SDK/perceptual | 未指定 | 未指定 | 需要 successor RFC 与自己的 schema 决策。 |
 
 ## Public image intent
 
-提议的 normalized public shape 为：
+已接受的 normalized public shape 为：
 
 ```python
 class ImageResourceLimits:
@@ -155,7 +159,8 @@ class ImageResourceLimits:
     max_height: int = 16_384
     max_pixels: int = 16_777_216
     max_decoded_bytes: int = 64 * 1024 * 1024
-    max_metadata_bytes: int = 1024 * 1024
+    max_metadata_wire_bytes: int = 1024 * 1024
+    max_metadata_decompressed_bytes: int = 4 * 1024 * 1024
     max_icc_profile_bytes: int = 1024 * 1024
     max_compare_work: int = 67_108_864
     max_change_items: int = 10_000
@@ -179,7 +184,8 @@ class ImageCompareSpec:
 migration 明确。integer 拒绝 boolean 并使用 checked arithmetic；通过当前 numeric model
 序列化的 count-like public value 使用既有 exact-integer 上限。
 
-支持 `PathSource` 与 `BytesSource`。`TextSource` 以 `source_type_unsupported` 失败；text
+支持 `PathSource` 与 `BytesSource`。`TextSource` 在 `sourcing` 阶段以
+`source_type_unsupported` 失败；text
 不能隐式编码成图片。`compare(before, after, spec)` 继续作为唯一 built-in Python 入口。
 schema gate 后，top-level 只增加已接受 spec/limits/enum/change；decoder、image IR、tile
 walker 与 Pillow adapter 保持 private。
@@ -211,14 +217,55 @@ floating point、APNG、multiple frame/page 和非 PNG codec。需要 palette/�
 的 PNG `tRNS` transparency 被拒绝；后续 profile 可加入显式且有记录的 expansion，但不能
 重新解释当前 profile。
 
-Host 验证 PNG signature，并向 backend 传 `formats=("PNG",)`；pixel load 前后验证 backend
-报告的 format、frame count、animation flag、mode、dimension 与 interpretation metadata。
-filename extension/MIME string 从不作为 authority；其他 Pillow global decoder 都不 eligible。
+Pillow 收到 byte 前，host 先执行下述有界 source-level scanner；随后向 backend 传
+`formats=("PNG",)`，并在 pixel load 前后验证 backend 报告的 format、frame count、
+animation flag、mode、dimension 与 interpretation metadata。filename extension/MIME string
+从不作为 authority；其他 Pillow global decoder 都不 eligible。
+
+### 规范性 pre-decode PNG scanner
+
+由 host scanner 而不是 Pillow 决定 datastream 是否属于首切片 profile。它只消费 host
+snapshot，使用 checked unsigned arithmetic，并在 `Image.open()` 前完成以下检查：
+
+1. 验证 8-byte signature。对每个 chunk，依次读取 unsigned 32-bit big-endian length、4 个
+   ASCII letter type byte、严格相应数量的 data byte，以及 type+data 的 CRC-32。truncation、
+   overflow、非 letter type byte、reserved 第三个 type byte 为小写、bad CRC、`IEND` 后仍有
+   data 或缺少 `IEND` 都被拒绝。
+2. 要求首个 chunk 是唯一的 13-byte `IHDR`，至少有一段连续 `IDAT`，最后一个 chunk 是唯一的
+   zero-length `IEND`。对每个 recognized chunk 执行 PNG Third Edition 的 ordering、
+   multiplicity、length 与 combination rule。非法值或非法 chunk 结构属于 malformed input，
+   不是 unsupported profile。
+3. 验证 `IHDR` width/height 与 compression/filter/interlace field。合法但不支持的
+   color-type/bit-depth pair——包括 1/2/4-bit greyscale、indexed color 与所有 16-bit form——
+   必须在 Pillow 前拒绝。只有 `(color type, bit depth)` `(0,8)`、`(4,8)`、`(2,8)`、`(6,8)`
+   分别映射到 `L`、`LA`、`RGB`、`RGBA`；PNG 本身非法的 pair 属于 malformed input。
+4. 任意 `tRNS`、`acTL`、`fcTL` 或 `fdAT` 均作为 unsupported profile 拒绝；任何 unknown
+   critical chunk 也作为 unsupported 拒绝。unknown ancillary chunk 只有在 framing、CRC、
+   reserved bit 与 resource accounting 通过后才能被语义忽略。
+5. 在 PNG 允许处验证 `PLTE`：最多一次、位于 `IDAT` 前、长度大于零且能被三整除，并且不超过
+   768 byte；color type 0/4 禁止 `PLTE`。indexed color 仍不支持；color type 2/6 的 optional
+   `PLTE` 属于非解释性信息。
+6. `cHRM`、`gAMA`、`iCCP`、`sBIT`、`sRGB`、`cICP`、`mDCV`、`cLLI` 各最多一个，并验证
+   normative placement 与 combination。data length 依次为 32、4、variable、随 mode 而定
+   （本 profile 为 1/3/2/4）、1、4、24、8 byte；还须验证 PNG Third Edition 要求的 registered
+   value 与 field constraint。host 验证 `iCCP` profile name/compression framing，并在 Pillow 前
+   有界 inflate 其 zlib stream；trailing 或 malformed compressed data 被拒绝。
+7. 有界 inflate compressed `zTXt` 与 compressed `iTXt` 以完成 accounting/validation，随后丢弃；
+   验证 uncompressed text chunk framing，但不保留内容。任何 textual、EXIF 或 application
+   payload 都不进入 public result。
+
+scanner 将 bad signature/framing/CRC/order/multiplicity、PNG 非法值及 malformed compressed
+metadata 分类为 `decode_error`。合法 PNG 中超出 accepted profile 的 feature——合法的低/16-bit
+pair、indexed color、`tRNS`、APNG 或 unknown critical chunk——分类为
+`unsupported_image_profile`。跨越 source、metadata、ICC、dimension、pixel 或 decoded-byte
+limit 分类为 `resource_limit_exceeded`。这些稳定分类均发生在 `decoding`；Pillow 不能重新分类或
+扩大 accepted profile。
 
 ### Orientation、color、alpha 与 metadata
 
 - `orientation="stored"` 以 stored row/column order 比较 decoded matrix；不应用 EXIF orientation。
-  有界 tag value 作为 interpretation metadata 进入 provenance，但不是 pixel transformation。
+  首切片也不解析它。provenance 只记录有界的 `eXIf` presence 与 on-wire byte count；不保留 raw
+  byte 或 tag value。这不是 pixel transformation。
   display-oriented equality 需要未来显式 `apply_exif` profile 与 transformation record。
 - `color_profile="require_exact"` 不做 color conversion。PNG color-signaling chunk `cHRM`、
   `gAMA`、`iCCP`、`sBIT`、`sRGB`、`cICP`、`mDCV` 与 `cLLI` 的有界 canonical
@@ -264,9 +311,44 @@ component 为空、tile 内精确 changed-pixel count 和 maximum absolute sampl
 `y`、`x` 排序，不重叠且在边界内。`ChangeSet.total_count` 是完整 descriptor/changed-tile
 数量，不是 changed-pixel 数量。
 
-Digest 对 domain-separated、length-framed canonical descriptor/tile byte 执行 SHA-256；准确 framing
-须在实现前成为 schema-v4 compatibility fixture。Digest 用于发现 serialization 错误，不建立
-equality、不隐藏低熵内容，也不授权 renderer 获取 source pixel。tile item 不含 raw/encoded pixel。
+`before_digest` 与 `after_digest` 是对应一侧的小写 64-hex SHA-256。digest input 固定为：
+
+```text
+RAW_ASCII("platydiff/v4/image/" + domain) || 00 || U64BE(len(payload)) || payload
+```
+
+`RAW_ASCII(s)` 严格是 `s` 的 ASCII byte。`U64BE` 是 unsigned 8-byte big-endian integer，所有
+length/count 都使用它；field encoding `ASCII(s)` 是
+`U64BE(len(s)) || RAW_ASCII(s)`；`U8` 是一个 byte。不执行 Unicode normalization，也没有末尾
+NUL。四个 domain string 严格为 `descriptor/dimensions`、`descriptor/pixel_format`、
+`descriptor/color_description` 与 `tile/samples`。
+
+canonical payload 为：
+
+- dimensions：`U64BE(width) || U64BE(height)`；
+- pixel format：`ASCII(mode) || U8(bit_depth) || U8(channel_count) ||` sample order 中每个 band 的
+  `ASCII(band)`，最后是 `ASCII(alpha)`；alpha 严格为 `none` 或 `straight`；
+- color description：按 `cHRM`、`gAMA`、`iCCP`、`sBIT`、`sRGB`、`cICP`、`mDCV`、`cLLI`
+  顺序，对每项追加 4 个 type byte 和一个 `U8` presence byte。absent 为 `00`；present 为
+  `01 || U64BE(length) || canonical value`。除 `iCCP` 外，canonical value 是已验证的 raw chunk
+  data；`iCCP` 只使用有界解压后的 ICC profile byte，profile name、compression byte 与 chunk CRC
+  不属于 interpretation fact；
+- tile samples：`U64BE(x) || U64BE(y) || U64BE(width) || U64BE(height) ||` pixel-format payload
+  到最后一个 band，再接 sample byte。sample 是 unsigned one-byte value，依 stored top-to-bottom
+  row、left-to-right pixel、declared band order 排列，无 row padding；边缘 tile 使用实际 width/height。
+
+下列规范 vector 使用 1x1、8-bit、straight-alpha `RGBA` 图片，无 color-description chunk，tile
+sample 为 `00 7f ff 80`：
+
+| Domain | Payload hex | SHA-256 |
+| --- | --- | --- |
+| `descriptor/dimensions` | `00000000000000010000000000000001` | `37b783ef79ab757a531e50f76237eb9c870203f7003c5b9dcfc0280ded598a12` |
+| `descriptor/pixel_format` | `000000000000000452474241080400000000000000015200000000000000014700000000000000014200000000000000014100000000000000087374726169676874` | `9e7453f90b6a38c85e068b2aaa31ee0836422caf523192cdd8c39faa9021bf0c` |
+| `descriptor/color_description` | `6348524d0067414d410069434350007342495400735247420063494350006d44435600634c4c4900` | `71d104a33d792f584bb9f5ed92ab1feee8625a59b3012513d08d905fa4a08145` |
+| `tile/samples` | `00000000000000000000000000000000000000000000000100000000000000010000000000000004524742410804000000000000000152000000000000000147000000000000000142000000000000000141007fff80` | `85c3961556e42038b134b2a3864231be5e533aad78c1cb68d95210f5d2b5fa55` |
+
+这些 digest 用于发现 serialization 错误，不建立 equality、不隐藏低熵内容，也不授权 renderer
+获取 source pixel。tile item 不含 raw/encoded pixel。
 
 Comparator 先计算全部 descriptor/tile fact 与 total，再保留有界 row-major prefix。Truncation
 使用完整 item 与继承的精确 canonical-payload 计数，不改变 relation、verdict、fidelity、metric
@@ -297,8 +379,35 @@ channel count。至少一个 channel 不同则 pixel changed。MAE/RMSE 按 row-
 channel order 聚合所有 sample 的 absolute/squared error。peak sample value 为 255。MSE 为零时
 PSNR 是 positive infinity，否则为 `10 * log10(255**2 / MSE)`。
 
-实现尽可能使用 checked integer sum，并只用一种规范 floating conversion 顺序。threshold
-evaluation 使用未舍入 binary64；rounding 只属于展示。首切片没有 tolerance。
+metric operation order 是规范性的。对 stored row-major/band order 中每个 sample pair，令
+`difference = int(before) - int(after)`，再更新 checked arbitrary-precision integer accumulator：
+`absolute_sum += abs(difference)` 与 `squared_sum += difference * difference`。pixel-change count
+也是 integer，且在任何 floating operation 前完成。全部 `sample_count` 个 sample 后，严格按此顺序
+执行 binary64 operation：
+
+```python
+mae = float(absolute_sum) / float(sample_count)
+mse = float(squared_sum) / float(sample_count)
+rmse = math.sqrt(mse)
+psnr = (
+    PositiveInfinityValue()
+    if squared_sum == 0
+    else FiniteValue(10.0 * math.log10((255.0 * 255.0) / mse))
+)
+```
+
+MAE/RMSE 始终为 `FiniteValue`；只有 `squared_sum == 0` 时 PSNR 才是
+`PositiveInfinityValue`。首切片从不产生 `NaNValue` 或 `NegativeInfinityValue`，也不使用
+chunk-local floating partial、`math.fsum`、decimal arithmetic、fused operation，或把 presentation
+rounded value 存为 metric。sample pair `[0, 255]` 与 `[0, 0]` 的规范事实是
+`absolute_sum=255`、`squared_sum=65025`、`sample_count=2`、MAE `127.5`、RMSE
+`180.31222920256963`、PSNR `3.010299956639812`（在已评审 Python binary64 path 上）。
+
+同一 supported runtime 的重复运行必须 byte-identical serialization。跨平台 golden test 要求有限的
+`sqrt`/`log10` 结果与 expected 的绝对距离不超过 `8 * math.ulp(expected)`；zero 与 exact rational result
+精确比较，infinity 按 exact tagged representation 比较。该测试容差不是 comparison policy
+tolerance。若未来 schema 加入 threshold，则使用 stored unrounded binary64 result；rounding 只属于
+展示。首切片没有 content tolerance。
 
 当且仅当 `image.changed_items == 0` 时 `relation="equal"`，否则为 `different`。唯一
 evaluation 是 `image.decoded_sample_equality`，观察 `image.changed_items`，operator 为 `eq`、
@@ -310,14 +419,21 @@ normalized spec 记录全部 default。实际行为按下列稳定 transformatio
 
 | Stage | Transformation ID | 必需 parameter |
 | --- | --- | --- |
-| decoding | `image.png.decode` | backend/version、format profile、mode、dimensions、frame count |
-| normalizing | `image.orientation.stored` | before/after 的有界 orientation-tag state |
+| decoding | `image.png.decode` | backend/version、profile、mode、dimensions、frame count、IHDR bit depth/color type/interlace，以及各 role 的有界 resource fact |
+| normalizing | `image.orientation.stored` | before/after 的 `eXIf` presence 与 on-wire byte count |
 | normalizing | `image.color.native_exact` | 每个 role 的有界 color-description identity/digest |
 | normalizing | `image.alpha.straight` | channel layout 与 unassociated-alpha policy |
 | aligning | `image.coordinates.exact` | origin=`top_left`、x=`right`、y=`down`、dimensions policy |
 
 这些 record 不声称发生 conversion，只说明实际执行 profile。record 不含 raw ICC/EXIF/text
 metadata、absolute path、source byte、local module path 或 backend exception text。
+
+精确的 `ResourceUsage.name` 是
+`image.{before|after}.{input_bytes|metadata_wire_bytes|metadata_decompressed_bytes|icc_profile_bytes|pixels|decoded_bytes}`、
+`image.compare.sample_pairs`、`image.changes.items` 与 `image.changes.payload_bytes`。每项使用
+normalized spec 中对应的 limit；六项 source fact 与 limit 分别独立应用于 `before`/`after`。
+public/provenance 只记录 count、boolean、dimension、stable enum value 与 descriptor digest；不记录
+raw/excerpted chunk payload、profile name、text keyword/value、EXIF value 或 palette entry。
 
 comparison provenance 记录 input hash、comparator `image.decoded_samples`、algorithm
 `image.decoded_samples.tiles.v1`、Platydiff implementation version、Pillow version、可获得时
@@ -347,11 +463,23 @@ registry 是剩余 in-process trust risk；implementation 必须审计被选择�
 
 ## Resource、恶意 input 与 failure
 
-Host snapshot 在 decode 前执行 `max_input_bytes`。只要 metadata 可用，就在 `load()` 前使用 checked
-arithmetic 检查 width、height、pixel product、channel count 与 decoded-byte product，并在之后
-复查。metadata、ICC profile、decoded byte、comparison、change 与 canonical payload 分别计数。
-`max_metadata_bytes` 限制 host 表示的 retained/parsed metadata 总量（包括 ICC byte）；
-`max_icc_profile_bytes` 还单独限制该 field。
+Host 创建 immutable snapshot 时、decode 前执行 `max_input_bytes`。PNG scanner 在读取或保留每个
+ancillary chunk data 前，把其 declared data length 加入 `metadata_wire_bytes`；`IDAT` 与 critical
+`PLTE` 不计入，而 color、text、`eXIf` 与 unknown ancillary chunk 计入。chunk header 与 CRC byte
+由 `max_input_bytes` 覆盖，不计入 metadata subtotal。
+
+`metadata_decompressed_bytes` 是 `iCCP`、compressed `iTXt` 与 `zTXt` 的 decompressed payload byte
+总和。scanner 同时检查 aggregate `max_metadata_decompressed_bytes`，并对 `iCCP` 检查独立的
+`max_icc_profile_bytes`。ICC byte 同时计入两个 limit，但在各 counter 内不重复。每个 declared
+on-wire increment 在读取 chunk 前检查；每个 inflate increment 在 append 或暴露下一 output block
+前检查。text output 直接丢弃；ICC buffer 不得增长到 dedicated limit 之外。truncated stream、trailing
+compressed stream data 或非法 compression method 属于 decode error；超过 counter 属于 resource-limit
+failure。
+
+`IHDR` 一经验证，立刻用 checked arithmetic 检查 width、height、pixel product、channel count 与
+decoded-byte product，并在 Pillow 前完成。backend mode/dimension 与相同 product 在 `load()` 前后
+复查。每个 sample pair 前检查 comparison work；保留下一个完整 item 前检查 change-item 与
+canonical-payload total。不得因为 Pillow 也有 limit/warning 而推迟任何检查。
 
 每个 sample-pair equality/error update 是一个 comparison work unit。默认 `67_108_864` unit
 可接受配置中最大 pixel count 的 four-channel RGBA；caller 可以在 exact-integer bound 内显式
@@ -368,7 +496,7 @@ residual risk；不可信图片的硬隔离需要未来 process-isolation contra
 | --- | --- | --- |
 | optional backend 缺失/不兼容 | unavailable/`backend_unavailable` | resolving |
 | 无 built-in image capability | unavailable/`capability_unavailable` | resolving |
-| unsupported source kind | failed/`source_type_unsupported` | validating/sourcing，与 host ownership 一致 |
+| unsupported source kind | failed/`source_type_unsupported` | sourcing |
 | 错误 codec/profile、animation、unsupported mode/depth/transparency | failed/`unsupported_image_profile` (415) | decoding |
 | malformed/truncated PNG 或非法 interpretation metadata | failed/`decode_error` | decoding |
 | source/decode/metadata/pixel limit 或 decompression-bomb signal | failed/`resource_limit_exceeded` | observed stage |
@@ -413,10 +541,12 @@ byte fixture。
 - equal/different/minimal one-pixel content、单 pixel/channel change、edge tile、全部支持 mode、
   transparent RGB 与 descriptor mismatch；
 - palette、低/16-bit、`tRNS`、APNG、错误 codec、corrupt chunk、truncation、oversized dimension/
-  pixel/metadata/ICC 与 decompression bomb；
+  pixel、CRC/order/multiplicity fault、unknown critical chunk、精确 wire/decompressed/ICC limit
+  boundary 与 decompression bomb；这些测试断言在 Pillow 前拒绝并产生 stable code；
 - byte-different/pixel-equal pair，证明 binary/image 区别；
-- metric formula、PSNR infinity、integer/floating order、change invariant、item/payload truncation、
-  精确 budget boundary 与重复运行 determinism；
+- 四个 digest fixture 的 byte-for-byte 验证、metric formula、tagged PSNR infinity、跨平台 8-ULP
+  golden、integer/floating order、change invariant、item/payload truncation、精确 budget boundary 与
+  重复运行 determinism；
 - source mutation、no path reopen、backend missing/version mismatch、global decoder-registry tampering 与 no fallback；
 - v1/v2/v3 fixture、v4 round trip/migration、unknown kind/version、public export、terminal safety、CLI
   alias/exit 与 package content；
