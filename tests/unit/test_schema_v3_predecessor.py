@@ -58,6 +58,7 @@ from platydiff.core.serialization import (
     _change_from_data,
     _change_to_data,
     _table_column_policy_digest,
+    _validate_table_fact_against_spec,
     downgrade_outcome_v3_to_v2,
     dumps_outcome,
     loads_outcome,
@@ -1155,3 +1156,20 @@ def test_contract_encoder_sorts_arbitrary_nested_details_lexicographically() -> 
 
     assert first == second
     assert '"details":{"a":2,"kind":"string","z":1}' in first
+
+
+def test_table_fact_context_handles_untyped_and_by_name_columns() -> None:
+    with pytest.raises(SerializationError, match="untyped table cells"):
+        _validate_table_fact_against_spec(
+            ScalarFact("integer", "1"), TableCompareSpec(dialect="csv")
+        )
+
+    by_name = TableCompareSpec(
+        dialect="csv",
+        column_order="by_name",
+        columns=(ColumnSpec("b", "string"), ColumnSpec("a", "integer")),
+    )
+    fact = TableRowFact(
+        (("a", ScalarFact("integer", "1")), ("b", ScalarFact("string", "v")))
+    )
+    _validate_table_fact_against_spec(fact, by_name)

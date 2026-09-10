@@ -2639,12 +2639,25 @@ def _validate_table_fact_against_spec(
 ) -> None:
     if isinstance(fact, ScalarFact) and fact.lexical is not None:
         raise SerializationError("table scalar facts must not carry lexical text")
+    if (
+        isinstance(fact, ScalarFact)
+        and not spec.columns
+        and fact.kind
+        not in (
+            "string",
+            "missing",
+        )
+    ):
+        raise SerializationError("untyped table cells must be string or missing facts")
     if isinstance(fact, TableRowFact) and spec.columns:
-        if tuple(name for name, _ in fact.cells) != tuple(
-            column.name for column in spec.columns
-        ):
+        expected_names = tuple(column.name for column in spec.columns)
+        if spec.column_order == "by_name":
+            expected_names = tuple(sorted(expected_names))
+        if tuple(name for name, _ in fact.cells) != expected_names:
             raise SerializationError("table row fact columns do not match the spec")
-        for (_, cell), column in zip(fact.cells, spec.columns, strict=True):
+        columns_by_name = {column.name: column for column in spec.columns}
+        for name, cell in fact.cells:
+            column = columns_by_name[name]
             allowed = {
                 "string": ("string", "missing"),
                 "integer": ("integer", "missing"),
@@ -2663,12 +2676,19 @@ def _validate_table_fact_against_spec(
                 raise SerializationError(
                     "table scalar facts must not carry lexical text"
                 )
+    elif isinstance(fact, TableRowFact):
+        if any(cell.kind not in ("string", "missing") for _, cell in fact.cells):
+            raise SerializationError(
+                "untyped table row cells must be string or missing facts"
+            )
     elif isinstance(fact, ColumnSchemaFact):
         matching = next(
             (column for column in spec.columns if column.name == fact.name), None
         )
         if matching is None and spec.columns:
             raise SerializationError("table column fact is not declared by the spec")
+        if matching is None and fact.dtype != "string":
+            raise SerializationError("untyped table columns must use string facts")
         if matching is not None and (
             fact.dtype != matching.dtype
             or fact.missing_token_count != len(matching.missing_tokens)
