@@ -12,6 +12,9 @@
 - Predecessor amendment: RFC 0010 records conditional authorization for P5-A1
   dispatch only after RFC 0010, P4-C1/schema-v3, and predecessor compatibility
   fixtures merge to `main`; P5-A1 does not start automatically
+- Proposed P5-A1 wire amendment: [RFC 0011](0011-p5a1-image-wire-contract-amendment.md)
+  closes enum, transformation, fixture, problem, terminal, and downgrade choices;
+  it has no effect unless separately accepted
 
 ## Summary and authorization boundary
 

@@ -227,8 +227,9 @@ Accepted amendment，解决已接受 RFC 0006 schema-v3 closed union 与当前 `
 schema-v3 surface 之间的不一致。它选择 Option A/P4-C1，作为任何 schema-v4、schema-v5 或
 schema-v6 实现把 v3 视为稳定前驱前的 Phase 4 correction gate。RFC 0010 acceptance 本身
 不启动代码。已记录条件人工授权，coordinator 只有在 RFC 0010 合并且指定 merge gate 通过后
-才能派发。RFC 0010 还记录了 P4C1-1-P4C1-5 reader 与 fixture clarification；这些
-clarification 已于 2026-09-10 获批。P4-C1 仍须等待 RFC 0010 merge 与 coordinator dispatch。
+才能派发。RFC 0010 及其 P4C1-1-P4C1-5 reader/fixture clarification 已位于证据版本
+`5f23bbf` 的 `main`。已审阅的 P4-C1 candidate `63b62d9` 不是该版本的祖先，因此 P4-C1
+仍是未合并的前驱候选。
 
 语法相同不等于运行语义相同。AST 比较需要明确其解析器版本、错误恢复策略和宏/预处理边界。
 
@@ -246,7 +247,10 @@ clarification 已于 2026-09-10 获批。P4-C1 仍须等待 RFC 0010 merge 与 c
 [RFC 0007](rfcs/0007-image-comparison_zh.md) 定义已接受的更窄首个图片切片：显式、内建地比较
 static 8-bit PNG 的 decoded sample；encoded identity 继续由 binary comparator 负责，且不提供
 隐式 orientation、color、alpha、resize、crop、artifact、plugin 或 detection 行为。接受该 RFC
-不授权实现。
+不授权实现。Proposed
+[RFC 0011](rfcs/0011-p5a1-image-wire-contract-amendment_zh.md) 闭合 contract-only P5-A1 的
+enum、transformation、canonical-fixture provenance、problem-code、terminal 与 downgrade
+decision；它尚未获接受，也不授予实现权限。
 
 ### 6.5 音频
 

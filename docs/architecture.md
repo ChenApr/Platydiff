@@ -234,9 +234,10 @@ It selects Option A/P4-C1 as a Phase 4 correction gate before any schema-v4,
 schema-v5, or schema-v6 implementation treats v3 as a stable predecessor.
 RFC 0010 acceptance itself does not start code. Conditional human authorization
 has been recorded, and coordinator dispatch may occur only after RFC 0010
-merges and the stated merge gates pass. RFC 0010 also accepts P4C1-1-P4C1-5
-reader and fixture clarifications, approved on 2026-09-10. P4-C1 still waits
-for RFC 0010 to merge and for coordinator dispatch.
+merges and the stated merge gates pass. RFC 0010 and its P4C1-1-P4C1-5 reader
+and fixture clarifications are present on `main` at the evidence revision
+`5f23bbf`. The reviewed P4-C1 candidate `63b62d9` is not an ancestor of that
+revision, so P4-C1 remains an unmerged predecessor candidate.
 
 Syntactic equality does not imply runtime semantic equality. AST comparison must state its parser version, error-recovery behavior, and macro or preprocessing boundaries.
 
@@ -256,7 +257,11 @@ A one-pixel translation can create a large apparent difference. Registration, cr
 image slice: an explicit built-in comparison of static 8-bit PNG decoded
 samples, with encoded identity left to the binary comparator and no implicit
 orientation, color, alpha, resize, crop, artifact, plugin, or detection behavior. Acceptance
-does not authorize implementation.
+does not authorize implementation. Proposed
+[RFC 0011](rfcs/0011-p5a1-image-wire-contract-amendment.md) closes the
+contract-only P5-A1 enum, transformation, canonical-fixture provenance,
+problem-code, terminal, and downgrade decisions. It is not accepted and grants
+no implementation authority.
 
 ### 6.5 Audio
 
