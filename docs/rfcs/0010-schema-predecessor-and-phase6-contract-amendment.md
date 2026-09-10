@@ -231,12 +231,16 @@ Recommended choice: replace the undefined `MetricNumber` reference in
 `NumericValue` union used by `Metric.value`, `Metric.threshold`, and
 `PolicyEvaluation.observed`.
 
-Wire shape and ordering: the `ArrayChange` field names stay unchanged. Present
-finite errors use the canonical finite `NumericValue` representation; relative
-error may use `positive_infinity` for a non-zero finite difference with a zero
-reference. The fields are always present in canonical JSON, and undefined
-errors are serialized as JSON null following the current schema serializer's
-nullable-field convention. Canonical field order remains
+Wire shape and ordering: the `ArrayChange` field names stay unchanged.
+`absolute_error`, when non-null, must be a finite `NumericValue` greater than or
+equal to zero. `relative_error`, when non-null, must be either a finite
+`NumericValue` greater than or equal to zero or `positive_infinity` for a
+non-zero finite difference with a zero reference. NaN, negative infinity, and
+positive infinity for `absolute_error` are validation errors. For non-numeric
+or non-finite input pairs, both error fields are null. The fields are always
+present in canonical JSON, and undefined errors are serialized as JSON null
+following the current schema serializer's nullable-field convention. Canonical
+field order remains
 `kind`, `operation`, `index`, `before_digest`, `after_digest`,
 `absolute_error`, `relative_error`.
 
@@ -299,10 +303,13 @@ producer/comparator invariants deferred to P4-B2.
 
 Wire shape and ordering: `ArrayChange` keeps the RFC 0006 fields exactly, with
 `index` serialized as an ordered JSON array of non-negative integers for
-`element_replace` and as null or absent for schema changes. P4-C1 does not add
-`before_shape`, `after_shape`, `dtype`, or any `ArraySource` payload to
-`ArrayChange`. `ArraySource` remains a P4-B2 source-acquisition/API concern and
-does not enter P4-C1's serialized schema-v3 correction.
+`element_replace`. The schema-v3 canonical writer always includes `index`;
+`shape_replace` and `dtype_replace` serialize it as JSON null. Exact-key reader
+rejects an omitted `index` key, duplicate keys, and extra shape/dtype context
+keys on `ArrayChange`. P4-C1 does not add `before_shape`, `after_shape`,
+`dtype`, or any `ArraySource` payload to `ArrayChange`. `ArraySource` remains a
+P4-B2 source-acquisition/API concern and does not enter P4-C1's serialized
+schema-v3 correction.
 
 Rejected alternative: duplicate `shape` and `dtype` context into every
 `ArrayChange` so detached readers can prove full-rank and in-bounds constraints

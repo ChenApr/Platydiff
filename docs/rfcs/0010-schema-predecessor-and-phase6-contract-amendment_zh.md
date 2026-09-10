@@ -197,12 +197,14 @@ Pair array 保留 canonical order，并在任何 schema-v4/v5/v6 successor 消�
 `MetricNumber` 替换为既有 `NumericValue` union；该 union 已用于 `Metric.value`、
 `Metric.threshold` 与 `PolicyEvaluation.observed`。
 
-Wire shape 与 ordering：`ArrayChange` field name 保持不变。存在的 finite error 使用 canonical
-finite `NumericValue` 表示；当 before reference 为 zero 且 finite difference 非零时，relative
-error 可使用 `positive_infinity`。Canonical JSON 中这些 field 始终存在；当 error 未定义时，
-按照当前 schema serializer 的 nullable-field convention 写为 JSON null。Canonical field order
-仍为 `kind`、`operation`、`index`、
-`before_digest`、`after_digest`、`absolute_error`、`relative_error`。
+Wire shape 与 ordering：`ArrayChange` field name 保持不变。`absolute_error` 非 null 时必须是
+大于等于 zero 的 finite `NumericValue`。`relative_error` 非 null 时必须是大于等于 zero 的
+finite `NumericValue`，或在 before reference 为 zero 且 finite difference 非零时使用
+`positive_infinity`。NaN、negative infinity，以及用于 `absolute_error` 的 positive infinity
+均为 validation error。non-numeric 或 non-finite input pair 的两个 error field 均为 null。
+Canonical JSON 中这些 field 始终存在；当 error 未定义时，按照当前 schema serializer 的
+nullable-field convention 写为 JSON null。Canonical field order 仍为 `kind`、`operation`、
+`index`、`before_digest`、`after_digest`、`absolute_error`、`relative_error`。
 
 拒绝的替代方案：为 array change 定义第二套 number union，或把 error 序列化为裸 JSON number。
 
@@ -250,10 +252,12 @@ full-rank、in-bounds、row-major order 或 dtype-specific error consistency。�
 producer/comparator invariant，并延后到 P4-B2。
 
 Wire shape 与 ordering：`ArrayChange` 保持 RFC 0006 fields 不变；`element_replace` 的 `index`
-序列化为 non-negative integer 的有序 JSON array，schema change 的 `index` 为 null 或 absent。
-P4-C1 不给 `ArrayChange` 新增 `before_shape`、`after_shape`、`dtype` 或任何 `ArraySource`
-payload。`ArraySource` 保留给 P4-B2 的 source-acquisition/API，不进入 P4-C1 serialized
-schema-v3 correction。
+序列化为 non-negative integer 的有序 JSON array。schema-v3 canonical writer 始终包含
+`index`；`shape_replace` 与 `dtype_replace` 将其序列化为 JSON null。Exact-key reader 拒绝
+省略 `index` key、重复 key，以及在 `ArrayChange` 上出现额外 shape/dtype context key。P4-C1
+不给 `ArrayChange` 新增 `before_shape`、`after_shape`、`dtype` 或任何 `ArraySource` payload。
+`ArraySource` 保留给 P4-B2 的 source-acquisition/API，不进入 P4-C1 serialized schema-v3
+correction。
 
 拒绝的替代方案：把 `shape` 与 `dtype` context 复制进每个 `ArrayChange`，使 detached reader
 不依赖 enclosing result 也能证明 full-rank 与 in-bounds constraint。
