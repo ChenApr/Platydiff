@@ -22,6 +22,7 @@ from platydiff.core._detection import detect_pair
 from platydiff.core._sources import SourceSnapshot, open_source_snapshot
 from platydiff.core.models import (
     AnyCompareOutcome,
+    ArrayCompareSpec,
     AutoCompareSpec,
     BinaryCompareSpec,
     BinarySpan,
@@ -60,16 +61,18 @@ from platydiff.core.models import (
     SourceDetectionRecord,
     SourceKind,
     StageDisposition,
+    TableCompareSpec,
     TextCompareSpec,
     TextHunk,
     TextSource,
     UnavailableOutcomeV2,
     Verdict,
+    YamlCompareSpec,
 )
 from platydiff.core.pipeline import (
     StageRunner,
     _system_clock,
-    reject_json_plugin_comparison,
+    reject_phase4_plugin_comparison,
 )
 from platydiff.core.problems import (
     CapabilityUnavailableError,
@@ -273,7 +276,7 @@ class PluginHost:
         self,
         before: Source,
         after: Source,
-        spec: JsonCompareSpec,
+        spec: JsonCompareSpec | YamlCompareSpec | TableCompareSpec | ArrayCompareSpec,
         *,
         detector_id: str | None = None,
         comparator_id: str | None = None,
@@ -289,8 +292,11 @@ class PluginHost:
         comparator_id: str | None = None,
     ) -> CompareOutcomeV2 | CompareOutcomeV3:
         """Compare legacy intent or reject structured intent at the SDK-v1 edge."""
-        if isinstance(spec, JsonCompareSpec):
-            return reject_json_plugin_comparison(before, after, spec)
+        if isinstance(
+            spec,
+            (JsonCompareSpec, YamlCompareSpec, TableCompareSpec, ArrayCompareSpec),
+        ):
+            return reject_phase4_plugin_comparison(before, after, spec)
         if detector_id is None and (
             comparator_id is None
             or (

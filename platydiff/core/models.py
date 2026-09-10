@@ -447,8 +447,230 @@ class JsonCompareSpec:
             raise ValueError("JSON limits must be StructuredResourceLimits")
 
 
+@dataclass(frozen=True, slots=True)
+class YamlResourceLimits(StructuredResourceLimits):
+    """Deterministic resource limits for the restricted YAML profile."""
+
+    max_aliases: int = 10_000
+    max_expanded_nodes: int = 1_000_000
+    max_expanded_scalar_bytes: int = 16 * 1024 * 1024
+
+    def __post_init__(self) -> None:
+        super(YamlResourceLimits, self).__post_init__()
+        for name in (
+            "max_aliases",
+            "max_expanded_nodes",
+            "max_expanded_scalar_bytes",
+        ):
+            _bounded_integer(getattr(self, name), name, 0, _MAX_EXACT_INTEGER)
+
+
+@dataclass(frozen=True, slots=True)
+class YamlCompareSpec:
+    """Contract-only intent for the restricted YAML 1.2 Core profile."""
+
+    kind: Literal["yaml"] = field(default="yaml", init=False)
+    profile: Literal["yaml12_core_safe"] = "yaml12_core_safe"
+    encoding: TextEncoding = TextEncoding.UTF8
+    detail_mode: StructuredDetailMode = StructuredDetailMode.VALUES
+    limits: YamlResourceLimits = field(default_factory=YamlResourceLimits)
+
+    def __post_init__(self) -> None:
+        if self.profile != "yaml12_core_safe":
+            raise ValueError("unknown YAML profile")
+        if not isinstance(self.encoding, TextEncoding):
+            raise ValueError("YAML encoding must be a TextEncoding")
+        if not isinstance(self.detail_mode, StructuredDetailMode):
+            raise ValueError("detail_mode must be a StructuredDetailMode")
+        if not isinstance(self.limits, YamlResourceLimits):
+            raise ValueError("YAML limits must be YamlResourceLimits")
+
+
+@dataclass(frozen=True, slots=True)
+class NumericPolicy:
+    """Explicit binary64 equality policy for table cells and array elements."""
+
+    atol: float = 0.0
+    rtol: float = 0.0
+    relative_reference: Literal["before"] = "before"
+    nan_equal: bool = False
+    signed_zero_equal: bool = True
+
+    def __post_init__(self) -> None:
+        for name in ("atol", "rtol"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"{name} must be a finite non-negative number")
+            normalized = float(value)
+            if not math.isfinite(normalized) or normalized < 0:
+                raise ValueError(f"{name} must be a finite non-negative number")
+            object.__setattr__(self, name, normalized)
+        if self.relative_reference != "before":
+            raise ValueError("relative_reference must be before")
+        if not isinstance(self.nan_equal, bool):
+            raise ValueError("nan_equal must be a boolean")
+        if not isinstance(self.signed_zero_equal, bool):
+            raise ValueError("signed_zero_equal must be a boolean")
+
+
+@dataclass(frozen=True, slots=True)
+class ColumnSpec:
+    """One explicit delimited-table column contract."""
+
+    name: str
+    dtype: Literal["string", "integer", "float64", "boolean"]
+    missing_tokens: tuple[str, ...] = ()
+    numeric: NumericPolicy | None = None
+
+    def __post_init__(self) -> None:
+        _unicode_scalar(self.name, "column name")
+        if not self.name:
+            raise ValueError("column name must be non-empty")
+        if self.dtype not in ("string", "integer", "float64", "boolean"):
+            raise ValueError("unknown column dtype")
+        if not isinstance(self.missing_tokens, tuple):
+            raise ValueError("missing_tokens must be a tuple")
+        for token in self.missing_tokens:
+            if not isinstance(token, str):
+                raise ValueError("missing tokens must be strings")
+            _unicode_scalar(token, "missing token")
+        if len(self.missing_tokens) != len(set(self.missing_tokens)):
+            raise ValueError("missing tokens must be unique")
+        if self.dtype == "float64":
+            if not isinstance(self.numeric, NumericPolicy):
+                raise ValueError("float64 columns require a numeric policy")
+        elif self.numeric is not None:
+            raise ValueError("numeric policy is allowed only for float64 columns")
+
+
+@dataclass(frozen=True, slots=True)
+class TableResourceLimits:
+    """Deterministic resource limits for delimited-table comparison."""
+
+    max_input_bytes: int = 16 * 1024 * 1024
+    max_cell_bytes: int = 1024 * 1024
+    max_rows: int = 200_000
+    max_columns: int = 10_000
+    max_cells: int = 1_000_000
+    max_number_digits: int = 10_000
+    max_abs_exponent: int = 1_000_000
+    max_compare_work: int = 5_000_000
+    max_change_items: int = 10_000
+    max_change_payload_bytes: int = 4 * 1024 * 1024
+
+    def __post_init__(self) -> None:
+        for name in self.__dataclass_fields__:
+            _bounded_integer(getattr(self, name), name, 0, _MAX_EXACT_INTEGER)
+
+
+@dataclass(frozen=True, slots=True)
+class TableCompareSpec:
+    """Contract-only explicit intent for a CSV or TSV table."""
+
+    dialect: Literal["csv", "tsv"]
+    kind: Literal["table"] = field(default="table", init=False)
+    encoding: TextEncoding = TextEncoding.UTF8
+    header: Literal["first_row", "none"] = "first_row"
+    alignment: Literal["position", "key"] = "position"
+    key_columns: tuple[str, ...] = ()
+    column_order: Literal["exact", "by_name"] = "exact"
+    columns: tuple[ColumnSpec, ...] = ()
+    detail_mode: StructuredDetailMode = StructuredDetailMode.VALUES
+    limits: TableResourceLimits = field(default_factory=TableResourceLimits)
+
+    def __post_init__(self) -> None:
+        if self.dialect not in ("csv", "tsv"):
+            raise ValueError("unknown table dialect")
+        if not isinstance(self.encoding, TextEncoding):
+            raise ValueError("table encoding must be a TextEncoding")
+        if self.header not in ("first_row", "none"):
+            raise ValueError("unknown table header policy")
+        if self.alignment not in ("position", "key"):
+            raise ValueError("unknown table alignment")
+        if self.column_order not in ("exact", "by_name"):
+            raise ValueError("unknown table column order")
+        if not isinstance(self.key_columns, tuple) or not isinstance(
+            self.columns, tuple
+        ):
+            raise ValueError("table column collections must be tuples")
+        for name in self.key_columns:
+            if not isinstance(name, str):
+                raise ValueError("key column names must be strings")
+            _unicode_scalar(name, "key column name")
+            if not name:
+                raise ValueError("key column names must be non-empty")
+        if len(self.key_columns) != len(set(self.key_columns)):
+            raise ValueError("key column names must be unique")
+        if self.alignment == "key":
+            if self.header != "first_row" or not self.key_columns:
+                raise ValueError("key alignment requires a header and key columns")
+        elif self.key_columns:
+            raise ValueError("positional alignment forbids key columns")
+        if any(not isinstance(column, ColumnSpec) for column in self.columns):
+            raise ValueError("columns must contain ColumnSpec values")
+        column_names = tuple(column.name for column in self.columns)
+        if len(column_names) != len(set(column_names)):
+            raise ValueError("column names must be unique")
+        if self.key_columns and self.columns:
+            columns_by_name = {column.name: column for column in self.columns}
+            for name in self.key_columns:
+                column = columns_by_name.get(name)
+                if (
+                    column is None
+                    or column.dtype not in ("string", "integer")
+                    or column.missing_tokens
+                ):
+                    raise ValueError(
+                        "key columns must be declared string/integer "
+                        "non-missing columns"
+                    )
+        if not isinstance(self.detail_mode, StructuredDetailMode):
+            raise ValueError("detail_mode must be a StructuredDetailMode")
+        if not isinstance(self.limits, TableResourceLimits):
+            raise ValueError("table limits must be TableResourceLimits")
+
+
+@dataclass(frozen=True, slots=True)
+class ArrayResourceLimits:
+    """Deterministic resource limits for dense-array comparison."""
+
+    max_rank: int = 32
+    max_elements: int = 2_000_000
+    max_compare_work: int = 5_000_000
+    max_change_items: int = 10_000
+    max_change_payload_bytes: int = 4 * 1024 * 1024
+
+    def __post_init__(self) -> None:
+        for name in self.__dataclass_fields__:
+            _bounded_integer(getattr(self, name), name, 0, _MAX_EXACT_INTEGER)
+
+
+@dataclass(frozen=True, slots=True)
+class ArrayCompareSpec:
+    """Contract-only intent for positional dense-array comparison."""
+
+    kind: Literal["array"] = field(default="array", init=False)
+    alignment: Literal["position"] = "position"
+    numeric: NumericPolicy = field(default_factory=NumericPolicy)
+    limits: ArrayResourceLimits = field(default_factory=ArrayResourceLimits)
+
+    def __post_init__(self) -> None:
+        if self.alignment != "position":
+            raise ValueError("array alignment must be position")
+        if not isinstance(self.numeric, NumericPolicy):
+            raise ValueError("array numeric policy must be a NumericPolicy")
+        if not isinstance(self.limits, ArrayResourceLimits):
+            raise ValueError("array limits must be ArrayResourceLimits")
+
+
 type CompareSpec = AutoCompareSpec | TextCompareSpec | BinaryCompareSpec
-type CompareSpecV3 = CompareSpec | JsonCompareSpec
+type CompareSpecV3 = (
+    CompareSpec
+    | JsonCompareSpec
+    | YamlCompareSpec
+    | TableCompareSpec
+    | ArrayCompareSpec
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1413,6 +1635,89 @@ type StructuredFact = ScalarFact | SubtreeFact
 
 
 @dataclass(frozen=True, slots=True)
+class TableRowFact:
+    """One complete table row in aligned-column order."""
+
+    kind: Literal["table_row"] = field(default="table_row", init=False)
+    cells: tuple[tuple[str, ScalarFact], ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.cells, tuple):
+            raise ValueError("table row cells must be a tuple")
+        names: list[str] = []
+        for cell in self.cells:
+            if not isinstance(cell, tuple) or len(cell) != 2:
+                raise ValueError("table row cells must be name/fact pairs")
+            name, fact = cell
+            if not isinstance(name, str):
+                raise ValueError("table row column names must be strings")
+            _unicode_scalar(name, "table row column name")
+            if not name:
+                raise ValueError("table row column names must be non-empty")
+            if not isinstance(fact, ScalarFact):
+                raise ValueError("table row cells must carry ScalarFact values")
+            names.append(name)
+        if len(names) != len(set(names)):
+            raise ValueError("table row column names must be unique")
+
+
+@dataclass(frozen=True, slots=True)
+class ColumnSchemaFact:
+    """One complete declared table-column schema."""
+
+    name: str
+    dtype: Literal["string", "integer", "float64", "boolean"]
+    missing_token_count: int
+    numeric: NumericPolicy | None
+    kind: Literal["table_column_schema"] = field(
+        default="table_column_schema", init=False
+    )
+
+    def __post_init__(self) -> None:
+        _unicode_scalar(self.name, "column schema name")
+        if not self.name:
+            raise ValueError("column schema name must be non-empty")
+        if self.dtype not in ("string", "integer", "float64", "boolean"):
+            raise ValueError("unknown column schema dtype")
+        _bounded_integer(
+            self.missing_token_count,
+            "missing_token_count",
+            0,
+            _MAX_EXACT_INTEGER,
+        )
+        if self.dtype == "float64":
+            if not isinstance(self.numeric, NumericPolicy):
+                raise ValueError("float64 column schema requires a numeric policy")
+        elif self.numeric is not None:
+            raise ValueError("numeric policy is allowed only for float64 columns")
+
+
+@dataclass(frozen=True, slots=True)
+class ColumnOrderFact:
+    """One complete ordered table-column name sequence."""
+
+    names: tuple[str, ...]
+    kind: Literal["table_column_order"] = field(
+        default="table_column_order", init=False
+    )
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.names, tuple):
+            raise ValueError("column-order names must be a tuple")
+        for name in self.names:
+            if not isinstance(name, str):
+                raise ValueError("column-order names must be strings")
+            _unicode_scalar(name, "column-order name")
+            if not name:
+                raise ValueError("column-order names must be non-empty")
+        if len(self.names) != len(set(self.names)):
+            raise ValueError("column-order names must be unique")
+
+
+type TableFact = ScalarFact | TableRowFact | ColumnSchemaFact | ColumnOrderFact
+
+
+@dataclass(frozen=True, slots=True)
 class StructuredChange:
     """One deterministic JSON-Pointer observation, not a patch operation."""
 
@@ -1469,7 +1774,176 @@ class StructuredChange:
                     raise ValueError(f"{side} fact kind must match its structured type")
 
 
-type Change = TextHunk | BinarySpan | StructuredChange | ExtensionChange
+@dataclass(frozen=True, slots=True)
+class TableChange:
+    """One atomic schema, row, or cell observation for a table."""
+
+    operation: Literal[
+        "column_add",
+        "column_remove",
+        "column_reorder",
+        "row_add",
+        "row_remove",
+        "cell_replace",
+    ]
+    kind: Literal["table_change"] = field(default="table_change", init=False)
+    row: int | None = None
+    key_ordinal: int | None = None
+    key: tuple[ScalarFact, ...] | None = None
+    column: str | None = None
+    before_digest: str | None = None
+    after_digest: str | None = None
+    before_fact: TableFact | None = None
+    after_fact: TableFact | None = None
+
+    def __post_init__(self) -> None:
+        operations = (
+            "column_add",
+            "column_remove",
+            "column_reorder",
+            "row_add",
+            "row_remove",
+            "cell_replace",
+        )
+        if self.operation not in operations:
+            raise ValueError("unknown table change operation")
+        if self.row is not None:
+            _bounded_integer(self.row, "row", 1, _MAX_EXACT_INTEGER)
+        if self.key_ordinal is not None:
+            _bounded_integer(self.key_ordinal, "key_ordinal", 1, _MAX_EXACT_INTEGER)
+        if self.key is not None:
+            if not isinstance(self.key, tuple) or not self.key:
+                raise ValueError("table key must be a non-empty tuple")
+            if self.key_ordinal is None:
+                raise ValueError("table key requires key_ordinal")
+            for key_fact in self.key:
+                if not isinstance(key_fact, ScalarFact) or key_fact.kind not in (
+                    "string",
+                    "integer",
+                ):
+                    raise ValueError("table keys require string/integer scalar facts")
+        if self.row is not None and self.key_ordinal is not None:
+            raise ValueError("table row coordinates cannot mix position and key")
+        if self.column is not None:
+            _unicode_scalar(self.column, "table change column")
+            if not self.column:
+                raise ValueError("table change column must be non-empty")
+
+        column_operation = self.operation.startswith("column_")
+        row_operation = self.operation in ("row_add", "row_remove")
+        if column_operation:
+            if (
+                self.row is not None
+                or self.key_ordinal is not None
+                or self.key is not None
+            ):
+                raise ValueError("column changes must not carry row coordinates")
+            if (self.operation == "column_reorder") == (self.column is not None):
+                raise ValueError("table column coordinate does not match operation")
+        else:
+            if (self.row is None) == (self.key_ordinal is None):
+                raise ValueError("row and cell changes require exactly one coordinate")
+            if row_operation and self.column is not None:
+                raise ValueError("row changes must not carry a column")
+            if self.operation == "cell_replace" and self.column is None:
+                raise ValueError("cell replacement requires a column")
+
+        expected_sides = {
+            "column_add": (False, True),
+            "column_remove": (True, False),
+            "column_reorder": (True, True),
+            "row_add": (False, True),
+            "row_remove": (True, False),
+            "cell_replace": (True, True),
+        }[self.operation]
+        actual_sides = (
+            self.before_digest is not None,
+            self.after_digest is not None,
+        )
+        if actual_sides != expected_sides:
+            raise ValueError("table change sides do not match its operation")
+        for side, digest, side_fact in (
+            ("before", self.before_digest, self.before_fact),
+            ("after", self.after_digest, self.after_fact),
+        ):
+            if digest is None:
+                if side_fact is not None:
+                    raise ValueError(f"absent {side} side must not carry a fact")
+            elif not _SHA256.fullmatch(digest):
+                raise ValueError(f"present {side} side requires a SHA-256 digest")
+        expected_fact_type: type[object]
+        if self.operation in ("column_add", "column_remove"):
+            expected_fact_type = ColumnSchemaFact
+        elif self.operation == "column_reorder":
+            expected_fact_type = ColumnOrderFact
+        elif row_operation:
+            expected_fact_type = TableRowFact
+        else:
+            expected_fact_type = ScalarFact
+        for operation_fact in (self.before_fact, self.after_fact):
+            if operation_fact is not None and not isinstance(
+                operation_fact, expected_fact_type
+            ):
+                raise ValueError("table change fact type does not match its operation")
+
+
+@dataclass(frozen=True, slots=True)
+class ArrayChange:
+    """One shape, dtype, or element observation for a dense array."""
+
+    operation: Literal["shape_replace", "dtype_replace", "element_replace"]
+    index: tuple[int, ...] | None
+    before_digest: str
+    after_digest: str
+    kind: Literal["array_change"] = field(default="array_change", init=False)
+    absolute_error: NumericValue | None = None
+    relative_error: NumericValue | None = None
+
+    def __post_init__(self) -> None:
+        if self.operation not in (
+            "shape_replace",
+            "dtype_replace",
+            "element_replace",
+        ):
+            raise ValueError("unknown array change operation")
+        if not _SHA256.fullmatch(self.before_digest) or not _SHA256.fullmatch(
+            self.after_digest
+        ):
+            raise ValueError("array changes require SHA-256 digests")
+        if self.operation == "element_replace":
+            if not isinstance(self.index, tuple):
+                raise ValueError("element replacement requires an index tuple")
+            for component in self.index:
+                _bounded_integer(component, "array index", 0, _MAX_EXACT_INTEGER)
+        elif self.index is not None:
+            raise ValueError("shape/dtype replacement requires a null index")
+        if self.operation != "element_replace" and (
+            self.absolute_error is not None or self.relative_error is not None
+        ):
+            raise ValueError("shape/dtype replacement must not carry errors")
+        if self.absolute_error is not None and (
+            not isinstance(self.absolute_error, FiniteValue)
+            or self.absolute_error.value < 0
+        ):
+            raise ValueError("absolute_error must be finite and non-negative")
+        if self.relative_error is not None:
+            if isinstance(self.relative_error, FiniteValue):
+                if self.relative_error.value < 0:
+                    raise ValueError("relative_error must be non-negative")
+            elif not isinstance(self.relative_error, PositiveInfinityValue):
+                raise ValueError(
+                    "relative_error must be finite non-negative or positive infinity"
+                )
+
+
+type Change = (
+    TextHunk
+    | BinarySpan
+    | StructuredChange
+    | TableChange
+    | ArrayChange
+    | ExtensionChange
+)
 
 
 @dataclass(frozen=True, slots=True)
