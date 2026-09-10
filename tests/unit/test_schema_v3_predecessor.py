@@ -61,6 +61,7 @@ from platydiff.core.serialization import (
     _change_to_data,
     _table_column_policy_digest,
     _validate_table_fact_against_spec,
+    _validate_table_keyed_coordinates,
     downgrade_outcome_v3_to_v2,
     dumps_outcome,
     loads_outcome,
@@ -1325,3 +1326,79 @@ def test_table_changed_cells_matches_complete_and_truncated_cell_evidence() -> N
                 outcome, truncated, changed_cells=0, changed_items=2
             )
         )
+
+
+def test_table_key_ordinal_binds_one_key_and_one_operation_class() -> None:
+    first = TableChange(
+        operation="cell_replace",
+        key_ordinal=1,
+        key=(ScalarFact("integer", "1"),),
+        column="a",
+        before_digest="1" * 64,
+        after_digest="2" * 64,
+        before_fact=ScalarFact("string", "x"),
+        after_fact=ScalarFact("string", "y"),
+    )
+    same_key_other_column = replace(first, column="b")
+    _validate_table_keyed_coordinates((first, same_key_other_column))
+
+    different_key = replace(same_key_other_column, key=(ScalarFact("integer", "2"),))
+    with pytest.raises(SerializationError, match="inconsistent key facts"):
+        _validate_table_keyed_coordinates((first, different_key))
+    keyed_outcome = _contract_outcome(
+        TableCompareSpec(
+            dialect="csv",
+            alignment="key",
+            key_columns=("id",),
+            columns=(
+                ColumnSpec("id", "integer"),
+                ColumnSpec("a", "string"),
+                ColumnSpec("b", "string"),
+            ),
+        )
+    )
+    with pytest.raises(SerializationError, match="inconsistent key facts"):
+        outcome_to_data(_outcome_with_changes(keyed_outcome, (first, different_key)))
+
+    row_remove = TableChange(
+        operation="row_remove",
+        key_ordinal=1,
+        key=(ScalarFact("integer", "1"),),
+        before_digest="3" * 64,
+        before_fact=TableRowFact((("a", ScalarFact("string", "x")),)),
+    )
+    with pytest.raises(SerializationError, match="conflicting row/cell"):
+        _validate_table_keyed_coordinates((row_remove, first))
+
+    row_add = TableChange(
+        operation="row_add",
+        key_ordinal=1,
+        key=(ScalarFact("integer", "1"),),
+        after_digest="4" * 64,
+        after_fact=TableRowFact((("a", ScalarFact("string", "y")),)),
+    )
+    with pytest.raises(SerializationError, match="conflicting row/cell"):
+        _validate_table_keyed_coordinates((row_remove, row_add))
+
+
+def test_table_cell_order_uses_aligned_column_ordinals() -> None:
+    spec = TableCompareSpec(
+        dialect="csv",
+        columns=(ColumnSpec("z", "string"), ColumnSpec("a", "string")),
+    )
+    outcome = _contract_outcome(spec)
+    z_change = TableChange(
+        operation="cell_replace",
+        row=1,
+        column="z",
+        before_digest="1" * 64,
+        after_digest="2" * 64,
+        before_fact=ScalarFact("string", "x"),
+        after_fact=ScalarFact("string", "y"),
+    )
+    a_change = replace(z_change, column="a")
+
+    with pytest.raises(SerializationError, match="count identities"):
+        outcome_to_data(_outcome_with_changes(outcome, (z_change, a_change)))
+    with pytest.raises(SerializationError, match="not in canonical order"):
+        outcome_to_data(_outcome_with_changes(outcome, (a_change, z_change)))

@@ -2752,6 +2752,24 @@ def _table_column_policy_digest(spec: TableCompareSpec) -> str:
     return digest.hexdigest()
 
 
+def _validate_table_keyed_coordinates(changes: tuple[TableChange, ...]) -> None:
+    seen: dict[int, tuple[str, tuple[ScalarFact, ...] | None]] = {}
+    for item in changes:
+        if item.key_ordinal is None:
+            continue
+        existing = seen.get(item.key_ordinal)
+        if existing is None:
+            seen[item.key_ordinal] = (item.operation, item.key)
+            continue
+        existing_operation, existing_key = existing
+        if existing_key != item.key:
+            raise SerializationError("table key ordinal carries inconsistent key facts")
+        if existing_operation != "cell_replace" or item.operation != "cell_replace":
+            raise SerializationError(
+                "table key ordinal carries conflicting row/cell operations"
+            )
+
+
 def _validate_table_result(result: DiffResult, spec: TableCompareSpec) -> None:
     _validate_contract_identity(
         result,
@@ -2810,6 +2828,10 @@ def _validate_table_result(result: DiffResult, spec: TableCompareSpec) -> None:
     )
     if any(not isinstance(item, TableChange) for item in result.changes.items):
         raise SerializationError("schema-v3 table changes must be table changes")
+    table_changes = tuple(
+        item for item in result.changes.items if isinstance(item, TableChange)
+    )
+    _validate_table_keyed_coordinates(table_changes)
     row_column_sets = {
         tuple(name for name, _ in fact.cells)
         for item in result.changes.items
@@ -2836,18 +2858,36 @@ def _validate_table_result(result: DiffResult, spec: TableCompareSpec) -> None:
         "row_add": 4,
         "cell_replace": 5,
     }
+    column_positions = {name: index for index, name in enumerate(aligned_columns)}
     order_keys = tuple(
         (
             operation_rank[item.operation],
             item.key_ordinal if item.key_ordinal is not None else item.row or 0,
-            item.column or "",
-            item.operation,
+            (
+                column_positions[item.column]
+                if item.operation == "cell_replace" and item.column in column_positions
+                else 0
+            ),
+            (
+                item.column or ""
+                if item.operation != "cell_replace" or aligned_columns
+                else ""
+            ),
         )
         for item in result.changes.items
         if isinstance(item, TableChange)
     )
-    if order_keys != tuple(sorted(order_keys)) or len(order_keys) != len(
-        set(order_keys)
+    coordinate_keys = tuple(
+        (
+            item.operation,
+            item.key_ordinal if item.key_ordinal is not None else item.row,
+            item.column,
+        )
+        for item in result.changes.items
+        if isinstance(item, TableChange)
+    )
+    if order_keys != tuple(sorted(order_keys)) or len(coordinate_keys) != len(
+        set(coordinate_keys)
     ):
         raise SerializationError("schema-v3 table changes are not in canonical order")
     columns_by_name = {column.name: column for column in spec.columns}
