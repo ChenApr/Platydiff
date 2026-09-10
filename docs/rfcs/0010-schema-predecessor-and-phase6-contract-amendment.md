@@ -183,6 +183,9 @@ and `after_range` are nullable range objects with `start_byte`, `end_byte`,
 `start_line`, `start_column`, `end_line`, `end_column`, and `column_unit`.
 Byte offsets are zero-based half-open offsets in the decoded byte sequence.
 Lines are one-based. Columns use the range object's `column_unit`.
+When both outer `column_unit` and a non-null range `column_unit` are present,
+they must be equal; readers reject mismatches. Null ranges have no nested
+`column_unit`.
 `lexical_text` is either null or an object with `before_lines`, `after_lines`,
 and `line_ending`. In `detail_mode="facts"`, these line arrays may contain only
 bounded UTF-8 text already permitted by the source fact limit. In
@@ -254,32 +257,67 @@ not share an encoding. The normative non-empty vectors are:
 | `pdf/binary/span` | `kind=pdf_change`, `view=binary`, `span_variant=byte_range`, `side=before`, `start_byte=0`, `end_byte=4` | `000000000000000600000000000000046b696e64000000000000000a7064665f6368616e6765000000000000000476696577000000000000000662696e617279000000000000000c7370616e5f76617269616e74000000000000000a627974655f72616e676500000000000000047369646500000000000000066265666f7265000000000000000a73746172745f627974650000000000000001300000000000000008656e645f62797465000000000000000134` | `a95731a041d328d0d9f350ac4c9a45b49761e96103efa7b2fdf544f3411b91f9` |
 | `pdf/render/page` | `page=1`, `width_px=2`, `height_px=2`, `dpi=72`, `colorspace=srgb` | `0000000000000005000000000000000470616765000000000000000131000000000000000877696474685f707800000000000000013200000000000000096865696768745f7078000000000000000132000000000000000364706900000000000000023732000000000000000a636f6c6f727370616365000000000000000473726762` | `b9f9fef8b2493372b76f5ae8abf4166aae2a37e9ec8f3134a6b19c838ff1e81f` |
 
-### Stable IDs and counters
+### Stable IDs, policies, and counters
 
-P6-C0 reserves these stable lowercase ASCII IDs:
+P6-C0 must preserve these accepted RFC 0008 names exactly:
 
-- comparator IDs: `source.lexical_text`, `source.syntax_tree`,
-  `source.semantic_unavailable`, `pdf.binary`, `pdf.extracted_text`,
+- source relation IDs: `lexical_text`, `syntax_tree`; `semantic` is reserved
+  and unavailable;
+- PDF view IDs: `pdf.binary`, `pdf.extracted_text`,
   `pdf.objects_metadata`, `pdf.rendered_pages`;
+- source metric IDs: `source.nodes_compared`, `source.nodes_changed`,
+  `source.tokens_changed`, `source.moves`, `source.parser_errors`,
+  `source.ignored_trivia_items`;
+- PDF metric IDs: `pdf.binary.changed_bytes`, `pdf.text.changed_runs`,
+  `pdf.text.compared_runs`, `pdf.objects.changed_entries`,
+  `pdf.objects.compared_entries`, `pdf.render.changed_pixels`,
+  `pdf.render.changed_pages`, `pdf.render.compared_pages`;
+- accepted evaluation IDs: `source.syntax_tree_equality`,
+  `source.lexical_text_equality`, `pdf.extracted_text_equality`,
+  `pdf.rendered_page_equality`;
+- digest domains: `source/decoded_text_line`, `source/token`, `source/node`,
+  `source/subtree`, `pdf/binary/span`, `pdf/text/run`,
+  `pdf/object/entry`, `pdf/metadata/entry`, `pdf/render/page`,
+  `pdf/render/region`;
+- source resource limit fields: `max_input_bytes`, `max_decoded_chars`,
+  `max_fact_text_bytes`, `max_tokens`, `max_nodes`, `max_depth`,
+  `max_parser_errors`, `max_compare_work`, `max_change_items`,
+  `max_change_payload_bytes`;
+- PDF base and worker resource fields: `max_input_bytes`,
+  `max_fact_text_bytes`, `max_fact_value_bytes`, `max_compare_work`,
+  `max_change_items`, `max_change_payload_bytes`,
+  `max_total_backend_seconds`, `max_total_stdout_stderr_bytes`,
+  `max_total_temp_bytes`, `max_total_decoded_bytes`,
+  `max_total_worker_output_bytes`, `max_peak_worker_rss_bytes`,
+  `max_peak_concurrent_worker_processes`,
+  `max_total_worker_processes_spawned`;
+- PDF per-view resource fields: `max_pages`, `max_stream_bytes`,
+  `max_decoded_stream_bytes`, `max_text_runs`,
+  `max_render_pixels_per_page`, `max_rendered_pages`,
+  `max_view_backend_seconds`, `max_view_stdout_stderr_bytes`,
+  `max_view_temp_bytes`, `max_view_decoded_bytes`,
+  `max_view_worker_output_bytes`, `max_view_peak_worker_rss_bytes`,
+  `max_view_peak_concurrent_worker_processes`,
+  `max_view_total_worker_processes_spawned`.
+
+RFC 0010 proposes only these missing stable IDs:
+
+- implementation comparator IDs: `builtin.source.lexical_text.v1`,
+  `builtin.source.syntax_tree.v1`, `builtin.pdf.binary.v1`,
+  `builtin.pdf.extracted_text.v1`, `builtin.pdf.objects_metadata.v1`,
+  `builtin.pdf.rendered_pages.v1`;
+- algorithm IDs: `source.lexical_text.myers.v1`,
+  `source.syntax_tree.digest_align.v1`, `pdf.binary.byte_scan.v1`,
+  `pdf.text.run_lcs.v1`, `pdf.objects.key_path_align.v1`,
+  `pdf.render.pixel_exact.v1`, `digest.tagged_payload_sha256.v1`;
 - transformation IDs: `source.decode_utf8`, `source.normalize_newlines`,
   `source.lexical_tokenize_lines`, `pdf.read_original_bytes`,
   `pdf.parse_xref`, `pdf.extract_text_runs`, `pdf.enumerate_objects`,
   `pdf.render_page`;
-- metric IDs: `source.changed_hunks`, `source.changed_ranges`,
-  `pdf.binary_changed_spans`, `pdf.text_changed_runs`,
-  `pdf.object_changed_records`, `pdf.render_changed_pixels`;
-- algorithm IDs: `source.lexical_line_myers.v1`,
-  `source.syntax_tree_exact_digest.v1`, `pdf.binary_byte_scan.v1`,
-  `pdf.text_run_sequence_lcs.v1`, `pdf.object_key_ordered_match.v1`,
-  `pdf.raster_exact_pixel.v1`, `sha256_tagged_payload.v1`;
+- missing PDF evaluation IDs: `pdf.binary_equality`,
+  `pdf.objects_metadata_equality`;
 - summary keys: `changed_items`, `added_items`, `removed_items`,
-  `modified_items`, `moved_items`, `truncated`, `selected_views`;
-- resource counters: `input_bytes`, `fact_text_bytes`, `fact_value_bytes`,
-  `compare_work`, `change_items`, `change_payload_bytes`,
-  `pdf_backend_seconds`, `pdf_stdout_stderr_bytes`, `pdf_temp_bytes`,
-  `pdf_decoded_bytes`, `pdf_worker_output_bytes`, `pdf_peak_worker_rss_bytes`,
-  `pdf_peak_concurrent_worker_processes`, and
-  `pdf_worker_processes_spawned`.
+  `modified_items`, `moved_items`, `truncated`, `selected_views`.
 
 ### Problem registry
 

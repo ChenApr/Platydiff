@@ -156,8 +156,10 @@ payload_digest
 `unicode_scalar`。`before_range` 与 `after_range` 是 nullable range object，字段为
 `start_byte`、`end_byte`、`start_line`、`start_column`、`end_line`、`end_column`、
 `column_unit`。Byte offset 是 decoded byte sequence 中的 zero-based half-open offset。
-Line 是 one-based。Column 使用 range object 的 `column_unit`。`lexical_text` 要么是 null，
-要么是包含 `before_lines`、`after_lines`、`line_ending` 的 object。在
+Line 是 one-based。Column 使用 range object 的 `column_unit`。当 outer `column_unit` 与
+non-null range `column_unit` 都存在时，二者必须相等；reader 拒绝不一致。Null range 不含 nested
+`column_unit`。`lexical_text` 要么是 null，要么是包含 `before_lines`、`after_lines`、
+`line_ending` 的 object。在
 `detail_mode="facts"` 下，这些 line array 只能包含 source fact limit 允许的有界 UTF-8 text。
 在 `detail_mode="digest_only"` 下，`lexical_text` 为 null，只保留 coordinate、count、
 discriminator 与 digest。
@@ -222,30 +224,62 @@ ASCII 表示。Boolean 为 `true` 或 `false`。Null 是 tag suffix `?null` 加 
 | `pdf/binary/span` | `kind=pdf_change`, `view=binary`, `span_variant=byte_range`, `side=before`, `start_byte=0`, `end_byte=4` | `000000000000000600000000000000046b696e64000000000000000a7064665f6368616e6765000000000000000476696577000000000000000662696e617279000000000000000c7370616e5f76617269616e74000000000000000a627974655f72616e676500000000000000047369646500000000000000066265666f7265000000000000000a73746172745f627974650000000000000001300000000000000008656e645f62797465000000000000000134` | `a95731a041d328d0d9f350ac4c9a45b49761e96103efa7b2fdf544f3411b91f9` |
 | `pdf/render/page` | `page=1`, `width_px=2`, `height_px=2`, `dpi=72`, `colorspace=srgb` | `0000000000000005000000000000000470616765000000000000000131000000000000000877696474685f707800000000000000013200000000000000096865696768745f7078000000000000000132000000000000000364706900000000000000023732000000000000000a636f6c6f727370616365000000000000000473726762` | `b9f9fef8b2493372b76f5ae8abf4166aae2a37e9ec8f3134a6b19c838ff1e81f` |
 
-### Stable ID 与 counter
+### Stable ID、policy 与 counter
 
-P6-C0 预留以下 stable lowercase ASCII ID：
+P6-C0 必须逐字保留这些已接受 RFC 0008 名称：
 
-- comparator ID：`source.lexical_text`、`source.syntax_tree`、
-  `source.semantic_unavailable`、`pdf.binary`、`pdf.extracted_text`、
-  `pdf.objects_metadata`、`pdf.rendered_pages`；
+- source relation ID：`lexical_text`、`syntax_tree`；`semantic` 已保留且 unavailable；
+- PDF view ID：`pdf.binary`、`pdf.extracted_text`、`pdf.objects_metadata`、
+  `pdf.rendered_pages`；
+- source metric ID：`source.nodes_compared`、`source.nodes_changed`、
+  `source.tokens_changed`、`source.moves`、`source.parser_errors`、
+  `source.ignored_trivia_items`；
+- PDF metric ID：`pdf.binary.changed_bytes`、`pdf.text.changed_runs`、
+  `pdf.text.compared_runs`、`pdf.objects.changed_entries`、
+  `pdf.objects.compared_entries`、`pdf.render.changed_pixels`、
+  `pdf.render.changed_pages`、`pdf.render.compared_pages`；
+- 已接受 evaluation ID：`source.syntax_tree_equality`、
+  `source.lexical_text_equality`、`pdf.extracted_text_equality`、
+  `pdf.rendered_page_equality`；
+- digest domain：`source/decoded_text_line`、`source/token`、`source/node`、
+  `source/subtree`、`pdf/binary/span`、`pdf/text/run`、`pdf/object/entry`、
+  `pdf/metadata/entry`、`pdf/render/page`、`pdf/render/region`；
+- source resource limit field：`max_input_bytes`、`max_decoded_chars`、
+  `max_fact_text_bytes`、`max_tokens`、`max_nodes`、`max_depth`、
+  `max_parser_errors`、`max_compare_work`、`max_change_items`、
+  `max_change_payload_bytes`；
+- PDF base 与 worker resource field：`max_input_bytes`、`max_fact_text_bytes`、
+  `max_fact_value_bytes`、`max_compare_work`、`max_change_items`、
+  `max_change_payload_bytes`、`max_total_backend_seconds`、
+  `max_total_stdout_stderr_bytes`、`max_total_temp_bytes`、
+  `max_total_decoded_bytes`、`max_total_worker_output_bytes`、
+  `max_peak_worker_rss_bytes`、`max_peak_concurrent_worker_processes`、
+  `max_total_worker_processes_spawned`；
+- PDF per-view resource field：`max_pages`、`max_stream_bytes`、
+  `max_decoded_stream_bytes`、`max_text_runs`、
+  `max_render_pixels_per_page`、`max_rendered_pages`、
+  `max_view_backend_seconds`、`max_view_stdout_stderr_bytes`、
+  `max_view_temp_bytes`、`max_view_decoded_bytes`、
+  `max_view_worker_output_bytes`、`max_view_peak_worker_rss_bytes`、
+  `max_view_peak_concurrent_worker_processes`、
+  `max_view_total_worker_processes_spawned`。
+
+RFC 0010 只提议下列缺失 stable ID：
+
+- implementation comparator ID：`builtin.source.lexical_text.v1`、
+  `builtin.source.syntax_tree.v1`、`builtin.pdf.binary.v1`、
+  `builtin.pdf.extracted_text.v1`、`builtin.pdf.objects_metadata.v1`、
+  `builtin.pdf.rendered_pages.v1`；
+- algorithm ID：`source.lexical_text.myers.v1`、
+  `source.syntax_tree.digest_align.v1`、`pdf.binary.byte_scan.v1`、
+  `pdf.text.run_lcs.v1`、`pdf.objects.key_path_align.v1`、
+  `pdf.render.pixel_exact.v1`、`digest.tagged_payload_sha256.v1`；
 - transformation ID：`source.decode_utf8`、`source.normalize_newlines`、
   `source.lexical_tokenize_lines`、`pdf.read_original_bytes`、`pdf.parse_xref`、
   `pdf.extract_text_runs`、`pdf.enumerate_objects`、`pdf.render_page`；
-- metric ID：`source.changed_hunks`、`source.changed_ranges`、
-  `pdf.binary_changed_spans`、`pdf.text_changed_runs`、
-  `pdf.object_changed_records`、`pdf.render_changed_pixels`；
-- algorithm ID：`source.lexical_line_myers.v1`、
-  `source.syntax_tree_exact_digest.v1`、`pdf.binary_byte_scan.v1`、
-  `pdf.text_run_sequence_lcs.v1`、`pdf.object_key_ordered_match.v1`、
-  `pdf.raster_exact_pixel.v1`、`sha256_tagged_payload.v1`；
+- 缺失的 PDF evaluation ID：`pdf.binary_equality`、`pdf.objects_metadata_equality`；
 - summary key：`changed_items`、`added_items`、`removed_items`、
-  `modified_items`、`moved_items`、`truncated`、`selected_views`；
-- resource counter：`input_bytes`、`fact_text_bytes`、`fact_value_bytes`、
-  `compare_work`、`change_items`、`change_payload_bytes`、
-  `pdf_backend_seconds`、`pdf_stdout_stderr_bytes`、`pdf_temp_bytes`、
-  `pdf_decoded_bytes`、`pdf_worker_output_bytes`、`pdf_peak_worker_rss_bytes`、
-  `pdf_peak_concurrent_worker_processes`、`pdf_worker_processes_spawned`。
+  `modified_items`、`moved_items`、`truncated`、`selected_views`。
 
 ### Problem registry
 
