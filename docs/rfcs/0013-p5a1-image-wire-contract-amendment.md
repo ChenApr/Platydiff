@@ -316,17 +316,8 @@ class BackendComponentVersion:
 
 
 @dataclass(frozen=True, slots=True)
-class CapabilityAttemptV4:
-    capability_id: str
-    backend_id: str | None
-    disposition: Literal[
-        "selected", "rejected", "fallback", "unavailable", "failed"
-    ]
-    reason_code: str | None
-    capability_version: str | None
-    backend_version: str | None
-    provider: ProviderIdentity | None
-    backend_components: tuple[BackendComponentVersion, ...]
+class CapabilityAttemptV4(CapabilityAttemptV2):
+    backend_components: tuple[BackendComponentVersion, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -337,6 +328,21 @@ class ExecutionRecordV4(ExecutionRecordV2):
 @dataclass(frozen=True, slots=True)
 class ComparisonProvenanceV4(ComparisonProvenanceV2):
     pass
+
+
+CompareSpecV4 = CompareSpecV3 | ImageCompareSpec
+ChangeV4 = Change | ImageChange
+
+
+@dataclass(frozen=True, slots=True)
+class ChangeSetV4(ChangeSet):
+    items: tuple[ChangeV4, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class DiffResultV4(DiffResult):
+    changes: ChangeSetV4
+    provenance: ComparisonProvenanceV4
 
 
 @dataclass(frozen=True, slots=True)
@@ -364,7 +370,7 @@ class CompletedOutcomeV4:
     schema_version: Literal[4] = field(default=SCHEMA_VERSION_V4, init=False)
     kind: Literal["completed"] = field(default="completed", init=False)
     execution: ExecutionRecordV4 = field(kw_only=True)
-    result: DiffResult = field(kw_only=True)
+    result: DiffResultV4 = field(kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -383,21 +389,104 @@ class FailedOutcomeV4:
     problem: ExecutionProblemV4 = field(kw_only=True)
 
 
-CompareSpecV4 = CompareSpecV3 | ImageCompareSpec
-ChangeV4 = Change | ImageChange
 CompareOutcomeV4 = CompletedOutcomeV4 | UnavailableOutcomeV4 | FailedOutcomeV4
 AnyCompareOutcome = CompareOutcome | CompareOutcomeV2 | CompareOutcomeV3 | CompareOutcomeV4
 ```
 
-`ExecutionRecordV4` retains every `ExecutionRecordV2` field and invariant
+`CapabilityAttemptV4.__post_init__()` first calls the inherited
+`CapabilityAttemptV2.__post_init__()` and then validates the v4 component
+field. `ExecutionRecordV4` retains every `ExecutionRecordV2` field and invariant
 unchanged—timestamps, durations, contiguous stages, diagnostics, detection,
 last completed stage, and `plugin_host`—but requires every attempt to be an
 exact `CapabilityAttemptV4`. `ComparisonProvenanceV4` retains every
 `ComparisonProvenanceV2` field and provider invariant unchanged; its distinct
 runtime type prevents a v3 provenance object from being placed directly in a
-v4 completed outcome. `CompletedOutcomeV4.result` remains the existing
-`DiffResult` class, whose provenance must be exactly
-`ComparisonProvenanceV4` and whose spec/change unions are validated as v4.
+v4 completed outcome. `ChangeSetV4.__post_init__()` first calls the inherited
+`ChangeSet.__post_init__()` and then validates the v4 item union and ordering.
+`DiffResultV4.__post_init__()` likewise calls the inherited result validation,
+then requires exact `ChangeSetV4` and `ComparisonProvenanceV4` instances and
+applies the image context bindings below. `CompletedOutcomeV4` requires an
+exact `DiffResultV4`; a predecessor `DiffResult` cannot be inserted directly.
+Before that subclass is enabled, P5-A1 adds the exact RFC 0007 image metric
+sequence to the shared spec-kind metric-order table used by the inherited
+normalizer. Existing text/binary/structured entries and output order remain
+unchanged; image metrics cannot fall through to generic lexical sorting.
+
+`ChangeSetV4` permits either a predecessor-only sequence, for a lossless
+upgraded v1-v3 result, or an image-only sequence. If any item is an exact
+`ImageChange`, every item must be an exact `ImageChange`; image changes never
+mix with predecessor built-ins or `ExtensionChange`. Descriptor changes are
+unique and ordered `dimensions`, `pixel_format`, `color_description`. Tile
+changes are strictly ordered by `(y, x)`, have unique origins, do not overlap,
+and never mix with descriptor changes. An empty sequence is valid and its
+context is decided by the spec.
+
+`DiffResultV4` provides that context. With `spec.kind="image"`, all retained
+items must be image changes, `artifacts=()`, provenance must use the exact
+image comparator/algorithm bindings, and all RFC 0007 plus this amendment's
+metric, evaluation, descriptor, geometry, digest-syntax, truncation, and
+resource invariants apply. With a predecessor spec kind, no image change or
+`image`/`image.*` identifier may occur and every predecessor schema-v3 result
+invariant remains in force. An image spec in a plain `DiffResult`, an image
+change in a plain `ChangeSet`, a predecessor result directly inside
+`CompletedOutcomeV4`, or a v4 result directly inside a v1-v3 outcome is invalid.
+
+The private serializer boundary is version-explicit; it never infers schema
+from an item:
+
+```python
+def _change_to_data(
+    change: ChangeV4, *, schema_version: Literal[1, 2, 3, 4]
+) -> JsonObject: ...
+
+@overload
+def _change_from_data(
+    value: JsonValue, *, schema_version: Literal[1, 2, 3]
+) -> Change: ...
+
+@overload
+def _change_from_data(
+    value: JsonValue, *, schema_version: Literal[4]
+) -> ChangeV4: ...
+
+def _result_to_data(
+    result: DiffResult | DiffResultV4,
+    *,
+    schema_version: Literal[1, 2, 3, 4],
+) -> JsonObject: ...
+
+@overload
+def _result_from_data(
+    value: JsonValue, *, schema_version: Literal[1, 2, 3]
+) -> DiffResult: ...
+
+@overload
+def _result_from_data(
+    value: JsonValue, *, schema_version: Literal[4]
+) -> DiffResultV4: ...
+```
+
+The outer outcome encoder/decoder always passes the envelope version. A v4
+reader constructs the v4 set/result types even for a legacy-only upgraded
+payload. V1-v3 readers reject `image_change`; v1-v3 encoders reject v4
+set/result instances and image specs before serialization. The v4 set/result
+classes add no JSON keys—the existing `changes` and result object shapes stay
+closed—while `backend_components` is the sole new attempt member.
+
+Subclassing does not weaken version gates. Direct construction and encoding
+apply exact-type rules: an exact `ExecutionRecordV2` contains only exact
+`CapabilityAttemptV2` items, while `ExecutionRecordV4` first runs all inherited
+record checks and then requires exact `CapabilityAttemptV4` items; an exact
+plain `ChangeSet` contains only predecessor `Change` variants, while
+`ChangeSetV4` runs the inherited completeness/count/limit checks and then its
+v4 union checks. V1-v3 completed outcomes require the exact predecessor
+`DiffResult`/provenance combination; v4 requires exact
+`DiffResultV4`/`ComparisonProvenanceV4`. The v4 reader requires the
+`backend_components` member, constructs `BackendComponentVersion` before its
+attempt, and rejects unknown component keys, duplicate IDs, or unsorted input.
+The v3-to-v4 upgrader invokes the public `CapabilityAttemptV4` constructor with
+all inherited values and `backend_components=()`; it never mutates an existing
+v2 attempt or bypasses its validation.
 
 `BackendComponentVersion.component_id` is a stable lowercase identifier and
 `component_version` is bounded identity text. Components are unique and sorted
@@ -412,10 +501,10 @@ free-form diagnostics. For example, a later runtime may identify `libpng` and
 tuple. This carrier closes RFC 0007's linked-library evidence requirement
 without claiming that a backend exists.
 
-The curated top-level `platydiff` exports add `CompareSpecV4`,
+The curated top-level `platydiff` exports add `CompareSpecV4`, `DiffResultV4`,
 `CompareOutcomeV4`, the three v4 outcome classes, every image spec/change
 class and named enum, and the four migration helpers below. The foundational
-`SCHEMA_VERSION_V4`, `ChangeV4`, `BackendComponentVersion`, v4 attempt,
+`SCHEMA_VERSION_V4`, `ChangeV4`, `ChangeSetV4`, `BackendComponentVersion`, v4 attempt,
 execution, provenance, and problem classes are public from
 `platydiff.core.models`, matching the predecessor's separation of curated and
 foundational contracts; they are not duplicated in the top-level export.
@@ -542,12 +631,42 @@ invariants, independent of object-member order:
 | Spec/profile | `spec.kind=image`; each transformation policy/profile/tile value equals the corresponding normalized spec value. |
 | Decode/resources | Per role, decode `input_bytes`, metadata counters, `pixels`, and `decoded_bytes` equal the `used` value of the correspondingly named `ResourceUsage`; each resource `limit` equals the normalized spec limit. |
 | Mode/alpha | Per role, decode `mode` equals alpha `mode`; bands and `has_alpha` match that mode; IHDR color type and decoded-byte arithmetic match it. |
-| Dimensions/alignment | The decode dimensions bind the descriptor digest inputs; coordinate policy and tile size equal the normalized spec. Equal descriptors require equal role dimensions, mode/bands/alpha, and color-description digest. |
+| Dimensions/alignment | Decode dimensions establish coordinate bounds; coordinate policy and tile size equal the normalized spec. Equal descriptors require equal role dimensions, mode/bands/alpha, and color-description digest. |
 | Comparison work | `image.compare.sample_pairs.used == image.compared_samples`; its limit equals `max_compare_work`. |
 | Changes/resources | `image.changes.items.used == changes.returned_count`; `image.changes.payload_bytes.used` equals the canonical retained-change payload byte count; their limits equal the two spec change limits. |
 | Summary/changes | `summary.change_count == changes.total_count == image.changed_items`; summary `changed_tiles` equals the full tile-change count and `descriptor_changes` equals the full descriptor-change count. |
 | Metrics | The equal specimen has compared/equal/changed pixels `1/1/0`, compared samples `4`, changed items `0`, MAE/RMSE `0.0`, and tagged positive-infinity PSNR, in RFC 0007 metric order. |
 | Evaluation | The single `image.decoded_sample_equality` evaluation observes `image.changed_items`, uses `eq 0`, and its verdict equals the result verdict. Relation is equal iff changed items is zero. |
+
+### Digest verification boundary
+
+A detached reader can verify only facts carried by the outcome. It validates
+64-lowercase-hex syntax, maps operation/component to the declared RFC 0007
+digest domain, and
+maps the two digest fields to the `before`/`after` roles. It independently
+recomputes dimensions and pixel-format descriptor digests from the public
+decode/alpha facts. For a color-description change it requires each change
+digest to equal that role's `image.color.native_exact.description_digest`.
+For a tile change it can validate domain selection, role placement, geometry,
+and digest syntax, but cannot recompute sample digests because samples are
+deliberately absent.
+
+Content correctness is a producer-only obligation. The producer hashes the
+actual owned input bytes for `InputProvenance`, derives decode facts from the
+validated stream, hashes the full canonical color-description payload, and
+hashes each role's actual canonical tile samples. It also computes changed
+pixels and maximum error from those samples. A detached reader must not report
+these producer-only facts as independently verified merely because the wire
+object is internally consistent.
+
+Compatibility tests independently recompute all four RFC 0007 digest vectors
+from the literal ASCII domain strings and literal payload hex using the Python
+standard-library SHA-256 implementation. That oracle must not call the
+Platydiff serializer, image comparator, decoder, Pillow, or a production digest
+helper. Tests compare each recomputed digest byte-for-byte with the published
+constant and separately test detached-reader checks. The canonical equal
+specimen contains no `ImageChange`, so these vector tests remain distinct from
+its byte-stable fixture round trip.
 
 For every schema-v4 image outcome, not only the canonical specimen, a
 descriptor change forbids tile changes and forces compared/equal/changed pixel
@@ -559,8 +678,8 @@ positive/negative infinity, zero, and negative error are invalid. For a
 complete change set, the sum of tile `changed_pixels` equals the full
 `image.changed_pixels` metric. For a truncated set, the retained sum must not
 exceed that metric; the producer computes the full metric before truncation,
-while the reader does not invent omitted tile facts. Each before/after digest
-must bind to the appropriate role and RFC 0007 digest domain.
+while the reader does not invent omitted tile facts. Digest claims follow the
+detached-reader and producer-only boundary above.
 
 The canonical failed specimen has no detection record and exactly one attempt,
 whose disposition is `selected`, with capability/version `image`/`1`, null
@@ -604,10 +723,12 @@ Its `details` object has exactly two keys:
 ```
 
 `profile` is `ImageDecodeProfile.STATIC_PNG_8BIT_V1`; `reason` is one
-`UnsupportedImageProfileReason` value. The message is terminal-safe Unicode
-text under the inherited bound and escaping rules, but must not contain source
-bytes, metadata, ICC/EXIF values, absolute paths, module paths, or backend
-exception text. The canonical fixture message is exactly
+`UnsupportedImageProfileReason` value. The message is Unicode-scalar text
+under the inherited validity and terminal-escaping rules. Schema v4 adds no
+problem-message wire-length bound because no predecessor bound exists; the
+separate terminal projection limit below bounds rendering. The message must
+not contain source bytes, metadata, ICC/EXIF values, absolute paths, module
+paths, or backend exception text. The canonical fixture message is exactly
 `input is outside the static PNG 8-bit profile`.
 
 `CapabilityProblemV4` adds no code and has the same mappings and resolving-stage
@@ -657,7 +778,7 @@ previous ambiguity between an unsupported codec and a damaged PNG.
 | Metadata, ICC, dimension, pixel, decoded-byte, or decompression-bomb limit is crossed | failed / `resource_limit_exceeded` (413) | decoding | — |
 | Complete sample comparison would cross its work budget | failed / `compare_resource_limit` (413) | comparing | — |
 | Selected built-in comparator fails outside classified decode/resource conditions | failed / `comparator_failure` (502) | comparing | — |
-| Unexpected exception mapped only at the CLI outer boundary | failed / `internal_error` (500) | outer CLI boundary | — |
+| Unexpected exception caught by the outer CLI handler | failed / `internal_error` (500) | `validating` | — |
 | Dimensions, pixel format, or color description differ after successful decode | completed / different / fail | aggregating | — |
 | Supported descriptors and all samples match/differ | completed / equal/pass or different/fail | aggregating | — |
 
@@ -667,6 +788,46 @@ problem retain their inherited details policy and must not acquire a profile
 `reason`. A condition that is both malformed and outside the supported profile
 is `decode_error`: structural validity is established before support-profile
 classification, except for the explicit signature-prefix rule above.
+
+After source and resource enforcement, the scanner completes bounded structural
+validation before selecting an unsupported-profile reason. Any malformed fact
+produces `decode_error` even if an unsupported feature was also observed. If
+the structure is valid and more than one unsupported feature is present, the
+producer chooses the first reason in this total priority order, independent of
+chunk discovery order:
+
+```text
+1. wrong_codec
+2. multiple_frames
+3. unknown_critical_chunk
+4. unsupported_color_type
+5. unsupported_bit_depth
+6. transparency_expansion_required
+```
+
+`wrong_codec` cannot coexist with features parsed after a valid PNG signature,
+but occupies rank 1 so the classification function is total for every input.
+A resource breach that prevents the complete bounded scan remains
+`resource_limit_exceeded`, not a partially selected reason. The following
+generated, CRC/order-valid classification vectors are mandatory:
+
+| Vector | Supported/unsupported facts | Expected classification |
+| --- | --- | --- |
+| `signature_jpeg` | JPEG signature; no PNG structure | `unsupported_image_profile/wrong_codec` |
+| `apng_unknown_indexed_trns` | APNG control, unknown critical chunk, indexed 4-bit color, and `tRNS` | `unsupported_image_profile/multiple_frames` |
+| `unknown_indexed_trns` | Unknown critical chunk, indexed 4-bit color, and `tRNS` | `unsupported_image_profile/unknown_critical_chunk` |
+| `indexed_4bit_trns` | Indexed 4-bit color and `tRNS` | `unsupported_image_profile/unsupported_color_type` |
+| `grey_16bit_trns` | Greyscale 16-bit samples and `tRNS` | `unsupported_image_profile/unsupported_bit_depth` |
+| `rgb_8bit_trns` | Otherwise supported RGB 8-bit PNG with `tRNS` | `unsupported_image_profile/transparency_expansion_required` |
+
+Each vector also has a malformed twin with a bad CRC after the unsupported
+fact; every twin must produce `decode_error`, proving malformed precedence.
+Permuting ancillary/eligible chunk discovery without changing PNG validity
+must not change the selected reason.
+
+`internal_error` records `stage="validating"`, the existing real
+`PipelineStage` used for synthetic CLI failures. “Outer CLI handler” describes
+where the exception was caught; it is not a serialized stage value.
 
 ## Minimal safe terminal projection
 
@@ -745,8 +906,9 @@ upgrade_outcome_v1_to_v4(v1) = upgrade_outcome_v2_to_v4(upgrade_outcome_v1_to_v2
 
 The v3-to-v4 step replaces each attempt with `CapabilityAttemptV4` carrying
 the same seven inherited fields plus `backend_components=[]`, replaces the
-execution/provenance/problem wrapper with its exact v4 type, and preserves all
-wire facts. It does not relabel a predecessor outcome as image.
+execution/provenance/problem wrapper with its exact v4 type, and reconstructs
+completed results as `ChangeSetV4` plus `DiffResultV4`, preserving all wire
+facts. It does not relabel a predecessor outcome as image.
 
 There is no automatic downgrade in a renderer, CLI, JSON writer, or reader.
 P5-A1 defines exactly one new downgrade helper:
@@ -766,8 +928,8 @@ outcome containing at least one of:
 - a non-empty `backend_components` tuple; or
 - any other schema-v4-only fact, enum value, or problem shape.
 
-On success it converts the exact v4 wrappers and attempts back to their v3
-types without changing any remaining value. A caller may then explicitly use
+On success it converts the exact v4 wrappers, attempts, change set, and result
+back to their v3 types without changing any remaining value. A caller may then explicitly use
 the already implemented `downgrade_outcome_v3_to_v2`; P5-A1 does not modify or
 bypass that gate. No v2-to-v1 downgrade helper exists in the reviewed
 predecessor, so P5-A1 does not promise or add one. Such a helper is deferred to
@@ -786,12 +948,14 @@ all of the following before merge:
    this amendment. Otherwise work stops for an RFC callback.
 2. `SCHEMA_VERSION_V4`, `BackendComponentVersion`, `CapabilityAttemptV4`,
    `ExecutionRecordV4`, `ComparisonProvenanceV4`, both v4 problem classes,
-   all three v4 outcome classes, `CompareSpecV4`, `ChangeV4`,
-   `CompareOutcomeV4`, the expanded `AnyCompareOutcome`, every documented
+   all three v4 outcome classes, `CompareSpecV4`, `ChangeV4`, `ChangeSetV4`,
+   `DiffResultV4`, `CompareOutcomeV4`, the expanded `AnyCompareOutcome`, every documented
    image spec/change/enum, and exactly four v4 migration helpers are present in
    the documented top-level versus foundational export sets above; no
    decoder/backend implementation is exported.
-3. Every new object rejects missing/extra keys, booleans-as-integers, invalid
+3. Exact predecessor/v4 constructors, readers, and encoders reject cross-version
+   attempt, change-set, result, provenance, problem, and outcome mixing while
+   v4 subclasses demonstrably run all inherited validation first. Every new object rejects missing/extra keys, booleans-as-integers, invalid
    enum values, invalid mode/IHDR/band combinations, invalid role ordering,
    invalid digests, and violated cross-field invariants.
 4. Each of the five transformation records accepts its canonical payload and
@@ -805,8 +969,8 @@ all of the following before merge:
    absence of image runtime registration/CLI route/dependency, and rejection
    by v1-v3 code gates where applicable.
 7. The v4 reader rejects duplicate keys, unknown schemas, unknown built-in
-   kinds/transformations/problems, and invalid image change combinations before
-   terminal rendering.
+   kinds/transformations/problems, and invalid image change combinations,
+   mixing, ordering, geometry, context, and serializer-version signatures before terminal rendering.
 8. Terminal golden tests cover descriptor, tile, truncated, failed, unsafe
    message, unknown-kind, exact line/scalar/UTF-8 boundaries, deterministic
    overflow, numeric grammar, and tile value/area rejection without source or
@@ -815,7 +979,15 @@ all of the following before merge:
    representable v4-to-v3 downgrade, subsequent use of the existing v3-to-v2
    helper, and hard rejection of image-bearing, component-bearing, or
    `unsupported_image_profile` downgrade. No v2-to-v1 helper is added.
-10. Ruff format/check, strict mypy, the complete pytest suite, build and
+10. All priority classification vectors, their malformed twins, and discovery-order
+    permutations produce the exact problem/reason/stage facts above, including
+    `internal_error` at `validating`.
+11. Detached-reader tests cover only wire-verifiable digest syntax/domain/role
+    bindings; producer tests cover content correctness; a separate standard-library
+    oracle recomputes all four RFC 0007 vectors without production helpers.
+12. Problem messages retain predecessor wire behavior without a claimed length
+    bound, while terminal tests independently prove the v4 rendering bounds.
+13. Ruff format/check, strict mypy, the complete pytest suite, build and
     wheel/sdist inspection, `git diff --check`, and relative-link checks all
     pass. Only commands actually run may be reported.
 
