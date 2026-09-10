@@ -25,6 +25,6 @@
 | [0007](0007-image-comparison_zh.md) | Accepted | 定义 schema v4 的显式静态 PNG decoded-sample 切片，并延后 perceptual、artifact、plugin 与 detection 工作 |
 | [0008](0008-source-code-and-pdf-comparison_zh.md) | Accepted | 定义显式 source-code 与 PDF 比较契约；RFC 0010 记录 P6-C0 的条件授权，并受 predecessor merge gate 约束 |
 | [0009](0009-audio-and-video-comparison_zh.md) | Accepted | 接受显式 audio 契约和 audio-only schema-v6 allocation；video 契约仅作为 roadmap direction，等待后续 backend/worker amendment 与 successor schema |
-| [0010](0010-schema-predecessor-and-phase6-contract-amendment_zh.md) | Accepted | 选择 Option A/P4-C1 修正 schema-v3 predecessor，并在下游实现前接受 P6-C0 契约缺口决策 |
+| [0010](0010-schema-predecessor-and-phase6-contract-amendment_zh.md) | Accepted | 选择 Option A/P4-C1 并接受 P6-C0 契约缺口决策；proposed P4C1-1-P4C1-5 clarification 仍未批准 |
 
 计划中的行为在实现并完成验证前，必须继续明确标记为计划能力。

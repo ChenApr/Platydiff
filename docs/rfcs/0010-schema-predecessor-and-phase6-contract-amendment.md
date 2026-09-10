@@ -6,9 +6,13 @@
 - Date: 2026-09-10
 - Accepted: 2026-09-10
 - Approved decisions: SP1-SP6; Option A/P4-C1; P6C0-1-P6C0-10
+- Open P4-C1 clarifications: P4C1-1-P4C1-5 proposed only; not approved
 - Owners: Platydiff maintainers
 - Implementation dispatch: conditional human authorization recorded; coordinator
-  dispatch only after RFC 0010 merges and the stated merge gates pass
+  dispatch only after RFC 0010 merges and the stated merge and clarification
+  gates pass
+- Merge status: the accepted decisions above remain unchanged, but this PR must
+  not merge while P4C1-1-P4C1-5 remain unapproved or unresolved
 
 ## Summary and authorization boundary
 
@@ -23,14 +27,22 @@ implementation, or implementation of structured data, image, source-code, PDF,
 audio, video, SDK v2, backend workers, artifacts, automatic detection, or UI
 work.
 
+A P4-C1 pre-implementation read-only check found additional schema-v3 reader and
+fixture ambiguities. The proposed clarifications P4C1-1 through P4C1-5 below
+are not approved decisions and do not alter SP1-SP6, Option A/P4-C1, or
+P6C0-1 through P6C0-10. P4-C1 remains blocked until these clarifications are
+accepted or replaced by an accepted alternative. No code starts from this
+clarification proposal.
+
 The accepted decision is to treat the missing YAML, table, and array
 schema-v3 contract surface on `main` as a Phase 4 code defect, not as proof that
 the accepted RFC 0006 contract was wrong. A correction gate must land before
 schema v4 image, schema v5 source/PDF, schema v6 audio, or any later video
-successor can use v3 as a stable predecessor. P4-C1 code may start only after
-this RFC is merged to `main` and separately dispatched. P5-A1, P6-C0, P7-A1,
-and later video schema work remain conditional on the actual predecessor merges
-and compatibility fixtures.
+successor can use v3 as a stable predecessor. P4-C1 code remains blocked while
+P4C1-1 through P4C1-5 are unresolved, and may start only after this RFC is
+merged to `main`, the clarifications are accepted or replaced, and the
+coordinator dispatches it. P5-A1, P6-C0, P7-A1, and later video schema work
+remain conditional on the actual predecessor merges and compatibility fixtures.
 
 ## Evidence
 
@@ -142,6 +154,165 @@ strict type checking, complete tests, schema-v1/v2/v3 compatibility fixtures,
 unknown-kind rejection, and public-export checks pass. P5-A1, P6-C0, P7-A1, and
 later video schema gates must wait for P4-C1 or for an accepted alternative in
 this RFC.
+
+## Proposed P4-C1 pre-implementation clarifications
+
+These P4C1 IDs are proposed only. They are not approved, and P4-C1 remains
+blocked until a human explicitly accepts these decisions or replaces them.
+
+### P4C1-1: table encoding field
+
+Recommended choice: add an explicit `encoding` field to `TableCompareSpec`
+immediately after `dialect`:
+
+```python
+class TableCompareSpec:
+    kind: Literal["table"] = "table"
+    dialect: Literal["csv", "tsv"]
+    encoding: Literal["utf-8", "utf-8-sig"] = "utf-8"
+    header: Literal["first_row", "none"] = "first_row"
+```
+
+Wire shape and ordering: canonical schema-v3 JSON writes `encoding` after
+`dialect` and before `header`, even when the value is the default `utf-8`.
+`utf-8` means strict UTF-8 with no implicit BOM handling. `utf-8-sig` permits
+one leading UTF-8 BOM at the start of an input and strips it as a recorded table
+decoding transformation; all other bytes still decode with strict UTF-8.
+
+Rejected alternative: keep encoding only in prose, infer it from bytes, accept
+locale encodings, or silently strip a BOM while serializing no selected policy.
+
+Compatibility impact: no released schema-v3 table fixtures exist, so this is a
+pre-release visible default rather than a migration. P4-C1 canonical fixtures
+must include `encoding`. Existing v1/v2/v3 fixture bytes remain stable; new
+schema-v3 table specs always write the default `utf-8` policy canonically.
+
+### P4C1-2: table fact discriminators and row-cell wire shape
+
+Recommended choice: add explicit `kind` discriminators to table fact variants
+and serialize row cells as ordered pair arrays, not JSON objects:
+
+```python
+class TableRowFact:
+    kind: Literal["table_row"] = "table_row"
+    cells: tuple[tuple[str, ScalarFact], ...]
+
+class ColumnSchemaFact:
+    kind: Literal["table_column_schema"] = "table_column_schema"
+    name: str
+    dtype: Literal["string", "integer", "float64", "boolean"]
+    missing_token_count: int
+    numeric: NumericPolicy | None
+
+class ColumnOrderFact:
+    kind: Literal["table_column_order"] = "table_column_order"
+    names: tuple[str, ...]
+```
+
+Wire shape and ordering: canonical JSON field order is `kind`, then the payload
+fields shown above. `TableRowFact.cells` is serialized as
+`[["column_name", {"kind": "string", "value": "..."}], ...]` in aligned column
+order. Validation rejects object-map cells, duplicate column names, cells whose
+scalar kind violates the declared column schema, and row facts that omit or add
+columns relative to the aligned column set.
+
+Rejected alternative: infer table fact type from payload keys or serialize
+`cells` as an object keyed by column name.
+
+Compatibility impact: discriminators keep the schema-v3 closed union
+unambiguous for detached readers. Pair arrays preserve canonical order and make
+duplicate-name rejection explicit before any schema-v4/v5/v6 successor consumes
+the fixture corpus.
+
+### P4C1-3: array error number type
+
+Recommended choice: replace the undefined `MetricNumber` reference in
+`ArrayChange.absolute_error` and `ArrayChange.relative_error` with the existing
+`NumericValue` union used by `Metric.value`, `Metric.threshold`, and
+`PolicyEvaluation.observed`.
+
+Wire shape and ordering: the `ArrayChange` field names stay unchanged. Present
+finite errors use the canonical finite `NumericValue` representation; relative
+error may use `positive_infinity` for a non-zero finite difference with a zero
+reference. The fields are always present in canonical JSON, and undefined
+errors are serialized as JSON null following the current schema serializer's
+nullable-field convention. Canonical field order remains
+`kind`, `operation`, `index`, `before_digest`, `after_digest`,
+`absolute_error`, `relative_error`.
+
+Rejected alternative: define a second number union only for array changes or
+serialize errors as bare JSON numbers.
+
+Compatibility impact: reusing `NumericValue` avoids another public numeric
+contract and keeps renderer, policy, metric, and schema-v3 fixture parsing on
+one numeric representation.
+
+### P4C1-4: completed contract fixtures without comparator routes
+
+Recommended choice: P4-C1 remains contract-only. Completed canonical
+YAML/table/array fixtures are reader/writer fixtures constructed directly as
+validated schema-v3 outcomes; they do not imply a runnable `compare()` route,
+CLI route, detector, plugin handle, or backend. Their provenance uses the
+frozen future built-in comparator IDs rather than fixture-only IDs. This follows
+the current built-in convention: comparator IDs are non-namespaced
+`text`/`binary`/`json`-style identifiers, while algorithm IDs may use dotted
+stable names.
+
+| Modality | `comparator_id` | `algorithm_id` |
+| --- | --- | --- |
+| YAML | `yaml` | `yaml.structural.tree.v1` |
+| Table | `table` | `table.delimited.align.v1` |
+| Array | `array` | `array.position.numeric.v1` |
+
+Wire shape and ordering: canonical fixtures contain completed `DiffResult`
+records with schema version 3, the matching explicit spec kind, the matching
+fact/change variants, `comparator_version="1"`, no detector provenance, and no
+plugin provider. Each fixture also contains exactly one selected
+`CapabilityAttemptV2` in `ExecutionRecordV2.attempts`; its `capability_id`
+matches `provenance.comparator_id`, its `capability_version` matches
+`provenance.comparator_version`, and its provider/backend fields are null.
+`_validate_v3_result` accepts these reserved built-in ID pairs only when the
+result's spec, facts, changes, metric names, resource records, transformations,
+problem absence, and selected attempt match the corresponding schema-v3
+contract. Capability resolution must still reject these IDs as registered
+runtime comparators during P4-C1.
+
+Rejected alternative: reuse `json` provenance, omit comparator/algorithm IDs,
+allow arbitrary or `contract_fixture` IDs, or add YAML/table/array comparator
+implementations inside P4-C1.
+
+Compatibility impact: this gives canonical byte fixtures real future built-in
+provenance without widening runtime behavior. Later P4-B1/P4-B2 comparator work
+must use these same built-in IDs when the registry actually exposes executable
+YAML/table/array capabilities.
+
+### P4C1-5: detached array-change validation context
+
+Recommended choice: do not add shape or dtype fields to every `ArrayChange`.
+A detached `ArrayChange` reader validates the operation/field matrix, digest
+syntax, `NumericValue` error shapes, and that every `index` component is a
+non-negative integer. Because `ArrayCompareSpec`, `DiffResult`, and provenance
+do not carry array shape or dtype today, neither the detached reader nor the
+schema-v3 result reader can prove full-rank, in-bounds, row-major order, or
+dtype-specific error consistency in P4-C1. Those checks are future
+producer/comparator invariants deferred to P4-B2.
+
+Wire shape and ordering: `ArrayChange` keeps the RFC 0006 fields exactly, with
+`index` serialized as an ordered JSON array of non-negative integers for
+`element_replace` and as null or absent for schema changes. P4-C1 does not add
+`before_shape`, `after_shape`, `dtype`, or any `ArraySource` payload to
+`ArrayChange`. `ArraySource` remains a P4-B2 source-acquisition/API concern and
+does not enter P4-C1's serialized schema-v3 correction.
+
+Rejected alternative: duplicate `shape` and `dtype` context into every
+`ArrayChange` so detached readers can prove full-rank and in-bounds constraints
+without the enclosing result.
+
+Compatibility impact: the compact accepted `ArrayChange` shape is preserved,
+while validators distinguish detached syntactic validation from contextual
+producer validation. P4-C1 fixtures must test non-negative index syntax and the
+operation/field matrix; producer tests for full-rank, bounds, row-major order,
+and dtype/error consistency are deferred to P4-B2.
 
 ## P6-C0 contract amendment
 
@@ -412,7 +583,8 @@ Human reviewers accepted:
 
 RFC acceptance itself does not start code. Conditional human authorization has
 been recorded; coordinator dispatch may occur only after the stated merge
-gates. P4-C1 implementation requires a separate dispatch after this RFC is
-merged. P5-A1, P6-C0, P7-A1, and later video schema implementation remain
-blocked until their actual predecessor merges and compatibility fixtures are
-present on `main`.
+gates. P4-C1 implementation remains blocked while P4C1-1 through P4C1-5 are
+unresolved, and then requires coordinator dispatch after this RFC is merged.
+P5-A1, P6-C0, P7-A1, and later video schema implementation remain blocked until
+their actual predecessor merges and compatibility fixtures are present on
+`main`.

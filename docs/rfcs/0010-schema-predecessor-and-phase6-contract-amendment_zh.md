@@ -6,9 +6,12 @@
 - Date: 2026-09-10
 - Accepted: 2026-09-10
 - Approved decisions: SP1-SP6; Option A/P4-C1; P6C0-1-P6C0-10
+- Open P4-C1 clarifications：P4C1-1-P4C1-5 仅为提案；尚未批准
 - Owners: Platydiff 维护者
-- Implementation dispatch：已记录条件人工授权；只有在 RFC 0010 合并且指定 merge gate
-  通过后，coordinator 才能派发
+- Implementation dispatch：已记录条件人工授权；只有在 RFC 0010 合并且指定 merge 与
+  clarification gate 通过后，coordinator 才能派发
+- Merge status：上方已接受决策保持不变，但 P4C1-1-P4C1-5 未获批准或替代解决前，本 PR
+  不可合并
 
 ## 摘要与授权边界
 
@@ -19,12 +22,18 @@ P6C0-1 到 P6C0-10 作为 Phase 6 contract decision。RFC acceptance 本身不�
 变更、public schema implementation，也不启动 structured data、image、source-code、PDF、audio、
 video、SDK v2、backend worker、artifact、automatic detection 或 UI 实现。
 
+一次 P4-C1 pre-implementation 只读检查发现了额外的 schema-v3 reader 与 fixture 歧义。
+下方 P4C1-1 到 P4C1-5 只是提案，不是已批准决策，也不修改 SP1-SP6、Option A/P4-C1 或
+P6C0-1 到 P6C0-10。P4-C1 在这些 clarification 被接受或被已接受替代方案取代前仍然
+blocked。本 clarification proposal 不启动任何代码。
+
 已接受决策是：将 `main` 上缺失的 YAML、table、array schema-v3 contract surface 视为
 Phase 4 代码缺陷，而不是把它当作 RFC 0006 已接受契约错误的证据。必须先落地一个
 correction gate，然后 schema v4 image、schema v5 source/PDF、schema v6 audio 或后续
-video successor 才能把 v3 当作稳定前驱。P4-C1 code 只有在本 RFC 合并到 `main` 并被单独
-派发后才能启动。P5-A1、P6-C0、P7-A1 与后续 video schema work 仍取决于实际 predecessor
-merge 与 compatibility fixture。
+video successor 才能把 v3 当作稳定前驱。P4-C1 code 在 P4C1-1 到 P4C1-5 未解决期间仍
+blocked；只有在本 RFC 合并到 `main`、clarification 获批或被替代、且 coordinator 派发后
+才能启动。P5-A1、P6-C0、P7-A1 与后续 video schema work 仍取决于实际 predecessor merge
+与 compatibility fixture。
 
 ## 证据
 
@@ -117,6 +126,142 @@ route、detector、plugin SDK、artifact 或 renderer feature；`git diff --chec
 strict type checking、完整测试、schema-v1/v2/v3 compatibility fixture、unknown-kind rejection
 与 public-export check 全部通过。P5-A1、P6-C0、P7-A1 与后续 video schema gate 必须等待
 P4-C1，或者等待本 RFC 中另一个方案被接受。
+
+## Proposed P4-C1 pre-implementation clarifications
+
+这些 P4C1 ID 仅为提案。它们尚未获批；P4-C1 必须等人工明确接受这些 decision 或用已接受
+替代方案取代后才解除 blocked。
+
+### P4C1-1：table encoding field
+
+推荐选择：在 `TableCompareSpec` 中新增显式 `encoding` field，位置紧跟 `dialect`：
+
+```python
+class TableCompareSpec:
+    kind: Literal["table"] = "table"
+    dialect: Literal["csv", "tsv"]
+    encoding: Literal["utf-8", "utf-8-sig"] = "utf-8"
+    header: Literal["first_row", "none"] = "first_row"
+```
+
+Wire shape 与 ordering：canonical schema-v3 JSON 在 `dialect` 后、`header` 前写入 `encoding`，
+即使其值为默认 `utf-8`。`utf-8` 表示 strict UTF-8，不做隐式 BOM 处理。`utf-8-sig` 允许
+input 开头存在一个 UTF-8 BOM，并把 stripping 记录为 table decoding transformation；其他
+byte 仍按 strict UTF-8 解码。
+
+拒绝的替代方案：只在 prose 中说明 encoding、从 byte 推断 encoding、接受 locale encoding，
+或静默剥离 BOM 但不序列化 selected policy。
+
+兼容性影响：尚无已发布 schema-v3 table fixture，因此这是 release 前可见默认值，不是
+migration。P4-C1 canonical fixture 必须包含 `encoding`。既有 v1/v2/v3 fixture byte 保持
+stable；新的 schema-v3 table spec 始终 canonical 写入默认 `utf-8` policy。
+
+### P4C1-2：table fact discriminator 与 row-cell wire shape
+
+推荐选择：为 table fact variant 增加显式 `kind` discriminator，并把 row cell 序列化为
+有序 pair array，而不是 JSON object：
+
+```python
+class TableRowFact:
+    kind: Literal["table_row"] = "table_row"
+    cells: tuple[tuple[str, ScalarFact], ...]
+
+class ColumnSchemaFact:
+    kind: Literal["table_column_schema"] = "table_column_schema"
+    name: str
+    dtype: Literal["string", "integer", "float64", "boolean"]
+    missing_token_count: int
+    numeric: NumericPolicy | None
+
+class ColumnOrderFact:
+    kind: Literal["table_column_order"] = "table_column_order"
+    names: tuple[str, ...]
+```
+
+Wire shape 与 ordering：canonical JSON field order 为 `kind` 后跟上方 payload fields。
+`TableRowFact.cells` 按 aligned column order 序列化为
+`[["column_name", {"kind": "string", "value": "..."}], ...]`。Validation 拒绝 object-map
+cells、重复 column name、scalar kind 违反 declared column schema 的 cell，以及相对 aligned
+column set 省略或新增 column 的 row fact。
+
+拒绝的替代方案：从 payload key 推断 table fact type，或把 `cells` 序列化为按 column name
+索引的 object。
+
+兼容性影响：discriminator 让 schema-v3 closed union 对 detached reader 保持无歧义。
+Pair array 保留 canonical order，并在任何 schema-v4/v5/v6 successor 消费 fixture corpus 前
+明确 duplicate-name rejection。
+
+### P4C1-3：array error number type
+
+推荐选择：将 `ArrayChange.absolute_error` 与 `ArrayChange.relative_error` 中未定义的
+`MetricNumber` 替换为既有 `NumericValue` union；该 union 已用于 `Metric.value`、
+`Metric.threshold` 与 `PolicyEvaluation.observed`。
+
+Wire shape 与 ordering：`ArrayChange` field name 保持不变。存在的 finite error 使用 canonical
+finite `NumericValue` 表示；当 before reference 为 zero 且 finite difference 非零时，relative
+error 可使用 `positive_infinity`。Canonical JSON 中这些 field 始终存在；当 error 未定义时，
+按照当前 schema serializer 的 nullable-field convention 写为 JSON null。Canonical field order
+仍为 `kind`、`operation`、`index`、
+`before_digest`、`after_digest`、`absolute_error`、`relative_error`。
+
+拒绝的替代方案：为 array change 定义第二套 number union，或把 error 序列化为裸 JSON number。
+
+兼容性影响：复用 `NumericValue` 避免新增 public numeric contract，并让 renderer、policy、
+metric 与 schema-v3 fixture parsing 使用同一 numeric representation。
+
+### P4C1-4：无 comparator route 的 completed contract fixture
+
+推荐选择：P4-C1 保持 contract-only。Completed canonical YAML/table/array fixture 是直接构造的
+validated schema-v3 outcome，用于 reader/writer；它们不表示可运行 `compare()` route、CLI route、
+detector、plugin handle 或 backend。其 provenance 使用冻结的未来 built-in comparator ID，而不是
+fixture-only ID。这遵循当前 built-in convention：comparator ID 使用非 namespaced 的
+`text`/`binary`/`json` 风格 identifier，algorithm ID 可以使用 dotted stable name。
+
+| Modality | `comparator_id` | `algorithm_id` |
+| --- | --- | --- |
+| YAML | `yaml` | `yaml.structural.tree.v1` |
+| Table | `table` | `table.delimited.align.v1` |
+| Array | `array` | `array.position.numeric.v1` |
+
+Wire shape 与 ordering：canonical fixture 包含 completed `DiffResult` record，schema version 为
+3，explicit spec kind、fact/change variant 匹配，`comparator_version="1"`，没有 detector
+provenance，也没有 plugin provider。每个 fixture 还在 `ExecutionRecordV2.attempts` 中包含
+恰好一个 selected `CapabilityAttemptV2`；其 `capability_id` 匹配 `provenance.comparator_id`，
+`capability_version` 匹配 `provenance.comparator_version`，provider/backend field 为 null。
+`_validate_v3_result` 只在 result 的 spec、fact、change、metric name、resource record、
+transformation、problem absence 与 selected attempt 均匹配对应 schema-v3 contract 时，接受这些
+reserved built-in ID pair。P4-C1 期间 capability resolution 仍必须拒绝把这些 ID 当作 registered
+runtime comparator。
+
+拒绝的替代方案：复用 `json` provenance、省略 comparator/algorithm ID、允许任意 fixture ID，
+或允许 `contract_fixture` ID，或在 P4-C1 中加入 YAML/table/array comparator implementation。
+
+兼容性影响：这为 canonical byte fixture 提供真实的未来 built-in provenance，而不扩大 runtime
+behavior。后续 P4-B1/P4-B2 comparator work 在 registry 真正暴露 executable YAML/table/array
+capability 时，必须使用这些相同 built-in ID。
+
+### P4C1-5：detached array-change validation context
+
+推荐选择：不要给每个 `ArrayChange` 增加 shape 或 dtype field。Detached `ArrayChange` reader
+只验证 operation/field matrix、digest syntax、`NumericValue` error shape，以及每个 `index`
+component 都是 non-negative integer。由于当前 `ArrayCompareSpec`、`DiffResult` 与 provenance
+都不携带 array shape 或 dtype，P4-C1 中 detached reader 与 schema-v3 result reader 都不能证明
+full-rank、in-bounds、row-major order 或 dtype-specific error consistency。这些检查降为未来
+producer/comparator invariant，并延后到 P4-B2。
+
+Wire shape 与 ordering：`ArrayChange` 保持 RFC 0006 fields 不变；`element_replace` 的 `index`
+序列化为 non-negative integer 的有序 JSON array，schema change 的 `index` 为 null 或 absent。
+P4-C1 不给 `ArrayChange` 新增 `before_shape`、`after_shape`、`dtype` 或任何 `ArraySource`
+payload。`ArraySource` 保留给 P4-B2 的 source-acquisition/API，不进入 P4-C1 serialized
+schema-v3 correction。
+
+拒绝的替代方案：把 `shape` 与 `dtype` context 复制进每个 `ArrayChange`，使 detached reader
+不依赖 enclosing result 也能证明 full-rank 与 in-bounds constraint。
+
+兼容性影响：保留 compact accepted `ArrayChange` shape，同时让 validator 区分 detached
+syntactic validation 与 producer validation。P4-C1 fixture 必须测试 non-negative index syntax
+和 operation/field matrix；full-rank、bounds、row-major order 与 dtype/error consistency 的
+producer test 延后到 P4-B2。
 
 ## P6-C0 契约修订
 
@@ -357,6 +502,6 @@ Option B 与 C 未被选择。如果后续 RFC supersede Option A，其 migratio
 5. P6C0-1 到 P6C0-10 已作为 P6-C0 implementation 前的 contract decision 接受。
 
 RFC acceptance 本身不启动代码。已记录条件人工授权；coordinator 只有在指定 merge gate 之后
-才能派发。P4-C1 implementation 需要在本 RFC 合并后单独派发。P5-A1、P6-C0、P7-A1 与后续
-video schema implementation 仍被阻塞，直到其实际 predecessor merge 与 compatibility fixture
-已存在于 `main`。
+才能派发。P4-C1 implementation 在 P4C1-1 到 P4C1-5 未解决期间仍 blocked；之后仍需要在
+本 RFC 合并后由 coordinator 派发。P5-A1、P6-C0、P7-A1 与后续 video schema implementation
+仍被阻塞，直到其实际 predecessor merge 与 compatibility fixture 已存在于 `main`。

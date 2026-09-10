@@ -11,6 +11,9 @@
 - Implementation: P4-A1 implemented; P4-A2, P4-B1, and P4-B2 remain gated
 - Amendment: RFC 0010 accepts Option A/P4-C1 as the required pre-release
   correction for missing schema-v3 YAML/table/array public contract surface
+- Open clarification: RFC 0010 proposes unapproved P4C1-1-P4C1-5 reader and
+  fixture clarifications; P4-C1 remains blocked until they are accepted or
+  replaced
 
 ## Summary and authorization boundary
 
