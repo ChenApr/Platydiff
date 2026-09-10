@@ -465,13 +465,18 @@ duration 比较，也不得覆盖 duration。令 `sample_period_ns` 为 `smpl.sa
 integer，`sample_rate_hz` 为 selected decoded sample rate，并定义：
 
 ```text
-period_error = abs(sample_period_ns * sample_rate_hz - 1_000_000_000)
+q, r = divmod(1_000_000_000, sample_rate_hz)
+expected = q      when 2 * r < sample_rate_hz
+expected = q + 1  when 2 * r > sample_rate_hz
+expected = the even value among q and q + 1 when 2 * r == sample_rate_hz
 ```
 
-当且仅当 `2 * period_error <= sample_rate_hz` 时，`smpl.sample_period` 一致；该规则接受
-44.1 kHz 这类 rate 的 nearest integer nanosecond 表示，且不使用 binary floating point。若冲突，
-bounded resolving probe 已证明 sample rate 与 `smpl.sample_period` 时 outcome 为
-`failed/resolving/decode_error`；否则在第一个证明冲突的 decoding step 为
+这是 exact rational nanoseconds-per-sample period 的 nearest-even rounding。仅当
+`sample_period_ns == expected` 时，`smpl.sample_period` 一致；即使 exact half-nanosecond tie，
+也不同时接受两个相邻值。该规则接受 44.1 kHz 这类 rate 的唯一 integer nanosecond 表示，且不使用
+binary floating point。若冲突，bounded resolving probe 已证明 sample rate 与
+`smpl.sample_period` 时 outcome 为 `failed/resolving/decode_error`；否则在第一个证明冲突的
+decoding step 为
 `failed/decoding/decode_error`。Problem details 包含 `media_kind="audio"`、
 `field="smpl.sample_period"`、`value_kind="integer"`、`expected` 为 nearest accepted integer
 nanoseconds per sample、`actual` 为声明的 `sample_period_ns`。
@@ -483,22 +488,28 @@ Minimal `smpl.sample_period` consistency vectors：
   {
     "case": "exact",
     "sample_rate_hz": 8000,
+    "q": 125000,
+    "r": 0,
+    "expected": 125000,
     "sample_period_ns": 125000,
-    "period_error": 0,
     "consistent": true
   },
   {
     "case": "rounded_44100",
     "sample_rate_hz": 44100,
+    "q": 22675,
+    "r": 32500,
+    "expected": 22676,
     "sample_period_ns": 22676,
-    "period_error": 11600,
     "consistent": true
   },
   {
     "case": "conflict_44100",
     "sample_rate_hz": 44100,
+    "q": 22675,
+    "r": 32500,
+    "expected": 22676,
     "sample_period_ns": 22675,
-    "period_error": 32500,
     "consistent": false,
     "failure_stage": "resolving",
     "failure_code": "decode_error",
@@ -508,6 +519,33 @@ Minimal `smpl.sample_period` consistency vectors：
       "value_kind": "integer",
       "expected": 22676,
       "actual": 22675
+    }
+  },
+  {
+    "case": "tie_1024_even_accepted",
+    "sample_rate_hz": 1024,
+    "q": 976562,
+    "r": 512,
+    "expected": 976562,
+    "sample_period_ns": 976562,
+    "consistent": true
+  },
+  {
+    "case": "tie_1024_odd_rejected",
+    "sample_rate_hz": 1024,
+    "q": 976562,
+    "r": 512,
+    "expected": 976562,
+    "sample_period_ns": 976563,
+    "consistent": false,
+    "failure_stage": "resolving",
+    "failure_code": "decode_error",
+    "details": {
+      "media_kind": "audio",
+      "field": "smpl.sample_period",
+      "value_kind": "integer",
+      "expected": 976562,
+      "actual": 976563
     }
   }
 ]

@@ -525,13 +525,18 @@ from `smpl.sample_period`, `sample_rate_hz` be the selected decoded sample
 rate, and:
 
 ```text
-period_error = abs(sample_period_ns * sample_rate_hz - 1_000_000_000)
+q, r = divmod(1_000_000_000, sample_rate_hz)
+expected = q      when 2 * r < sample_rate_hz
+expected = q + 1  when 2 * r > sample_rate_hz
+expected = the even value among q and q + 1 when 2 * r == sample_rate_hz
 ```
 
-The `smpl.sample_period` value is consistent exactly when
-`2 * period_error <= sample_rate_hz`, which accepts the nearest integer
-nanosecond representation of rates such as 44.1 kHz without using binary
-floating point. If it conflicts, the outcome is
+This is nearest-even rounding of the exact rational nanoseconds-per-sample
+period. The `smpl.sample_period` value is consistent exactly when
+`sample_period_ns == expected`; adjacent values are not accepted even at an
+exact half-nanosecond tie. This accepts the unique integer nanosecond
+representation of rates such as 44.1 kHz without using binary floating point.
+If it conflicts, the outcome is
 `failed/resolving/decode_error` when the bounded resolving probe has proven both
 the sample rate and `smpl.sample_period`; otherwise it is
 `failed/decoding/decode_error` at the first decoding step that proves the
@@ -547,22 +552,28 @@ Minimal `smpl.sample_period` consistency vectors:
   {
     "case": "exact",
     "sample_rate_hz": 8000,
+    "q": 125000,
+    "r": 0,
+    "expected": 125000,
     "sample_period_ns": 125000,
-    "period_error": 0,
     "consistent": true
   },
   {
     "case": "rounded_44100",
     "sample_rate_hz": 44100,
+    "q": 22675,
+    "r": 32500,
+    "expected": 22676,
     "sample_period_ns": 22676,
-    "period_error": 11600,
     "consistent": true
   },
   {
     "case": "conflict_44100",
     "sample_rate_hz": 44100,
+    "q": 22675,
+    "r": 32500,
+    "expected": 22676,
     "sample_period_ns": 22675,
-    "period_error": 32500,
     "consistent": false,
     "failure_stage": "resolving",
     "failure_code": "decode_error",
@@ -572,6 +583,33 @@ Minimal `smpl.sample_period` consistency vectors:
       "value_kind": "integer",
       "expected": 22676,
       "actual": 22675
+    }
+  },
+  {
+    "case": "tie_1024_even_accepted",
+    "sample_rate_hz": 1024,
+    "q": 976562,
+    "r": 512,
+    "expected": 976562,
+    "sample_period_ns": 976562,
+    "consistent": true
+  },
+  {
+    "case": "tie_1024_odd_rejected",
+    "sample_rate_hz": 1024,
+    "q": 976562,
+    "r": 512,
+    "expected": 976562,
+    "sample_period_ns": 976563,
+    "consistent": false,
+    "failure_stage": "resolving",
+    "failure_code": "decode_error",
+    "details": {
+      "media_kind": "audio",
+      "field": "smpl.sample_period",
+      "value_kind": "integer",
+      "expected": 976562,
+      "actual": 976563
     }
   }
 ]
