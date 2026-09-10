@@ -8,11 +8,10 @@
 - Approved decisions: SP1-SP6; Option A/P4-C1; P6C0-1-P6C0-10
 - Approved P4-C1 clarifications: P4C1-1-P4C1-5
 - P4-C1 clarification approval date: 2026-09-10
-- Proposed P6-C0 closure amendment: RFC 0014; not accepted
+- Accepted P6-C0 closure amendment: RFC 0014; contract-only and no implementation authorization
 - Owners: Platydiff maintainers
-- Implementation dispatch: conditional human authorization recorded; coordinator
-  dispatch only after RFC 0010 merges and the stated merge and clarification
-  gates pass
+- Implementation dispatch: P4-C1 has since merged; later schema work still
+  requires the stated predecessor gates and explicit human dispatch
 
 ## Summary and authorization boundary
 
@@ -34,19 +33,19 @@ Option A/P4-C1, or P6C0-1 through P6C0-10. No code starts from this
 clarification approval.
 
 A P6-C0 closure review also found unresolved schema-v5 problem-registry and
-closed-union shape gaps. The Proposed closure amendment now lives in
-[RFC 0014](0014-phase6-source-pdf-contract-closure-amendment.md). It is not
-accepted, does not alter P6C0-1 through P6C0-10, and does not authorize source
-or PDF implementation.
+closed-union shape gaps. [RFC 0014](0014-phase6-source-pdf-contract-closure-amendment.md)
+accepts the contract-only closure amendment. It does not alter P6C0-1 through
+P6C0-10 and does not authorize source or PDF implementation.
 
 The accepted decision is to treat the missing YAML, table, and array
 schema-v3 contract surface on `main` as a Phase 4 code defect, not as proof that
 the accepted RFC 0006 contract was wrong. A correction gate must land before
 schema v4 image, schema v5 source/PDF, schema v6 audio, or any later video
-successor can use v3 as a stable predecessor. P4-C1 code may start only after
-this RFC is merged to `main` and the coordinator dispatches it. P5-A1, P6-C0,
-P7-A1, and later video schema work remain conditional on the actual predecessor
-merges and compatibility fixtures.
+successor can use v3 as a stable predecessor. That P4-C1 correction has since
+merged to `main` in PR #20. P5-A1 contract closure is accepted in RFC 0013 but
+P5-A1 remains unimplemented, and P6-C0, P7-A1, and later video schema work
+remain conditional on the actual predecessor merges, compatibility fixtures,
+and explicit human dispatch.
 
 ## Evidence
 
@@ -541,9 +540,9 @@ process was terminated without an exit status. Invalid wire coordinates,
 unknown problem registry IDs, and malformed tagged payloads raise
 `SerializationError`; they do not fabricate runtime failed outcomes.
 
-[RFC 0014](0014-phase6-source-pdf-contract-closure-amendment.md) is a Proposed
-amendment that may supersede or close these accepted problem details after
-approval.
+[RFC 0014](0014-phase6-source-pdf-contract-closure-amendment.md) is an
+Accepted contract-only amendment that closes and supersedes these problem
+details without authorizing implementation.
 
 ### Fact presence and ordering
 

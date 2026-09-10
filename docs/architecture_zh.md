@@ -222,13 +222,14 @@ semantics、JSON Pointer alignment、typed structured change 与确定性 eviden
 受约束 YAML 1.2 contract 仍在未实现的 P4-A2 门禁之后。JSON 仍只允许显式、内建比较，
 不会扩展 text/binary automatic detection 或 SDK v1.1。
 
-[RFC 0010](rfcs/0010-schema-predecessor-and-phase6-contract-amendment_zh.md) 是一个
-Accepted amendment，解决已接受 RFC 0006 schema-v3 closed union 与当前 `main` 上 JSON-only
-schema-v3 surface 之间的不一致。它选择 Option A/P4-C1，作为任何 schema-v4、schema-v5 或
-schema-v6 实现把 v3 视为稳定前驱前的 Phase 4 correction gate。RFC 0010 acceptance 本身
-不启动代码。已记录条件人工授权，coordinator 只有在 RFC 0010 合并且指定 merge gate 通过后
-才能派发。RFC 0010 还记录了 P4C1-1-P4C1-5 reader 与 fixture clarification；这些
-clarification 已于 2026-09-10 获批。P4-C1 仍须等待 RFC 0010 merge 与 coordinator dispatch。
+[RFC 0010](rfcs/0010-schema-predecessor-and-phase6-contract-amendment_zh.md) 是解决
+已接受 RFC 0006 schema-v3 closed union 与早期 JSON-only implementation 不一致的
+Accepted amendment。其已授权的 Option A/P4-C1 修正补入缺失的 YAML/table/array public
+spec、fact、change、reader/writer、validation、migration 与冻结 predecessor fixture
+surface。该修正仍仅限 contract：YAML/table/array comparator execution、registry entry、
+`compare()` route、CLI command、detection、SDK v2 与 UI 均不在 P4-C1 范围内。
+PR #20 已在 `b84603f` 把该修正及冻结 predecessor fixture 合并到 `main`；
+schema-v4/v5/v6 implementation 必须消费这些实际 fixture，且不得重写其 bytes。
 
 语法相同不等于运行语义相同。AST 比较需要明确其解析器版本、错误恢复策略和宏/预处理边界。
 
@@ -246,7 +247,10 @@ clarification 已于 2026-09-10 获批。P4-C1 仍须等待 RFC 0010 merge 与 c
 [RFC 0007](rfcs/0007-image-comparison_zh.md) 定义已接受的更窄首个图片切片：显式、内建地比较
 static 8-bit PNG 的 decoded sample；encoded identity 继续由 binary comparator 负责，且不提供
 隐式 orientation、color、alpha、resize、crop、artifact、plugin 或 detection 行为。接受该 RFC
-不授权实现。
+不授权实现。Accepted
+[RFC 0013](rfcs/0013-p5a1-image-wire-contract-amendment_zh.md) 闭合 contract-only P5-A1 的
+enum、transformation、canonical-fixture provenance、problem-code、terminal、serializer-version 与
+downgrade decision。其 acceptance 不授予实现权限；P5-A1 仍未实现，须等待人类单独派发。
 
 ### 6.5 音频
 
@@ -291,18 +295,19 @@ equivalence 仍是后续契约回调。
 
 分阶段交付计划及实现门禁由 [RFC 0002](rfcs/0002-development-phases-and-text-slice_zh.md) 定义。Phase 2 的有界探测、内部能力解析和精确二进制比较已实现 [RFC 0003](rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison_zh.md)。Phase 3 门禁 P3-A、P3-B 与 P3-C 已实现 [RFC 0005](rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility_zh.md) 的 SDK declaration/discovery、显式选择的 detector/comparator/renderer 执行、schema-v2 provenance、显式 CLI opt-in 与 compatibility receipt。下方版本分组只描述产品方向，不表示后续能力已经实现。
 
-Phase 1 至 Phase 3 以及 Phase 4 门禁 P4-A1 包含 Python 包、schema-v1/v2/v3 契约、
+Phase 1 至 Phase 3 以及 Phase 4 门禁 P4-A1/P4-C1 包含 Python 包、schema-v1/v2/v3 契约、
 显式文本、有界文本/二进制
 探测、精确二进制比较、CLI、terminal/JSON renderer 与显式 plugin boundary，且仍未
-发布；P4-A1 另加入显式 semantic JSON comparison。Phase 4 structured-data 契约已在
-[RFC 0006](rfcs/0006-structured-data-comparison_zh.md) 中接受，但其余 YAML、table 与 array
+发布；P4-A1 另加入显式 semantic JSON comparison，P4-C1 补全 schema-v3
+YAML/table/array contract surface，但不使这些 comparator 可执行。
+[RFC 0006](rfcs/0006-structured-data-comparison_zh.md) 中其余 YAML、table 与 array comparator
 门禁仍未实现且需要单独授权。
 Phase 5 图片契约已在 [RFC 0007](rfcs/0007-image-comparison_zh.md) 中接受；接受不构成实现授权，
 且必须先重新验证实际合并的 schema-v3 前驱。下列其他模态与 renderer 仍是计划能力。
 Phase 6 source/PDF 契约已在 [RFC 0008](rfcs/0008-source-code-and-pdf-comparison_zh.md)
-中接受；schema-v5 allocation 已接受，但仍需要 implementation、compatibility fixture，以及
-[RFC 0010](rfcs/0010-schema-predecessor-and-phase6-contract-amendment_zh.md) 中接受的
-P6-C0 contract-gap decision。Phase 7 audio
+中接受；schema-v5 allocation 与 [RFC 0014](rfcs/0014-phase6-source-pdf-contract-closure-amendment_zh.md)
+接受的 P6-C0 closure rule 都仅为 contract-only，仍需要 implementation、compatibility fixture 与
+独立 human dispatch。Phase 7 audio
 契约和 video roadmap direction 已在 [RFC 0009](rfcs/0009-audio-and-video-comparison_zh.md) 中接受；
 它只为 audio 接受 schema v6，video 需等待后续 backend/worker amendment 与下一个 successor。
 它们尚未实现；即使 design 与 backend research 并发推进，public schema merge 也必须遵守前驱顺序。

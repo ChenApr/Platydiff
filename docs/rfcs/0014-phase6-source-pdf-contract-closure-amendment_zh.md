@@ -2,37 +2,40 @@
 
 [English documentation](0014-phase6-source-pdf-contract-closure-amendment.md)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-10
+- Accepted: 2026-09-11
 - Decision IDs: P6C0A-1-P6C0A-2
 - Owners: Platydiff 维护者
 - RFC allocation：0011 audio preflight；0012 P7 closure；0013 P5 closure；0014 P6 closure
-- Related RFCs：[RFC 0008](0008-source-code-and-pdf-comparison_zh.md)、[RFC 0010](0010-schema-predecessor-and-phase6-contract-amendment_zh.md)
-- Implementation authorization：无；本文仅是 proposed clarification-only contract text
+- Related RFCs：[RFC 0008](0008-source-code-and-pdf-comparison_zh.md)、
+  [RFC 0010](0010-schema-predecessor-and-phase6-contract-amendment_zh.md)、
+  [RFC 0013](0013-p5a1-image-wire-contract-amendment_zh.md)
+- Implementation authorization：无；本文仅是 accepted clarification-only contract text
 
 ## 摘要与授权边界
 
-本 RFC 提议 schema-v5 source/PDF contract 的 P6-C0 closure amendment。它是 Proposed，
-不是 Accepted。它不改变 RFC 0008 或 RFC 0010 的 accepted status，不把 P6C0A-1 或 P6C0A-2
-标记为 accepted，也不授权 source/PDF comparator、CLI、backend、dependency、SDK、artifact、
-automatic detection 或 UI 实现。
+本 RFC 接受 schema-v5 source/PDF contract 的 P6-C0 closure amendment。它把 P6C0A-1 与
+P6C0A-2 接受为 contract-only closure rule，但不授权 source/PDF comparator、CLI、backend、
+dependency、SDK、artifact、automatic detection 或 UI 实现。
 
-P6-C0 保持 contract-only，并且仍须等待 RFC 0010、P4-C1、P5-A1/schema-v4 与 compatibility
-fixture 合并到 `main`，之后还需要明确 coordinator dispatch。本 RFC 只用于 review RFC 0010 之后
-识别出的 closure gap：schema-v5 source/PDF problem registry，以及 `SourceCodeChange`/`PdfChange`
-closed-union shape。
+P6-C0 保持 contract-only。RFC 0010 与 P4-C1 implementation 已合并到 `main`，RFC 0013 已接受
+P5-A1/schema-v4 contract closure，但 P5-A1 仍未实现。P6-C0 代码仍须等待实际 predecessor
+implementation 与 compatibility-fixture gate 合并到 `main`，之后还需要独立 human dispatch。
+本 RFC 只关闭 schema-v5 source/PDF problem registry，以及 `SourceCodeChange`/`PdfChange`
+closed-union contract gap。
 
-## Proposed P6-C0 Closure Amendment
+## Accepted P6-C0 Closure Amendment
 
-下列 P6C0A decision 是 Proposed，不是 Accepted。它们只是 P6-C0 的 draft closure criteria。
-它们保持 P6-C0 contract-only：不得从这些 proposed decision 启动 source/PDF comparator、
-CLI route、backend worker、dependency、SDK、artifact、automatic detection 或 UI 实现。
-P6-C0 仍须等待 RFC 0010、P4-C1、P5-A1/schema-v4 与 compatibility fixture 合并到 `main`，
-之后还需要明确 coordinator dispatch。
+下列 P6C0A decision 是仅适用于 P6-C0 的 accepted closure criteria。它们保持 P6-C0
+contract-only：不得从这些 accepted contract decision 启动 source/PDF comparator、CLI route、
+backend worker、dependency、SDK、artifact、automatic detection 或 UI 实现。P6-C0 代码仍须
+等待实际 predecessor implementation 与 compatibility fixture 合并到 `main`，之后还需要独立
+human dispatch。
 
 ### P6C0A-1：problem registry closure
 
-如果被接受，schema-v5 source/PDF problem 保留现有 `ExecutionProblem` 与
+Schema-v5 source/PDF problem 保留现有 `ExecutionProblem` 与
 `CapabilityProblem` wire shape 及 canonical field order：`code`、`status_code`、`stage`、
 `message`、`details`、`retryable`。`message` 是有界 safe human message。外层
 `CompareOutcome.kind` 与 problem class 决定 `failed` 还是 `unavailable`；schema-v5 不新增 nested
@@ -119,13 +122,13 @@ Closed detail value type 为：
   没有单一 side coordinate 时为 null。
 
 被拒绝的替代方案是 generic resource-exhausted bucket、backend-specific string、遗漏 safe
-message、nested problem outcome，或没有精确 detail shape。如果本 proposed amendment 被接受，
-旧的 provisional `pdf_worker_resource_exhausted` row 会被上方 named stderr、temp、
-decoded-output、RSS、concurrency 与 spawn problem code 替代。
+message、nested problem outcome，或没有精确 detail shape。本 accepted amendment 会用上方 named
+stderr、temp、decoded-output、RSS、concurrency 与 spawn problem code 替代旧的 provisional
+`pdf_worker_resource_exhausted` row。
 
 ### P6C0A-2：source/PDF closed-union closure
 
-如果被接受，schema-v5 会把 `SourceCodeChange` 与 `PdfChange` 冻结为 mutually exclusive closed
+Schema-v5 会把 `SourceCodeChange` 与 `PdfChange` 冻结为 mutually exclusive closed
 discriminated-union member：
 
 ```text
@@ -364,11 +367,11 @@ unavailable outcome，用于 reader/writer validation。它们必须在 provenan
 中记录已接受的 comparator 与 algorithm ID，但在 P6-S1 或 P6-P1a 开始前，任何 registry route
 都不得通过 public `compare()` 或 CLI 执行这些 ID。
 
-额外 proposed canonical vector 使用已接受的 RFC 0008 frame；如果被接受，会针对 P6 source/PDF
-compatibility fixture supersede RFC 0010 中使用 `range_variant` 的过时 `source/change_payload`
-vector，以及使用 `span_variant` 的过时 `pdf/binary/span` vector。RFC 0010 在本 amendment 被接受前
-仍是 accepted historical baseline。Fact-domain 行定义与已接受 domain component 匹配的 coherent
-fact payload。Change payload 行从完整有效的 `SourceCodeChange` 与 `PdfChange` object 开始，按
+额外 accepted canonical vector 使用已接受的 RFC 0008 frame，并针对 P6 source/PDF compatibility
+fixture supersede RFC 0010 中使用 `range_variant` 的过时 `source/change_payload` vector，以及使用
+`span_variant` 的过时 `pdf/binary/span` vector。RFC 0010 仍是其原始范围内的 accepted historical
+baseline。Fact-domain 行定义与已接受 domain component 匹配的 coherent fact payload。Change
+payload 行从完整有效的 `SourceCodeChange` 与 `PdfChange` object 开始，按
 精确 variant field order 展开每个非 `payload_digest` field，包含 nested range 与 fact field，并用
 RFC 0010 `?null` tag suffix 编码 null。
 

@@ -8,10 +8,10 @@
 - Approved decisions: SP1-SP6; Option A/P4-C1; P6C0-1-P6C0-10
 - Approved P4-C1 clarifications：P4C1-1-P4C1-5
 - P4-C1 clarification approval date：2026-09-10
-- Proposed P6-C0 closure amendment：RFC 0014；尚未接受
+- Accepted P6-C0 closure amendment：RFC 0014；contract-only 且不授权实现
 - Owners: Platydiff 维护者
-- Implementation dispatch：已记录条件人工授权；只有在 RFC 0010 合并且指定 merge 与
-  clarification gate 通过后，coordinator 才能派发
+- Implementation dispatch：P4-C1 此后已合并；后续 schema work 仍需要指定 predecessor
+  gate 与明确 human dispatch
 
 ## 摘要与授权边界
 
@@ -27,15 +27,16 @@ video、SDK v2、backend worker、artifact、automatic detection 或 UI 实现�
 Option A/P4-C1 或 P6C0-1 到 P6C0-10。本 clarification approval 不启动任何代码。
 
 一次 P6-C0 closure review 还发现 schema-v5 problem registry 与 closed-union shape 仍有缺口。
-Proposed closure amendment 现在位于 [RFC 0014](0014-phase6-source-pdf-contract-closure-amendment_zh.md)。
-它尚未接受，不修改 P6C0-1 到 P6C0-10，也不授权 source 或 PDF 实现。
+[RFC 0014](0014-phase6-source-pdf-contract-closure-amendment_zh.md) 接受 contract-only closure
+amendment。它不修改 P6C0-1 到 P6C0-10，也不授权 source 或 PDF 实现。
 
 已接受决策是：将 `main` 上缺失的 YAML、table、array schema-v3 contract surface 视为
 Phase 4 代码缺陷，而不是把它当作 RFC 0006 已接受契约错误的证据。必须先落地一个
 correction gate，然后 schema v4 image、schema v5 source/PDF、schema v6 audio 或后续
-video successor 才能把 v3 当作稳定前驱。P4-C1 code 只有在本 RFC 合并到 `main` 且
-coordinator 派发后才能启动。P5-A1、P6-C0、P7-A1 与后续 video schema work 仍取决于实际
-predecessor merge 与 compatibility fixture。
+video successor 才能把 v3 当作稳定前驱。该 P4-C1 correction 此后已通过 PR #20 合并到
+`main`。P5-A1 contract closure 已在 RFC 0013 中接受，但 P5-A1 仍未实现；P6-C0、P7-A1
+与后续 video schema work 仍取决于实际 predecessor merge、compatibility fixture 与明确
+human dispatch。
 
 ## 证据
 
@@ -464,8 +465,8 @@ lowercase ASCII identifier；`exit_status` 是 signed integer，或在 process �
 时为 null。Invalid wire coordinate、unknown problem registry ID 与 malformed tagged payload
 都会 raise `SerializationError`；它们不制造 runtime failed outcome。
 
-[RFC 0014](0014-phase6-source-pdf-contract-closure-amendment_zh.md) 是 Proposed amendment，获批后
-可以 supersede 或关闭这些已接受 problem detail。
+[RFC 0014](0014-phase6-source-pdf-contract-closure-amendment_zh.md) 是 Accepted contract-only
+amendment，会关闭并 supersede 这些 problem detail，但不授权实现。
 
 ### Fact presence 与 ordering
 

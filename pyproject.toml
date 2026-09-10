@@ -46,6 +46,7 @@ include = [
   "/platydiff/**/*.py",
   "/platydiff/py.typed",
   "/tests/**/*.py",
+  "/tests/fixtures/schema_v3/*.json",
 ]
 
 [tool.ruff]

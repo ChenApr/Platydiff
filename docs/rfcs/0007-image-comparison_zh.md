@@ -7,10 +7,13 @@
 - 评审修订：2026-09-10
 - 接受日期：2026-09-10
 - Owners：Platydiff 维护者
-- 实现 owner：尚未指派；已记录条件授权，coordinator 只有在实际 predecessor merge gate
-  通过后才能派发
-- Predecessor amendment：RFC 0010 记录 P5-A1 的条件授权；只有 RFC 0010、P4-C1/schema-v3
-  与 predecessor compatibility fixture 都合并到 `main` 后才能派发；P5-A1 不会自动启动
+- 实现 owner：尚未指派；P5-A1 仍需要人类单独授权与派发
+- Predecessor amendment：RFC 0010 的 P4-C1/schema-v3 修正及 predecessor compatibility
+  fixture 已通过 PR #20 在 `b84603f` 合并到 `main`；满足该 predecessor condition 不会启动
+  P5-A1
+- Accepted P5-A1 wire amendment：[RFC 0013](0013-p5a1-image-wire-contract-amendment_zh.md)
+  在不授权实现的前提下闭合 enum、transformation、fixture、serializer-version、problem、terminal
+  与 downgrade 选择
 
 ## 摘要与授权边界
 
@@ -438,7 +441,8 @@ normalized spec 中对应的 limit；六项 source fact 与 limit 分别独立�
 public/provenance 只记录 count、boolean、dimension、stable enum value 与 descriptor digest；不记录
 raw/excerpted chunk payload、profile name、text keyword/value、EXIF value 或 palette entry。
 
-comparison provenance 记录 input hash、comparator `image.decoded_samples`、algorithm
+comparison provenance 记录 input hash、由
+[RFC 0013](0013-p5a1-image-wire-contract-amendment_zh.md) supersede 为 `image` 的 comparator、algorithm
 `image.decoded_samples.tiles.v1`、Platydiff implementation version、Pillow version、可获得时
 相关 linked library version、normalized spec，以及所有 configured/effective/used resource。
 

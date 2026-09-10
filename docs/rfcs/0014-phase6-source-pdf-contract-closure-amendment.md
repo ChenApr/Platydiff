@@ -2,41 +2,43 @@
 
 [Chinese documentation](0014-phase6-source-pdf-contract-closure-amendment_zh.md)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-10
+- Accepted: 2026-09-11
 - Decision IDs: P6C0A-1-P6C0A-2
 - Owners: Platydiff maintainers
 - RFC allocation: 0011 audio preflight; 0012 P7 closure; 0013 P5 closure; 0014 P6 closure
-- Related RFCs: [RFC 0008](0008-source-code-and-pdf-comparison.md), [RFC 0010](0010-schema-predecessor-and-phase6-contract-amendment.md)
-- Implementation authorization: none; this is proposed clarification-only contract text
+- Related RFCs: [RFC 0008](0008-source-code-and-pdf-comparison.md),
+  [RFC 0010](0010-schema-predecessor-and-phase6-contract-amendment.md),
+  [RFC 0013](0013-p5a1-image-wire-contract-amendment.md)
+- Implementation authorization: none; this is accepted clarification-only contract text
 
 ## Summary and Authorization Boundary
 
-This RFC proposes the P6-C0 closure amendment for schema-v5 source/PDF
-contracts. It is Proposed, not Accepted. It does not alter the accepted status
-of RFC 0008 or RFC 0010, does not mark P6C0A-1 or P6C0A-2 as accepted, and
-does not authorize source/PDF comparator, CLI, backend, dependency, SDK,
-artifact, automatic detection, or UI implementation.
+This RFC accepts the P6-C0 closure amendment for schema-v5 source/PDF contracts.
+It accepts P6C0A-1 and P6C0A-2 as contract-only closure rules and does not
+authorize source/PDF comparator, CLI, backend, dependency, SDK, artifact,
+automatic detection, or UI implementation.
 
-P6-C0 remains contract-only and still waits for RFC 0010, P4-C1,
-P5-A1/schema-v4, and compatibility fixtures to merge to `main`, followed by
-explicit coordinator dispatch. This RFC exists only to review the closure gaps
-identified after RFC 0010: the schema-v5 source/PDF problem registry and the
-`SourceCodeChange`/`PdfChange` closed-union shape.
+P6-C0 remains contract-only. RFC 0010 and the P4-C1 implementation have merged
+to `main`, and RFC 0013 has accepted the P5-A1/schema-v4 contract closure, but
+P5-A1 remains unimplemented. P6-C0 code still requires the actual predecessor
+implementation and compatibility-fixture gates to merge to `main`, followed by
+independent human dispatch. This RFC closes only the schema-v5 source/PDF
+problem registry and `SourceCodeChange`/`PdfChange` closed-union contract gaps.
 
-## Proposed P6-C0 Closure Amendment
+## Accepted P6-C0 Closure Amendment
 
-The following P6C0A decisions are Proposed, not Accepted. They are draft
-closure criteria for P6-C0 only. They preserve P6-C0 as contract-only work:
-no source/PDF comparator, CLI route, backend worker, dependency, SDK, artifact,
-automatic detection, or UI implementation may start from these proposed
-decisions. P6-C0 still waits for RFC 0010, P4-C1, P5-A1/schema-v4, and
-compatibility fixtures to merge to `main`, followed by explicit coordinator
-dispatch.
+The following P6C0A decisions are accepted closure criteria for P6-C0 only.
+They preserve P6-C0 as contract-only work: no source/PDF comparator, CLI route,
+backend worker, dependency, SDK, artifact, automatic detection, or UI
+implementation may start from these accepted contract decisions. P6-C0 code
+still waits for actual predecessor implementation and compatibility fixtures to
+merge to `main`, followed by independent human dispatch.
 
 ### P6C0A-1: problem registry closure
 
-If accepted, schema-v5 source/PDF problems preserve the existing
+Schema-v5 source/PDF problems preserve the existing
 `ExecutionProblem` and `CapabilityProblem` wire shape and canonical field order:
 `code`, `status_code`, `stage`, `message`, `details`, `retryable`. `message`
 is a bounded safe human message. The outer `CompareOutcome.kind` and problem
@@ -131,14 +133,14 @@ Closed detail value types are:
 
 The rejected alternative is a generic resource-exhausted bucket with
 backend-specific strings, omitted safe messages, nested problem outcomes, or no
-exact detail shape. If this proposed amendment is accepted, old provisional
-`pdf_worker_resource_exhausted` rows are replaced by the named stderr, temp,
+exact detail shape. This accepted amendment replaces old provisional
+`pdf_worker_resource_exhausted` rows with the named stderr, temp,
 decoded-output, RSS, concurrency, and spawn problem codes above.
 
 ### P6C0A-2: source/PDF closed-union closure
 
-If accepted, schema-v5 freezes `SourceCodeChange` and `PdfChange` as mutually
-exclusive closed discriminated-union members:
+Schema-v5 freezes `SourceCodeChange` and `PdfChange` as mutually exclusive
+closed discriminated-union members:
 
 ```text
 ChangeV5 =
@@ -411,13 +413,13 @@ validation. They must record accepted comparator and algorithm IDs in
 provenance and compatibility receipts, but no registry route may execute them
 through public `compare()` or the CLI until P6-S1 or P6-P1a starts.
 
-Additional proposed canonical vectors use the accepted RFC 0008 frame and, if
-accepted, supersede the stale RFC 0010 `source/change_payload` vector that uses
+Additional accepted canonical vectors use the accepted RFC 0008 frame and
+supersede the stale RFC 0010 `source/change_payload` vector that uses
 `range_variant` and the stale `pdf/binary/span` vector that uses
 `span_variant` for P6 source/PDF compatibility fixtures. RFC 0010 remains the
-accepted historical baseline until this amendment is accepted. Fact-domain rows
-define coherent fact payloads matching the accepted domain components. Change
-payload rows start from complete valid `SourceCodeChange` and `PdfChange`
+accepted historical baseline for its original scope. Fact-domain rows define
+coherent fact payloads matching the accepted domain components. Change payload
+rows start from complete valid `SourceCodeChange` and `PdfChange`
 objects, flatten every non-`payload_digest` field in the exact variant field
 order, include nested range and fact fields, and encode nulls with the RFC 0010
 `?null` tag suffix.
