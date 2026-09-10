@@ -212,7 +212,7 @@ def test_spec_round_trip_includes_effective_defaults() -> None:
     assert spec_to_data(spec)["context_lines"] == 3
 
 
-@pytest.mark.parametrize("schema", [0, 3])
+@pytest.mark.parametrize("schema", [0, 4])
 def test_unknown_schema_is_rejected(schema: int) -> None:
     data = outcome_to_data(completed_outcome())
     data["schema_version"] = schema

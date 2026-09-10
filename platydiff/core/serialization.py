@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from collections.abc import Callable
@@ -10,6 +11,7 @@ from typing import Literal, cast
 from platydiff.core.models import (
     SCHEMA_VERSION,
     SCHEMA_VERSION_V2,
+    SCHEMA_VERSION_V3,
     AnyCompareOutcome,
     ArtifactRef,
     AutoCompareSpec,
@@ -28,11 +30,13 @@ from platydiff.core.models import (
     ChangeSet,
     CompareOutcome,
     CompareOutcomeV2,
-    CompareSpec,
+    CompareOutcomeV3,
+    CompareSpecV3,
     ComparisonProvenance,
     ComparisonProvenanceV2,
     CompletedOutcome,
     CompletedOutcomeV2,
+    CompletedOutcomeV3,
     DetectionCandidate,
     DetectionRecord,
     Diagnostic,
@@ -46,10 +50,13 @@ from platydiff.core.models import (
     ExtensionChange,
     FailedOutcome,
     FailedOutcomeV2,
+    FailedOutcomeV3,
     Fidelity,
     FiniteValue,
     HunkLine,
     InputProvenance,
+    JsonCompareSpec,
+    JsonNumberMode,
     JsonObject,
     JsonValue,
     Metric,
@@ -67,10 +74,16 @@ from platydiff.core.models import (
     Relation,
     ResourceLimits,
     ResourceUsage,
+    ScalarFact,
     SourceDetectionRecord,
     SourceKind,
     StageDisposition,
     StageRecord,
+    StructuredChange,
+    StructuredDetailMode,
+    StructuredResourceLimits,
+    StructuredType,
+    SubtreeFact,
     SummaryCount,
     TextCompareSpec,
     TextEncoding,
@@ -78,6 +91,7 @@ from platydiff.core.models import (
     TransformationRecord,
     UnavailableOutcome,
     UnavailableOutcomeV2,
+    UnavailableOutcomeV3,
     Verdict,
 )
 
@@ -175,8 +189,20 @@ def _enum_value[T](constructor: Callable[[str], T], value: JsonValue, name: str)
         raise SerializationError(f"unknown {name}: {raw}") from error
 
 
-def spec_to_data(spec: CompareSpec) -> JsonObject:
-    """Serialize a normalized schema-v1 specification."""
+def spec_to_data(spec: CompareSpecV3) -> JsonObject:
+    """Serialize a normalized specification."""
+    if isinstance(spec, JsonCompareSpec):
+        json_limits = spec.limits
+        return {
+            "kind": spec.kind,
+            "encoding": spec.encoding.value,
+            "number_mode": spec.number_mode.value,
+            "detail_mode": spec.detail_mode.value,
+            "limits": {
+                name: getattr(json_limits, name)
+                for name in json_limits.__dataclass_fields__
+            },
+        }
     if isinstance(spec, BinaryCompareSpec):
         return {
             "kind": spec.kind,
@@ -225,14 +251,34 @@ def spec_to_data(spec: CompareSpec) -> JsonObject:
     }
 
 
-def spec_from_data(value: JsonValue) -> CompareSpec:
+def spec_from_data(value: JsonValue) -> CompareSpecV3:
     """Validate generic JSON data and construct a specification."""
     data = _object(value, "spec")
     kind = _string(_required(data, "kind"), "spec.kind")
-    if kind not in ("text", "binary", "auto"):
+    if kind not in ("text", "binary", "auto", "json"):
         raise SerializationError(f"unknown spec kind: {kind}")
     limits_data = _object(_required(data, "limits"), "spec.limits")
     try:
+        if kind == "json":
+            return JsonCompareSpec(
+                encoding=_enum_value(
+                    TextEncoding, _required(data, "encoding"), "encoding"
+                ),
+                number_mode=_enum_value(
+                    JsonNumberMode, _required(data, "number_mode"), "number_mode"
+                ),
+                detail_mode=_enum_value(
+                    StructuredDetailMode,
+                    _required(data, "detail_mode"),
+                    "detail_mode",
+                ),
+                limits=StructuredResourceLimits(
+                    **{
+                        name: _integer(_required(limits_data, name), name)
+                        for name in StructuredResourceLimits.__dataclass_fields__
+                    }
+                ),
+            )
         if kind == "binary":
             return BinaryCompareSpec(
                 limits=BinaryResourceLimits(
@@ -691,7 +737,7 @@ def _execution_to_data(record: ExecutionRecord) -> JsonObject:
 
 
 def _execution_from_data(
-    value: JsonValue, *, schema_version: Literal[1, 2] = 1
+    value: JsonValue, *, schema_version: Literal[1, 2, 3] = 1
 ) -> ExecutionRecord:
     data = _object(value, "execution")
     attempts: list[CapabilityAttempt | CapabilityAttemptV2] = []
@@ -700,7 +746,7 @@ def _execution_from_data(
         disposition = _string(_required(item, "disposition"), "disposition")
         allowed_dispositions = (
             ("selected", "rejected", "fallback", "unavailable", "failed")
-            if schema_version == 2
+            if schema_version in (2, 3)
             else ("selected", "rejected", "fallback")
         )
         if disposition not in allowed_dispositions:
@@ -709,7 +755,7 @@ def _execution_from_data(
         backend_id = _optional_string(_required(item, "backend_id"), "backend_id")
         reason_code = _optional_string(_required(item, "reason_code"), "reason_code")
         try:
-            if schema_version == 2:
+            if schema_version in (2, 3):
                 raw_provider = _required(item, "provider")
                 attempts.append(
                     CapabilityAttemptV2(
@@ -784,9 +830,9 @@ def _execution_from_data(
     )
     detection = _detection_from_data(data["detection"]) if "detection" in data else None
     try:
-        record_type = ExecutionRecordV2 if schema_version == 2 else ExecutionRecord
+        record_type = ExecutionRecordV2 if schema_version in (2, 3) else ExecutionRecord
         record_kwargs: dict[str, object] = {}
-        if schema_version == 2:
+        if schema_version in (2, 3):
             raw_plugin_host = _required(data, "plugin_host")
             record_kwargs["plugin_host"] = (
                 None
@@ -828,7 +874,7 @@ def _problem_to_data(
 
 
 def _problem_from_data(
-    value: JsonValue, *, unavailable: bool, schema_version: Literal[1, 2] = 1
+    value: JsonValue, *, unavailable: bool, schema_version: Literal[1, 2, 3] = 1
 ) -> ExecutionProblem | CapabilityProblem | ExecutionProblemV2 | CapabilityProblemV2:
     data = _object(value, "problem")
     code = _string(_required(data, "code"), "problem code")
@@ -839,7 +885,7 @@ def _problem_from_data(
     retryable = _boolean(_required(data, "retryable"), "retryable")
     try:
         if unavailable:
-            if schema_version == 2:
+            if schema_version in (2, 3):
                 return CapabilityProblemV2(
                     code=code,
                     status_code=status_code,
@@ -856,7 +902,9 @@ def _problem_from_data(
                 details=details,
                 retryable=retryable,
             )
-        problem_type = ExecutionProblemV2 if schema_version == 2 else ExecutionProblem
+        problem_type = (
+            ExecutionProblemV2 if schema_version in (2, 3) else ExecutionProblem
+        )
         return problem_type(
             code=code,
             status_code=status_code,
@@ -913,7 +961,7 @@ def _provenance_to_data(value: ComparisonProvenance) -> JsonObject:
 
 
 def _provenance_from_data(
-    value: JsonValue, *, schema_version: Literal[1, 2] = 1
+    value: JsonValue, *, schema_version: Literal[1, 2, 3] = 1
 ) -> ComparisonProvenance:
     data = _object(value, "provenance")
     inputs: list[InputProvenance] = []
@@ -965,10 +1013,10 @@ def _provenance_from_data(
     )
     try:
         provenance_type = (
-            ComparisonProvenanceV2 if schema_version == 2 else ComparisonProvenance
+            ComparisonProvenanceV2 if schema_version in (2, 3) else ComparisonProvenance
         )
         provenance_kwargs: dict[str, object] = {}
-        if schema_version == 2:
+        if schema_version in (2, 3):
             raw_provider = _required(data, "provider")
             raw_detector_provider = _required(data, "detector_provider")
             provenance_kwargs = {
@@ -1032,6 +1080,37 @@ def _change_to_data(change: Change) -> JsonObject:
             "after_offset": change.after_offset,
             "after_length": change.after_length,
         }
+    if isinstance(change, StructuredChange):
+
+        def fact_data(fact: ScalarFact | SubtreeFact | None) -> JsonValue:
+            if fact is None:
+                return None
+            if isinstance(fact, ScalarFact):
+                data: JsonObject = {"kind": fact.kind, "value": fact.value}
+                if fact.lexical is not None:
+                    data["lexical"] = fact.lexical
+                return data
+            return {
+                "kind": fact.kind,
+                "descendant_count": fact.descendant_count,
+                "scalar_count": fact.scalar_count,
+            }
+
+        return {
+            "kind": change.kind,
+            "operation": change.operation,
+            "path": change.path,
+            "before_type": (
+                None if change.before_type is None else change.before_type.value
+            ),
+            "after_type": (
+                None if change.after_type is None else change.after_type.value
+            ),
+            "before_digest": change.before_digest,
+            "after_digest": change.after_digest,
+            "before_fact": fact_data(change.before_fact),
+            "after_fact": fact_data(change.after_fact),
+        }
     return {
         "kind": change.kind,
         "plugin_id": change.plugin_id,
@@ -1054,7 +1133,66 @@ def serialized_change_size(change: Change) -> int:
     )
 
 
-def _change_from_data(value: JsonValue) -> TextHunk | BinarySpan | ExtensionChange:
+def _structured_fact_from_data(value: JsonValue) -> ScalarFact | SubtreeFact | None:
+    if value is None:
+        return None
+    data = _object(value, "structured fact")
+    kind = _string(_required(data, "kind"), "structured fact kind")
+    try:
+        if kind in ("sequence", "mapping"):
+            return SubtreeFact(
+                kind=cast(Literal["sequence", "mapping"], kind),
+                descendant_count=_integer(
+                    _required(data, "descendant_count"), "descendant_count"
+                ),
+                scalar_count=_integer(_required(data, "scalar_count"), "scalar_count"),
+            )
+        allowed = (
+            "null",
+            "boolean",
+            "integer",
+            "decimal",
+            "string",
+            "missing",
+            "float64",
+            "nan",
+            "positive_infinity",
+            "negative_infinity",
+        )
+        if kind not in allowed:
+            raise SerializationError(f"unknown structured fact kind: {kind}")
+        raw_value = _required(data, "value")
+        fact_value: bool | str | None
+        if raw_value is None or isinstance(raw_value, (bool, str)):
+            fact_value = raw_value
+        else:
+            raise SerializationError("structured scalar fact value is invalid")
+        return ScalarFact(
+            kind=cast(
+                Literal[
+                    "null",
+                    "boolean",
+                    "integer",
+                    "decimal",
+                    "string",
+                    "missing",
+                    "float64",
+                    "nan",
+                    "positive_infinity",
+                    "negative_infinity",
+                ],
+                kind,
+            ),
+            value=fact_value,
+            lexical=_optional_string(data.get("lexical"), "lexical"),
+        )
+    except ValueError as error:
+        raise SerializationError(str(error)) from error
+
+
+def _change_from_data(
+    value: JsonValue, *, schema_version: Literal[1, 2, 3] = 1
+) -> TextHunk | BinarySpan | StructuredChange | ExtensionChange:
     data = _object(value, "change")
     kind = _string(_required(data, "kind"), "change kind")
     if kind == "text_hunk":
@@ -1106,6 +1244,39 @@ def _change_from_data(value: JsonValue) -> TextHunk | BinarySpan | ExtensionChan
                 ),
                 after_offset=_integer(_required(data, "after_offset"), "after_offset"),
                 after_length=_integer(_required(data, "after_length"), "after_length"),
+            )
+        except ValueError as error:
+            raise SerializationError(str(error)) from error
+    if kind == "structured_change":
+        if schema_version != 3:
+            raise SerializationError("structured changes require schema version 3")
+        operation = _string(_required(data, "operation"), "operation")
+        if operation not in ("add", "remove", "replace"):
+            raise SerializationError(f"unknown structured operation: {operation}")
+        try:
+            before_raw = _required(data, "before_type")
+            after_raw = _required(data, "after_type")
+            return StructuredChange(
+                operation=cast(Literal["add", "remove", "replace"], operation),
+                path=_string(_required(data, "path"), "path"),
+                before_type=(
+                    None
+                    if before_raw is None
+                    else _enum_value(StructuredType, before_raw, "structured type")
+                ),
+                after_type=(
+                    None
+                    if after_raw is None
+                    else _enum_value(StructuredType, after_raw, "structured type")
+                ),
+                before_digest=_optional_string(
+                    _required(data, "before_digest"), "before_digest"
+                ),
+                after_digest=_optional_string(
+                    _required(data, "after_digest"), "after_digest"
+                ),
+                before_fact=_structured_fact_from_data(_required(data, "before_fact")),
+                after_fact=_structured_fact_from_data(_required(data, "after_fact")),
             )
         except ValueError as error:
             raise SerializationError(str(error)) from error
@@ -1185,7 +1356,7 @@ def _result_to_data(result: DiffResult) -> JsonObject:
 
 
 def _result_from_data(
-    value: JsonValue, *, schema_version: Literal[1, 2] = 1
+    value: JsonValue, *, schema_version: Literal[1, 2, 3] = 1
 ) -> DiffResult:
     data = _object(value, "result")
     summary_data = _object(_required(data, "summary"), "summary")
@@ -1201,7 +1372,7 @@ def _result_from_data(
         )
     changes_data = _object(_required(data, "changes"), "changes")
     changes = tuple(
-        _change_from_data(item)
+        _change_from_data(item, schema_version=schema_version)
         for item in _array(_required(changes_data, "items"), "change items")
     )
     raw_limit_reason = changes_data.get("limit_reason")
@@ -1308,7 +1479,7 @@ def _result_from_data(
                 limit_reason,
             ),
         )
-        return DiffResult(
+        result = DiffResult(
             relation=_enum_value(Relation, _required(data, "relation"), "relation"),
             verdict=_enum_value(Verdict, _required(data, "verdict"), "verdict"),
             fidelity=_enum_value(Fidelity, _required(data, "fidelity"), "fidelity"),
@@ -1321,19 +1492,389 @@ def _result_from_data(
                 _required(data, "provenance"), schema_version=schema_version
             ),
         )
+        if schema_version == 3:
+            _validate_v3_result(result)
+        return result
     except ValueError as error:
         raise SerializationError(str(error)) from error
 
 
+def _finite_count(metric: Metric, name: str) -> int:
+    if not isinstance(metric.value, FiniteValue) or not metric.value.value.is_integer():
+        raise SerializationError(f"{name} must be a finite integer count")
+    return int(metric.value.value)
+
+
+def _structured_u64(value: int) -> bytes:
+    if not 0 <= value <= 2**64 - 1:
+        raise SerializationError("canonical structured length exceeds U64")
+    return value.to_bytes(8, "big")
+
+
+def _structured_signed(value: int) -> bytes:
+    if value == 0:
+        return b""
+    length = max(1, (value.bit_length() + 8) // 8)
+    encoded = value.to_bytes(length, "big", signed=True)
+    while len(encoded) > 1 and (
+        (encoded[0] == 0 and encoded[1] < 0x80)
+        or (encoded[0] == 0xFF and encoded[1] >= 0x80)
+    ):
+        encoded = encoded[1:]
+    return encoded
+
+
+def _structured_magnitude(decimal: str) -> bytes:
+    chunks: list[int] = []
+    for offset in range(0, len(decimal), 9):
+        width = min(9, len(decimal) - offset)
+        factor = 10**width
+        carry = int(decimal[offset : offset + width])
+        for index in range(len(chunks)):
+            value = chunks[index] * factor + carry
+            chunks[index] = value & 0xFFFFFFFF
+            carry = value >> 32
+        while carry:
+            chunks.append(carry & 0xFFFFFFFF)
+            carry >>= 32
+    encoded = b"".join(item.to_bytes(4, "big") for item in reversed(chunks))
+    return encoded.lstrip(b"\x00")
+
+
+def _bounded_exponent(digits: str, limit: int) -> int:
+    value = 0
+    for character in digits:
+        digit = ord(character) - ord("0")
+        if limit < 0 or value > (limit - digit) // 10:
+            raise SerializationError("JSON number fact exceeds its exponent limit")
+        value = value * 10 + digit
+    return value
+
+
+def _validate_lexical_number_fact(fact: ScalarFact, spec: JsonCompareSpec) -> None:
+    if fact.lexical is None or not isinstance(fact.value, str):
+        raise SerializationError("lexical JSON number fact is incomplete")
+    lexical = fact.lexical
+    digit_count = sum(
+        character.isascii() and character.isdigit() for character in lexical
+    )
+    if digit_count > spec.limits.max_number_digits:
+        raise SerializationError("JSON number fact exceeds its digit limit")
+    unsigned = lexical[1:] if lexical.startswith("-") else lexical
+    mantissa, marker, exponent_text = unsigned.lower().partition("e")
+    integer, point, fraction = mantissa.partition(".")
+    explicit_exponent = 0
+    if marker:
+        exponent_negative = exponent_text.startswith("-")
+        exponent_digits = exponent_text.lstrip("+-")
+        exponent_limit = spec.limits.max_abs_exponent + len(fraction)
+        if exponent_negative:
+            exponent_limit = spec.limits.max_abs_exponent - len(fraction)
+        explicit_exponent = _bounded_exponent(exponent_digits, exponent_limit)
+        if exponent_negative:
+            explicit_exponent = -explicit_exponent
+    exponent = explicit_exponent - len(fraction)
+    if abs(exponent) > spec.limits.max_abs_exponent:
+        raise SerializationError("JSON number fact exceeds its exponent limit")
+    coefficient = (integer + fraction).lstrip("0") or "0"
+    negative = lexical.startswith("-")
+    if coefficient == "0":
+        negative = False
+        exponent = 0
+    else:
+        trailing = len(coefficient) - len(coefficient.rstrip("0"))
+        if trailing:
+            coefficient = coefficient[:-trailing]
+            exponent += trailing
+    if point or marker:
+        canonical = f"{'-' if negative else ''}{coefficient}E{exponent}"
+    else:
+        canonical = f"{'-' if negative else ''}{coefficient}{'0' * exponent}"
+    if canonical != fact.value:
+        raise SerializationError("JSON number fact disagrees with its lexical token")
+
+
+def _scalar_fact_digest(fact: ScalarFact, spec: JsonCompareSpec) -> str:
+    if fact.kind in ("integer", "decimal"):
+        if not isinstance(fact.value, str):
+            raise SerializationError("JSON number fact lacks canonical text")
+        if fact.lexical is not None:
+            _validate_lexical_number_fact(fact, spec)
+        if spec.number_mode is JsonNumberMode.LEXICAL:
+            if fact.lexical is None:
+                raise SerializationError("lexical JSON number fact lacks its token")
+            domain = "structured/number/lexical"
+            payload = fact.lexical.encode("utf-8")
+        elif fact.kind == "integer":
+            digits = fact.value[1:] if fact.value.startswith("-") else fact.value
+            if len(digits) > spec.limits.max_number_digits:
+                raise SerializationError("JSON integer fact exceeds its digit limit")
+            magnitude = _structured_magnitude(digits)
+            payload = (
+                b"\x03"
+                + (b"\x01" if fact.value.startswith("-") else b"\x00")
+                + _structured_u64(len(magnitude))
+                + magnitude
+            )
+            domain = "structured/value"
+        else:
+            unsigned = fact.value[1:] if fact.value.startswith("-") else fact.value
+            coefficient, exponent_text = unsigned.split("E", 1)
+            if len(coefficient) > spec.limits.max_number_digits:
+                raise SerializationError("JSON decimal fact exceeds its digit limit")
+            exponent_negative = exponent_text.startswith("-")
+            exponent_limit = spec.limits.max_abs_exponent
+            if not exponent_negative:
+                exponent_limit += spec.limits.max_number_digits
+            exponent_value = _bounded_exponent(
+                exponent_text.removeprefix("-"), exponent_limit
+            )
+            if exponent_negative:
+                exponent_value = -exponent_value
+            coefficient_bytes = coefficient.encode("ascii")
+            exponent_bytes = _structured_signed(exponent_value)
+            payload = (
+                b"\x04"
+                + (b"\x01" if fact.value.startswith("-") else b"\x00")
+                + _structured_u64(len(coefficient_bytes))
+                + coefficient_bytes
+                + _structured_u64(len(exponent_bytes))
+                + exponent_bytes
+            )
+            domain = "structured/value"
+    else:
+        domain = "structured/value"
+        if fact.kind == "null":
+            payload = b"\x00"
+        elif fact.kind == "boolean":
+            payload = b"\x02" if fact.value is True else b"\x01"
+        elif fact.kind == "string" and isinstance(fact.value, str):
+            encoded = fact.value.encode("utf-8")
+            if len(encoded) > spec.limits.max_scalar_bytes:
+                raise SerializationError("JSON string fact exceeds its spec limit")
+            payload = b"\x05" + _structured_u64(len(encoded)) + encoded
+        else:
+            raise SerializationError("JSON change contains a non-JSON scalar fact")
+    digest = hashlib.sha256()
+    digest.update(f"platydiff/v3/{domain}".encode())
+    digest.update(b"\x00")
+    digest.update(_structured_u64(len(payload)))
+    digest.update(payload)
+    return digest.hexdigest()
+
+
+def _validate_v3_result(result: DiffResult) -> None:
+    kind = result.provenance.spec.get("kind")
+    if kind in ("auto", "text", "binary"):
+        if any(isinstance(item, StructuredChange) for item in result.changes.items):
+            raise SerializationError("legacy schema-v3 result has structured changes")
+        return
+    if kind != "json":
+        raise SerializationError(f"unknown schema-v3 built-in spec kind: {kind}")
+    spec = spec_from_data(result.provenance.spec)
+    if (
+        not isinstance(spec, JsonCompareSpec)
+        or spec_to_data(spec) != result.provenance.spec
+    ):
+        raise SerializationError("schema-v3 JSON spec must be normalized exactly")
+    if (
+        result.fidelity is not Fidelity.FULL
+        or result.artifacts
+        or result.provenance.comparator_id != "json"
+        or result.provenance.algorithm_id != "json.semantic.tree.v1"
+        or not isinstance(result.provenance, ComparisonProvenanceV2)
+        or result.provenance.provider is not None
+        or result.provenance.detector_provider is not None
+    ):
+        raise SerializationError("schema-v3 JSON result has incompatible identity")
+    expected_transformations: list[tuple[str, str, JsonObject]] = []
+    if any(
+        item.source_kind is not SourceKind.TEXT for item in result.provenance.inputs
+    ):
+        expected_transformations.append(
+            ("decoding", "json.decode.utf8", {"encoding": spec.encoding.value})
+        )
+    expected_transformations.extend(
+        (
+            ("normalizing", "json.object_order.ignore", {}),
+            ("normalizing", f"json.number.{spec.number_mode.value}", {}),
+            (
+                "aligning",
+                "json.pointer.position",
+                {"pointer": "rfc6901", "sequences": "positional"},
+            ),
+        )
+    )
+    actual_transformations = [
+        (item.stage, item.transformation_id, item.parameters)
+        for item in result.provenance.transformations
+    ]
+    if actual_transformations != expected_transformations:
+        raise SerializationError("schema-v3 JSON transformations are not canonical")
+    if any(not isinstance(item, StructuredChange) for item in result.changes.items):
+        raise SerializationError("schema-v3 JSON changes must be structured changes")
+    for change in result.changes.items:
+        if not isinstance(change, StructuredChange):
+            raise RuntimeError("structured change narrowing failed")
+        for fact, digest in (
+            (change.before_fact, change.before_digest),
+            (change.after_fact, change.after_digest),
+        ):
+            if spec.detail_mode is StructuredDetailMode.DIGEST_ONLY:
+                if fact is not None:
+                    raise SerializationError("digest_only JSON changes must omit facts")
+                continue
+            if fact is None:
+                continue
+            if isinstance(fact, ScalarFact):
+                if fact.kind not in ("null", "boolean", "integer", "decimal", "string"):
+                    raise SerializationError(
+                        "JSON change contains a non-JSON scalar fact"
+                    )
+                if fact.kind in ("integer", "decimal"):
+                    if (spec.number_mode is JsonNumberMode.LEXICAL) != (
+                        fact.lexical is not None
+                    ):
+                        raise SerializationError(
+                            "JSON number fact has invalid lexical detail"
+                        )
+                elif fact.lexical is not None:
+                    raise SerializationError("non-number JSON fact has lexical detail")
+                if (
+                    fact.kind == "string"
+                    and isinstance(fact.value, str)
+                    and len(fact.value.encode("utf-8")) > spec.limits.max_scalar_bytes
+                ):
+                    raise SerializationError("JSON string fact exceeds its spec limit")
+                if digest is None or _scalar_fact_digest(fact, spec) != digest:
+                    raise SerializationError(
+                        "JSON scalar fact does not match its evidence digest"
+                    )
+            elif fact.descendant_count >= spec.limits.max_nodes:
+                raise SerializationError("JSON subtree fact exceeds its node limit")
+        if spec.detail_mode is StructuredDetailMode.VALUES:
+            if change.before_type is not None and change.before_fact is None:
+                raise SerializationError("values JSON change is missing a before fact")
+            if change.after_type is not None and change.after_fact is None:
+                raise SerializationError("values JSON change is missing an after fact")
+        for token in change.path.split("/")[1:]:
+            decoded_token = token.replace("~1", "/").replace("~0", "~")
+            if len(decoded_token.encode("utf-8")) > spec.limits.max_scalar_bytes:
+                raise SerializationError("JSON Pointer token exceeds its spec limit")
+    metrics = {item.name: item for item in result.metrics}
+    if set(metrics) != {
+        "json.compared_values",
+        "json.equal_values",
+        "json.changed_values",
+    }:
+        raise SerializationError("schema-v3 JSON metrics are not canonical")
+    compared = _finite_count(metrics["json.compared_values"], "compared values")
+    equal = _finite_count(metrics["json.equal_values"], "equal values")
+    changed = _finite_count(metrics["json.changed_values"], "changed values")
+    if equal + changed != compared or result.changes.total_count != changed:
+        raise SerializationError("schema-v3 JSON count identities do not hold")
+    expected_metrics = {
+        "json.compared_values": (MetricDirection.NEUTRAL, compared),
+        "json.equal_values": (MetricDirection.NEUTRAL, equal),
+        "json.changed_values": (MetricDirection.LOWER_IS_BETTER, changed),
+    }
+    if any(
+        metric.unit != "items"
+        or metric.aggregation != "count"
+        or metric.direction is not expected_metrics[name][0]
+        for name, metric in metrics.items()
+    ):
+        raise SerializationError("schema-v3 JSON metric metadata is not canonical")
+    summary = {item.name: item for item in result.summary.counts}
+    expected_summary = {
+        "compared_values": compared,
+        "equal_values": equal,
+        "changed_values": changed,
+    }
+    if set(summary) != set(expected_summary) or any(
+        summary[name].value != count or summary[name].unit != "values"
+        for name, count in expected_summary.items()
+    ):
+        raise SerializationError("schema-v3 JSON summary is not canonical")
+    if result.changes.completeness is ChangeCompleteness.PARTIAL:
+        raise SerializationError("schema-v3 JSON changes must not be partial")
+    if result.relation is (Relation.EQUAL if changed == 0 else Relation.DIFFERENT):
+        expected_verdict = Verdict.PASS if changed == 0 else Verdict.FAIL
+    else:
+        raise SerializationError("schema-v3 JSON relation disagrees with its counts")
+    if result.verdict is not expected_verdict or len(result.evaluations) != 1:
+        raise SerializationError("schema-v3 JSON verdict is not canonical")
+    evaluation = result.evaluations[0]
+    if (
+        evaluation.rule_id != "json.semantic_equality"
+        or evaluation.metric_name != "json.changed_values"
+        or evaluation.operator != "eq"
+        or not isinstance(evaluation.threshold, FiniteValue)
+        or evaluation.threshold.value != 0
+        or not isinstance(evaluation.observed, FiniteValue)
+        or evaluation.observed.value != changed
+        or evaluation.verdict is not expected_verdict
+    ):
+        raise SerializationError("schema-v3 JSON evaluation is not canonical")
+    expected_resources = {
+        "before_input_bytes": spec.limits.max_input_bytes,
+        "before_scalar_bytes": spec.limits.max_scalar_bytes,
+        "before_depth": spec.limits.max_depth,
+        "before_nodes": spec.limits.max_nodes,
+        "before_number_digits": spec.limits.max_number_digits,
+        "before_abs_exponent": spec.limits.max_abs_exponent,
+        "after_input_bytes": spec.limits.max_input_bytes,
+        "after_scalar_bytes": spec.limits.max_scalar_bytes,
+        "after_depth": spec.limits.max_depth,
+        "after_nodes": spec.limits.max_nodes,
+        "after_number_digits": spec.limits.max_number_digits,
+        "after_abs_exponent": spec.limits.max_abs_exponent,
+        "compare_work": spec.limits.max_compare_work,
+        "change_items": spec.limits.max_change_items,
+        "change_payload_bytes": spec.limits.max_change_payload_bytes,
+    }
+    resources = {item.name: item for item in result.provenance.resources}
+    if set(resources) != set(expected_resources) or any(
+        resources[name].limit != limit or resources[name].used > limit
+        for name, limit in expected_resources.items()
+    ):
+        raise SerializationError("schema-v3 JSON resources are not canonical")
+    if (
+        resources["before_input_bytes"].used != result.provenance.inputs[0].size_bytes
+        or resources["after_input_bytes"].used != result.provenance.inputs[1].size_bytes
+        or resources["change_items"].used != result.changes.returned_count
+        or resources["change_payload_bytes"].used
+        != sum(serialized_change_size(item) for item in result.changes.items)
+    ):
+        raise SerializationError("schema-v3 JSON resource actuals are inconsistent")
+    if result.changes.completeness is ChangeCompleteness.TRUNCATED:
+        if result.changes.limit_reason == "change_items":
+            valid_truncation = (
+                result.changes.limit == spec.limits.max_change_items
+                and result.changes.returned_count == spec.limits.max_change_items
+            )
+        elif result.changes.limit_reason == "change_payload_bytes":
+            valid_truncation = (
+                result.changes.limit == spec.limits.max_change_payload_bytes
+                and result.changes.returned_count < spec.limits.max_change_items
+            )
+        else:
+            valid_truncation = False
+        if not valid_truncation:
+            raise SerializationError(
+                "schema-v3 JSON truncation evidence is inconsistent"
+            )
+
+
 def outcome_to_data(outcome: AnyCompareOutcome) -> JsonObject:
-    """Convert an outcome to stable JSON-safe schema-v1 or schema-v2 data."""
+    """Convert an outcome to stable JSON-safe schema-v1, v2, or v3 data."""
     _validate_outcome_schema_for_encoding(outcome)
     common: JsonObject = {
         "schema_version": outcome.schema_version,
         "kind": outcome.kind,
         "execution": _execution_to_data(outcome.execution),
     }
-    if isinstance(outcome, (CompletedOutcome, CompletedOutcomeV2)):
+    if isinstance(outcome, (CompletedOutcome, CompletedOutcomeV2, CompletedOutcomeV3)):
         common["result"] = _result_to_data(outcome.result)
     else:
         common["problem"] = _problem_to_data(outcome.problem)
@@ -1377,17 +1918,36 @@ def _validate_outcome_schema_for_encoding(outcome: AnyCompareOutcome) -> None:
             or type(outcome.problem) is not ExecutionProblemV2
         ):
             raise SerializationError("schema-v2 outcome contains schema-v1 values")
+    elif type(outcome) is CompletedOutcomeV3:
+        if (
+            type(outcome.execution) is not ExecutionRecordV2
+            or type(outcome.result.provenance) is not ComparisonProvenanceV2
+        ):
+            raise SerializationError("schema-v3 outcome contains incompatible values")
+        _validate_v3_result(outcome.result)
+    elif type(outcome) is UnavailableOutcomeV3:
+        if (
+            type(outcome.execution) is not ExecutionRecordV2
+            or type(outcome.problem) is not CapabilityProblemV2
+        ):
+            raise SerializationError("schema-v3 outcome contains incompatible values")
+    elif type(outcome) is FailedOutcomeV3:
+        if (
+            type(outcome.execution) is not ExecutionRecordV2
+            or type(outcome.problem) is not ExecutionProblemV2
+        ):
+            raise SerializationError("schema-v3 outcome contains incompatible values")
     else:
         raise SerializationError("unknown outcome type")
 
 
 def outcome_from_data(value: JsonValue) -> AnyCompareOutcome:
-    """Validate generic JSON data and construct a schema-v1 or schema-v2 outcome."""
+    """Validate generic JSON data and construct a schema-v1, v2, or v3 outcome."""
     data = _object(value, "outcome")
     schema_version = _integer(_required(data, "schema_version"), "schema_version")
-    if schema_version not in (SCHEMA_VERSION, SCHEMA_VERSION_V2):
+    if schema_version not in (SCHEMA_VERSION, SCHEMA_VERSION_V2, SCHEMA_VERSION_V3):
         raise SerializationError(f"unknown schema version: {schema_version}")
-    schema: Literal[1, 2] = 1 if schema_version == 1 else 2
+    schema: Literal[1, 2, 3] = schema_version
     kind = _string(_required(data, "kind"), "outcome kind")
     if kind == "completed" and "problem" in data:
         raise SerializationError("completed outcome has an incompatible field: problem")
@@ -1398,6 +1958,15 @@ def outcome_from_data(value: JsonValue) -> AnyCompareOutcome:
     )
     try:
         if kind == "completed":
+            if schema == 3:
+                if not isinstance(execution, ExecutionRecordV2):
+                    raise SerializationError("schema-v3 execution has the wrong type")
+                return CompletedOutcomeV3(
+                    execution=execution,
+                    result=_result_from_data(
+                        _required(data, "result"), schema_version=3
+                    ),
+                )
             if schema == 2:
                 if not isinstance(execution, ExecutionRecordV2):
                     raise SerializationError("schema-v2 execution has the wrong type")
@@ -1417,6 +1986,12 @@ def outcome_from_data(value: JsonValue) -> AnyCompareOutcome:
                 unavailable=True,
                 schema_version=schema,
             )
+            if schema == 3:
+                if not isinstance(execution, ExecutionRecordV2) or not isinstance(
+                    problem, CapabilityProblemV2
+                ):
+                    raise SerializationError("schema-v3 unavailable types are invalid")
+                return UnavailableOutcomeV3(execution=execution, problem=problem)
             if schema == 2:
                 if not isinstance(execution, ExecutionRecordV2) or not isinstance(
                     problem, CapabilityProblemV2
@@ -1432,6 +2007,12 @@ def outcome_from_data(value: JsonValue) -> AnyCompareOutcome:
                 unavailable=False,
                 schema_version=schema,
             )
+            if schema == 3:
+                if not isinstance(execution, ExecutionRecordV2) or not isinstance(
+                    problem, ExecutionProblemV2
+                ):
+                    raise SerializationError("schema-v3 failed types are invalid")
+                return FailedOutcomeV3(execution=execution, problem=problem)
             if schema == 2:
                 if not isinstance(execution, ExecutionRecordV2) or not isinstance(
                     problem, ExecutionProblemV2
@@ -1578,3 +2159,40 @@ def upgrade_outcome_v1_to_v2(outcome: CompareOutcome) -> CompareOutcomeV2:
             failed_problem.retryable,
         ),
     )
+
+
+def upgrade_outcome_v2_to_v3(outcome: CompareOutcomeV2) -> CompareOutcomeV3:
+    """Wrap a validated schema-v2 outcome in the additive schema-v3 envelope."""
+    if isinstance(outcome, CompletedOutcomeV2):
+        return CompletedOutcomeV3(execution=outcome.execution, result=outcome.result)
+    if isinstance(outcome, UnavailableOutcomeV2):
+        return UnavailableOutcomeV3(
+            execution=outcome.execution, problem=outcome.problem
+        )
+    return FailedOutcomeV3(execution=outcome.execution, problem=outcome.problem)
+
+
+def upgrade_outcome_v1_to_v3(outcome: CompareOutcome) -> CompareOutcomeV3:
+    """Preserve schema-v1 meaning while adding neutral v2/v3 fields."""
+    return upgrade_outcome_v2_to_v3(upgrade_outcome_v1_to_v2(outcome))
+
+
+def downgrade_outcome_v3_to_v2(outcome: CompareOutcomeV3) -> CompareOutcomeV2:
+    """Losslessly remove only the envelope version from a legacy-only v3 outcome."""
+    if isinstance(outcome, CompletedOutcomeV3):
+        spec_kind = outcome.result.provenance.spec.get("kind")
+        if spec_kind not in ("auto", "text", "binary") or any(
+            isinstance(change, StructuredChange)
+            for change in outcome.result.changes.items
+        ):
+            raise SerializationError("schema-v3 outcome is not legacy-only")
+        return CompletedOutcomeV2(execution=outcome.execution, result=outcome.result)
+    if isinstance(outcome, UnavailableOutcomeV3):
+        if outcome.execution.plugin_host is None:
+            raise SerializationError("schema-v3 outcome cannot be proven legacy-only")
+        return UnavailableOutcomeV2(
+            execution=outcome.execution, problem=outcome.problem
+        )
+    if outcome.execution.plugin_host is None:
+        raise SerializationError("schema-v3 outcome cannot be proven legacy-only")
+    return FailedOutcomeV2(execution=outcome.execution, problem=outcome.problem)

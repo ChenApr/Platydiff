@@ -61,11 +61,11 @@ be revalidated.
 | RFC 0003 snapshot paths own bounded replay, hashes, mutation checks, and safe labels for path/bytes/text sources. | Media gates must revalidate snapshot behavior before depending on it for large or mutable media. |
 | RFC 0004 makes renderers and UI consume validated outcomes without rereading sources or recomputing facts. | Media thumbnails, waveforms, heatmaps, and frame previews require explicit bounded artifact contracts; UI work remains unauthorized. |
 | RFC 0005 implements SDK v1.1 for text/binary detector, comparator, and renderer handles only. | Audio/video plugins require an SDK-v2 successor RFC; SDK v1.1 cannot introduce media specs or built-in media change kinds. |
-| RFC 0006 accepts schema v3 for structured data, but its implementation state must be revalidated when a later gate starts. | Audio/video schema decisions must migrate from implemented v1/v2 and accepted v3 without assuming unmerged P4-A1 behavior. |
+| At `fde2bd4`, RFC 0006 accepted schema v3 for structured data while its implementation state still needed revalidation. Current `main` now includes the P4-A1 explicit JSON/schema-v3 implementation. | Audio/video schema decisions must migrate from implemented v1/v2/v3 and revalidate the actual P4-A1 JSON fixtures before relying on them. |
 | At `fde2bd4`, RFC 0007 proposed schema v4 for the first image slice, subject to an actual merged schema-v3 predecessor audit. | Phase 5 schema-v4 design allocation is now accepted, but P7-A1 must wait for the accepted revision, implementation, and fixtures to merge before relying on it. |
 | At `fde2bd4`, RFC 0008 proposed source-code/PDF contracts and kept heavyweight backends, artifacts, auto detection, and SDK v2 separate. | Phase 6 schema-v5 design allocation is now accepted, but P7-A1 must wait for the accepted revision, implementation, and fixtures to merge before relying on it. |
 | Runtime dependencies are currently empty; audio/video backends are architecture-level plans. | Codec, model, patent, export, and FFmpeg build/license impact must be reviewed before any dependency or subprocess path is added. |
-| P4-A1 and Phase 5 implementation work may still be absent or divergent from `main`. | Treat that work as design evidence only; every code-dependent assumption below is a later revalidation gate. |
+| Phase 5 and Phase 6 implementation fixtures may still be absent or divergent from `main`. | Treat v4/v5 availability as a later revalidation gate; accepted design allocation is not enough for P7-A1 code. |
 
 ## Goals and non-goals
 
@@ -86,10 +86,10 @@ Phase 7 goals are:
 - resource and security rules for corrupt, truncated, hostile, long-duration,
   high-rate, high-channel-count, high-resolution, high-frame-count, and
   multi-stream inputs;
-- schema compatibility with implemented v1/v2, the actual P4 schema-v3
-  predecessor, the accepted Phase 5 schema-v4 allocation, and the accepted
-  Phase 6 schema-v5 allocation, subject to code and fixture revalidation at
-  implementation start.
+- schema compatibility with implemented v1/v2/v3, the actual P4-A1 JSON
+  schema-v3 predecessor, the accepted Phase 5 schema-v4 allocation, and the
+  accepted Phase 6 schema-v5 allocation, subject to code and fixture
+  revalidation at implementation start.
 
 Phase 7 does not include:
 
@@ -119,12 +119,12 @@ the next global schema successor.
 | --- | --- | --- |
 | P7X1 | Keep audio/video comparison explicit-only; existing auto remains text/binary. | Add media candidates to RFC 0003 without defining expensive probes and ambiguity. |
 | P7X2 | Split audio and video into independently authorized gates. | Treat all time-based media as one implementation batch. |
-| P7X3 | Use globally allocated schema v6 for audio only after auditing the actual P4 schema-v3 predecessor, accepted Phase 5 schema-v4 allocation, and accepted Phase 6 schema-v5 allocation; allocate video in the next global successor only after the P7-V1 backend/worker amendment is accepted. | Extend v1/v2 closed unions, reopen v3, reuse image v4 or source/PDF v5, put pending video into audio v6, or assume accepted but unimplemented predecessor details. |
+| P7X3 | Use globally allocated schema v6 for audio only after auditing the actual P4-A1 JSON schema-v3 predecessor, accepted Phase 5 schema-v4 allocation, and accepted Phase 6 schema-v5 allocation; allocate video in the next global successor only after the P7-V1 backend/worker amendment is accepted. | Extend v1/v2 closed unions, reopen v3, reuse image v4 or source/PDF v5, put pending video into audio v6, or assume accepted but unimplemented predecessor details. |
 | P7X4 | Reject audio/video plugin comparators under SDK v1.1; require SDK v2 for media modalities. | Let plugin installation introduce media specs or change kinds. |
 | P7X5 | Keep RFC 0004 artifact/UI work separate; first comparison gates may produce no files. | Let decoding or rendering implicitly write previews, thumbnails, clips, heatmaps, or waveforms. |
 | P7X6 | Forbid fallback that changes relation after backend execution begins. | On failure, silently retry as bytes, another codec/backend, a lower-fidelity decode, or a perceptual metric. |
 | P7X7 | Treat perceptual metrics as separately reviewed optional/external gates. | Ship ViSQOL, VMAF, or model-based scores as default behavior. |
-| P7X8 | Make every code-dependent assumption, including P4-A1, Phase 5, and RFC 0008 state, a revalidation gate. | Treat concurrent unmerged work as compatibility proof. |
+| P7X8 | Make every code-dependent assumption, including the current P4-A1 JSON implementation, Phase 5, and RFC 0008 state, a revalidation gate. | Treat concurrent unmerged work as compatibility proof. |
 | A1 | Audio exposes `encoded_bytes`, `decoded_samples`, `waveform_numeric`, `spectral`, and `perceptual` as distinct relations. | Collapse all audio results into one "same audio" bit. |
 | A2 | Default first audio relation is `decoded_samples` for explicitly decoded PCM-capable inputs; `encoded_bytes` is selected separately. | Default to perceptual similarity or byte equality for all audio. |
 | A3 | No resampling, channel remixing, gain, loudness normalization, silence trimming, clipping, dithering, filtering, or delay compensation is implicit. | Hide common audio preprocessing inside metrics. |
@@ -161,8 +161,8 @@ CompareSpecV6 = CompareSpecV5 | AudioCompareSpec
 ChangeV6 = ChangeV5 | AudioChange
 ```
 
-If P4-A1 schema v3 is not implemented on `main`, if the implemented v3 differs
-from RFC 0006, if Phase 5 schema v4 is absent or changes its allocation, or if
+If the implemented P4-A1 schema v3 differs from RFC 0006 or fails compatibility
+revalidation, if Phase 5 schema v4 is absent or changes its allocation, or if
 Phase 6 schema v5 is absent or changes its allocation, a Phase 7 audio
 implementation gate stops and updates this RFC before code. Audio schema work
 therefore depends on the real v3/v4/v5 readers, writers, upgraders, and
@@ -207,7 +207,7 @@ detection RFC is separately accepted.
 | --- | --- | --- | --- | --- |
 | Existing `compare()` and default CLI | v1 | text, binary, auto to either | none | Existing byte-stable fixtures remain valid. |
 | Existing explicit `PluginHost` | v2 | text, binary, auto to either | SDK v1.1 | Existing v2 fixtures and receipts remain valid. |
-| Merged Phase 4 path | v3 | explicit json/yaml/table/array | none | Actual v3 models, migrations, and fixtures are the predecessor. |
+| Merged Phase 4 P4-A1 path | v3 | explicit JSON | none | Actual v3 JSON models, migrations, and fixtures are the predecessor; YAML, table, and array work remain later gates. |
 | Accepted Phase 5 image path | v4 | explicit static PNG image | none until separately authorized | Media must not reuse v4 or require image implementation to change. |
 | Accepted Phase 6 source/PDF path | v5 | source-code/PDF | none until separately authorized | Audio v6 implementation waits for merged v5 readers, writers, upgraders, and fixtures. |
 | Accepted Phase 7 audio path | v6, dependent on v5 predecessor availability | explicit audio | none in first gates | Produces validated audio specs, changes, metrics, transformations, and failures after separate implementation authorization. |

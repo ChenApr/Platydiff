@@ -49,11 +49,11 @@ source/PDF 使用 schema v5、Phase 7 audio 使用 schema v6。Public schema imp
 | RFC 0003 的 snapshot path 为 path/bytes/text source 管理有界 replay、hash、mutation check 与安全 label。 | 媒体门禁依赖它处理大型或可变媒体前，必须重新验证 snapshot 行为。 |
 | RFC 0004 要求 renderer 与 UI 消费 validated outcome，不重读 source 或重算事实。 | 媒体 thumbnail、waveform、heatmap 和 frame preview 需要显式有界 artifact 契约；UI 工作仍未授权。 |
 | RFC 0005 实现的 SDK v1.1 只覆盖 text/binary detector、comparator 与 renderer handle。 | 音视频插件需要 SDK-v2 后继 RFC；SDK v1.1 不能引入媒体 spec 或内建媒体 change kind。 |
-| RFC 0006 接受 schema v3 用于结构化数据，但后续门禁启动时必须重新验证其实现状态。 | 音视频 schema 决策必须从已实现 v1/v2 和已接受 v3 迁移，不能假设未合并 P4-A1 行为。 |
+| 在 `fde2bd4` 时，RFC 0006 已接受 schema v3 用于结构化数据，但实现状态仍需复验。当前 `main` 已包含 P4-A1 显式 JSON/schema-v3 实现。 | 音视频 schema 决策必须从已实现 v1/v2/v3 迁移，并在依赖前复验实际 P4-A1 JSON fixture。 |
 | 在 `fde2bd4` 时，RFC 0007 提议 schema v4 作为首个 image slice，前提是通过实际合并的 schema-v3 前驱审计。 | Phase 5 schema-v4 design allocation 现已接受，但 P7-A1 仍必须等待已接受 revision、implementation 与 fixture 合并后才能依赖它。 |
 | 在 `fde2bd4` 时，RFC 0008 提议 source-code/PDF 契约，并保持重量级后端、artifact、auto detection 和 SDK v2 分离。 | Phase 6 schema-v5 design allocation 现已接受，但 P7-A1 仍必须等待已接受 revision、implementation 与 fixture 合并后才能依赖它。 |
 | 当前运行时依赖为空；音视频后端仍是架构层计划。 | 任何依赖或 subprocess path 进入前，必须审查 codec、model、patent、export 与 FFmpeg build/license 影响。 |
-| P4-A1 和 Phase 5 实现工作仍可能缺失，或与 `main` 分歧。 | 只能把这些工作当作设计证据；本文中所有依赖代码状态的假设都是后续 revalidation gate。 |
+| Phase 5 与 Phase 6 implementation fixture 仍可能缺失，或与 `main` 分歧。 | 将 v4/v5 availability 作为后续 revalidation gate；已接受 design allocation 不足以启动 P7-A1 代码。 |
 
 ## 目标与非目标
 
@@ -71,7 +71,7 @@ Phase 7 目标包括：
   deinterlace、tone-map、color conversion、track dropping 或 synchronization change；
 - 对 corrupt、truncated、hostile、long-duration、high-rate、high-channel-count、high-resolution、
   high-frame-count 和 multi-stream input 的资源与安全规则；
-- 与已实现 v1/v2、实际 P4 schema-v3 前驱、已接受 Phase 5 schema-v4 allocation 和已接受 Phase 6 schema-v5 allocation 兼容，并在实现开始时重新验证代码与 fixture。
+- 与已实现 v1/v2/v3、实际 P4-A1 JSON schema-v3 前驱、已接受 Phase 5 schema-v4 allocation 和已接受 Phase 6 schema-v5 allocation 兼容，并在实现开始时重新验证代码与 fixture。
 
 Phase 7 不包含：
 
@@ -97,12 +97,12 @@ Phase 7 不包含：
 | --- | --- | --- |
 | P7X1 | 音视频比较保持 explicit-only；既有 auto 仍只支持 text/binary。 | 未定义昂贵 probe 与 ambiguity 就把媒体 candidate 加入 RFC 0003。 |
 | P7X2 | 将音频和视频拆分为独立授权门禁。 | 把所有 time-based media 当作一个实现批次。 |
-| P7X3 | 审计实际 P4 schema-v3 前驱、已接受 Phase 5 schema-v4 allocation 和已接受 Phase 6 schema-v5 allocation 后，仅为 audio 使用全局分配的 schema v6；video 只有在 P7-V1 backend/worker amendment 接受后才分配下一个全局 successor。 | 扩展 v1/v2 closed union、重开 v3、复用 image v4 或 source/PDF v5、把 pending video 放入 audio v6，或假设已接受但未实现的前驱细节。 |
+| P7X3 | 审计实际 P4-A1 JSON schema-v3 前驱、已接受 Phase 5 schema-v4 allocation 和已接受 Phase 6 schema-v5 allocation 后，仅为 audio 使用全局分配的 schema v6；video 只有在 P7-V1 backend/worker amendment 接受后才分配下一个全局 successor。 | 扩展 v1/v2 closed union、重开 v3、复用 image v4 或 source/PDF v5、把 pending video 放入 audio v6，或假设已接受但未实现的前驱细节。 |
 | P7X4 | SDK v1.1 下拒绝 audio/video plugin comparator；媒体模态需要 SDK v2。 | 允许 plugin 安装引入媒体 spec 或 change kind。 |
 | P7X5 | 保持 RFC 0004 artifact/UI 工作独立；首批比较门禁可以不产生文件。 | 让 decoding 或 rendering 隐式写出 preview、thumbnail、clip、heatmap 或 waveform。 |
 | P7X6 | 后端执行开始后，禁止改变 relation 的 fallback。 | 失败时静默按 byte、另一 codec/backend、低保真 decode 或 perceptual metric 重试。 |
 | P7X7 | 将 perceptual metric 作为单独审查的可选/外部门禁。 | 默认提供 ViSQOL、VMAF 或模型分数。 |
-| P7X8 | 每个依赖代码状态的假设都是 revalidation gate，包括 P4-A1、Phase 5 与 RFC 0008 状态。 | 把并发未合并工作当作兼容性证明。 |
+| P7X8 | 每个依赖代码状态的假设都是 revalidation gate，包括当前 P4-A1 JSON implementation、Phase 5 与 RFC 0008 状态。 | 把并发未合并工作当作兼容性证明。 |
 | A1 | 音频公开 `encoded_bytes`、`decoded_samples`、`waveform_numeric`、`spectral` 与 `perceptual` 这些不同 relation。 | 把所有音频结果折叠为一个 "same audio" bit。 |
 | A2 | 首个音频默认 relation 是针对可显式解码 PCM input 的 `decoded_samples`；`encoded_bytes` 单独选择。 | 对所有音频默认使用 perceptual similarity 或 byte equality。 |
 | A3 | 不隐式执行 resampling、channel remixing、gain、loudness normalization、silence trimming、clipping、dithering、filtering 或 delay compensation。 | 把常见音频预处理隐藏在 metric 中。 |
@@ -134,10 +134,10 @@ CompareSpecV6 = CompareSpecV5 | AudioCompareSpec
 ChangeV6 = ChangeV5 | AudioChange
 ```
 
-如果 P4-A1 schema v3 没有在 `main` 上实现、实际实现与 RFC 0006 不一致，或 Phase 5 schema
-v4 缺失或改变其分配，或 Phase 6 schema v5 缺失或改变其分配，Phase 7 audio implementation gate
-必须停止并先修订本文。Audio schema 工作依赖真实的 v3/v4/v5 reader、writer、upgrader 与 fixture，
-而不是只依赖已接受的设计文本。无论哪种情况：
+如果已实现的 P4-A1 schema v3 与 RFC 0006 不一致或未通过 compatibility revalidation，或
+Phase 5 schema v4 缺失或改变其分配，或 Phase 6 schema v5 缺失或改变其分配，Phase 7 audio
+implementation gate 必须停止并先修订本文。Audio schema 工作依赖真实的 v3/v4/v5 reader、writer、
+upgrader 与 fixture，而不是只依赖已接受的设计文本。无论哪种情况：
 
 - 既有内建 text、binary 与 auto 调用保持 schema v1；
 - 既有 `PluginHost` text/binary 调用保持 schema v2；
@@ -169,7 +169,7 @@ source view、lifecycle stage、backend role、sandboxing、artifact authority�
 | --- | --- | --- | --- | --- |
 | 既有 `compare()` 与默认 CLI | v1 | text、binary、解析到二者的 auto | 无 | 既有 byte-stable fixture 继续有效。 |
 | 既有显式 `PluginHost` | v2 | text、binary、解析到二者的 auto | SDK v1.1 | 既有 v2 fixture 与 receipt 继续有效。 |
-| 已合并 Phase 4 path | v3 | 显式 json/yaml/table/array | 无 | 实际 v3 model、migration 与 fixture 是前驱。 |
+| 已合并 Phase 4 P4-A1 path | v3 | 显式 JSON | 无 | 实际 v3 JSON model、migration 与 fixture 是前驱；YAML、table 与 array 仍是后续 gate。 |
 | 已接受 Phase 5 image path | v4 | 显式 static PNG image | 单独授权前无 | 媒体不得复用 v4，也不得要求 image 实现改变。 |
 | 已接受 Phase 6 source/PDF path | v5 | source-code/PDF | 单独授权前无 | Audio v6 implementation 等待已合并 v5 reader、writer、upgrader 与 fixture。 |
 | 已接受 Phase 7 audio path | v6，依赖 v5 predecessor availability | 显式 audio | 首批门禁无 | 单独实现授权后产生 validated audio spec、change、metric、transformation 与 failure。 |

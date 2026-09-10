@@ -89,6 +89,10 @@ class SourceSnapshot(ABC):
         """Validate mutable backing state when the snapshot has any."""
         return None
 
+    def owned_text(self) -> str | None:
+        """Return immutable caller-owned text without a decode round trip."""
+        return None
+
     def close(self) -> None:
         """Release resources owned by the snapshot."""
         return None
@@ -129,6 +133,9 @@ class _TextSnapshot(SourceSnapshot):
                 del pending[:chunk_bytes]
         if pending:
             yield bytes(pending)
+
+    def owned_text(self) -> str:
+        return self._text
 
 
 class _PathSnapshot(SourceSnapshot):

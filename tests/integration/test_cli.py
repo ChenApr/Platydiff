@@ -571,14 +571,22 @@ def test_cli_output_limit_reports_truncation(tmp_path: Path) -> None:
 
 
 def test_console_script_help_entry_point() -> None:
-    result = subprocess.run(
+    commands = (
         [str(Path(sys.executable).with_name("platydiff")), "--help"],
-        check=False,
-        capture_output=True,
-        text=True,
+        [sys.executable, "-m", "platydiff", "--help"],
     )
-    assert result.returncode == 0
-    assert "{compare,text,binary}" in result.stdout
+    expected_commands = "{compare,text,binary,json}"
+    for command in commands:
+        result = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert result.stderr == ""
+        assert result.stdout.count(expected_commands) == 2
+        assert result.stdout.startswith(f"usage: platydiff [-h] {expected_commands}")
 
 
 def test_binary_routes_share_the_same_result(tmp_path: Path) -> None:

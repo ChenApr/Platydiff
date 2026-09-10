@@ -8,7 +8,7 @@
 - Review revision: 2026-09-10
 - Approved decisions: S1-S13
 - Owners: Platydiff maintainers
-- Implementation owner: 尚未指派，等待单独的实现授权
+- Implementation：P4-A1 已实现；P4-A2、P4-B1 与 P4-B2 仍设门禁
 
 ## 摘要与授权边界
 
@@ -17,9 +17,9 @@
 实现、依赖变更、新 plugin SDK、结构化数据自动探测或 UI 工作。每个实现门禁都要
 基于更新后的 `main` 单独派发；后续门禁不会自动开始。
 
-人类于 2026-09-10 批准 S1-S13；该批准只接受设计契约并授权本 RFC 文档 PR。
-P4-A1、P4-A2、P4-B1、P4-B2 仍未实现且分别设置门禁。接受 RFC 不授权启动、委派或
-暗示任何 Phase 4 实现。
+人类于 2026-09-10 批准 S1-S13；最初只接受设计契约并授权本 RFC 文档 PR。后续显式
+派发授权了 P4-A1；schema v3 与内建 JSON comparison 现已实现。P4-A2、P4-B1、P4-B2
+仍未实现且分别设置门禁；完成 P4-A1 不授权启动或委派这些后续门禁。
 
 ## 证据账本
 

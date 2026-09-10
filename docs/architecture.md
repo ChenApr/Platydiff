@@ -220,10 +220,12 @@ Text processing first applies explicit encoding and line-ending policies, then t
 
 Source code can be parsed into syntax trees and matched by node, reducing the weight of formatting-only changes while expressing node insertion, deletion, update, and movement. JSON, YAML, TOML, and XML should be parsed into typed trees or mappings and compared by field path. Key ordering, numeric representation, and irrelevant metadata belong to the configurable normalization stage.
 
-The explicit JSON and constrained YAML 1.2 comparison contracts are accepted in
-[RFC 0006](rfcs/0006-structured-data-comparison.md) but remain unimplemented.
-Acceptance does not expand the existing text/binary automatic-detection or
-plugin-SDK contracts or authorize an implementation gate.
+Phase 4 gate P4-A1 implements the explicit JSON and schema-v3 portion of
+[RFC 0006](rfcs/0006-structured-data-comparison.md): strict bounded RFC 8259
+decoding, value or lexical number semantics, JSON Pointer alignment, typed
+structured changes, and deterministic evidence digests. The constrained YAML
+1.2 contract remains unimplemented behind P4-A2. JSON remains explicit-only and
+built-in-only; it does not expand text/binary automatic detection or SDK v1.1.
 
 Syntactic equality does not imply runtime semantic equality. AST comparison must state its parser version, error-recovery behavior, and macro or preprocessing boundaries.
 
@@ -286,13 +288,15 @@ Statistical comparison can include KS tests, Wasserstein distance, chi-squared t
 
 The staged delivery plan and its implementation gates are defined by [RFC 0002](rfcs/0002-development-phases-and-text-slice.md). Phase 2 bounded detection, internal resolution, and exact binary comparison implement [RFC 0003](rfcs/0003-automatic-detection-capability-resolution-and-binary-comparison.md). Phase 3 gates P3-A, P3-B, and P3-C implement SDK declaration/discovery, explicitly selected detector/comparator/renderer execution, schema-v2 provenance, explicit CLI opt-in, and compatibility receipts from [RFC 0005](rfcs/0005-third-party-plugin-discovery-sdk-and-compatibility.md). The version groupings below describe product direction and do not imply that later capabilities are implemented.
 
-Phases 1 through 3 contain the Python package, schema-v1/v2 contracts, explicit
+Phases 1 through 3 and Phase 4 gate P4-A1 contain the Python package,
+schema-v1/v2/v3 contracts, explicit
 text, bounded text/binary detection, exact binary comparison, CLI,
-terminal/JSON renderers, and the explicit plugin boundary. They remain
-unreleased. Phase 4 structured-data contracts are accepted in
-[RFC 0006](rfcs/0006-structured-data-comparison.md) but remain unimplemented and
-require separate gate authorization. Every other modality and renderer below is
-planned. Phase 5 image contracts are accepted in
+terminal/JSON renderers, the explicit plugin boundary, and explicit semantic
+JSON comparison. They remain unreleased. Phase 4 structured-data contracts are
+accepted in [RFC 0006](rfcs/0006-structured-data-comparison.md), but its
+remaining YAML, table, and array gates are unimplemented and require separate
+gate authorization. Every other modality and renderer below is planned. Phase 5
+image contracts are accepted in
 [RFC 0007](rfcs/0007-image-comparison.md); acceptance does not authorize
 implementation, and the actual merged schema-v3 predecessor must be revalidated
 first. Phase 6 source/PDF contracts are accepted in
