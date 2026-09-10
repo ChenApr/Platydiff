@@ -52,13 +52,14 @@ the documented defaults.
 
 ### `AudioStreamSelection`
 
+This amendment tightens the accepted RFC 0009 `AudioStreamSelection` shape; it
+does not replace it with a different field family.
+
 Key order and defaults:
 
 | Key | Type | Default | Rule |
 | --- | --- | --- | --- |
-| `stream_index` | non-negative integer | `0` | P7-A1 WAV has exactly one stream; only `0` is supported. Non-zero values are rejected as invalid intent before source inspection. |
-| `channel_mode` | `"all"` or `"indices"` | `"all"` | `"all"` selects every decoded channel in file order. |
-| `channel_indices` | tuple of non-negative integers | `[]` | Must be empty when `channel_mode="all"` and non-empty, unique, and ascending when `channel_mode="indices"`. |
+| `index` | integer or null | `null` | Preserves RFC 0009 `stream.index`. P7-A1 WAV has exactly one stream; `null` and `0` select it, while non-zero values are rejected as invalid intent before source inspection. |
 | `require_channel_labels` | boolean | `false` | If true, missing or unknown source channel labels fail at `resolving` when proven by header facts, or at `decoding` if only proven after decode begins. |
 
 ### `AudioDecodeOptions`
@@ -69,9 +70,22 @@ Key order and defaults:
 | --- | --- | --- | --- |
 | `backend` | string | `"stdlib_wave_pcm"` | The only P7-A1 backend. |
 | `profile` | string | `"p7_a1_wav_pcm"` | Selects the bounded WAV/PCM profile below. |
+| `sample_representation` | string | `"native_pcm_integer"` | Preserves RFC 0009 `decode.sample_representation`; no integer-to-float conversion is part of exact equality. |
 | `unsupported_profile` | `"unavailable"` | `"unavailable"` | Valid-but-unsupported profiles produce `unavailable/capability_unavailable`. |
-| `preserve_integer_width` | boolean | `true` | Decoded samples retain signedness, container width, and valid-bit facts. |
 | `max_probe_bytes` | non-negative integer | `65536` | Upper bound for the resolving-stage profile probe. |
+
+### `AudioAlignmentOptions`
+
+This amendment preserves RFC 0009's separate `AudioAlignmentOptions` object.
+P7-A1 defaults remain:
+
+| Key | Type | Default | Rule |
+| --- | --- | --- | --- |
+| `mode` | string | `"sample_index"` | Only `sample_index` is enabled in P7-A1. |
+| `fixed_offset_samples` | integer | `0` | Reserved until P7-A2. |
+| `max_search_offset_samples` | non-negative integer | `0` | Reserved until P7-A2. |
+| `max_drift_ppm` | finite JSON number | `0.0` | Reserved until P7-A2. |
+| `ambiguity_margin_samples` | non-negative integer | `0` | Reserved until P7-A2. |
 
 ### `AudioWaveformOptions`
 
@@ -115,36 +129,44 @@ Key order and defaults:
 `encoded_bytes` remains an audio relation. It uses homogeneous `AudioChange`
 entries with `operation="encoded_byte_update"`, `operation="encoded_byte_insert"`,
 or `operation="encoded_byte_delete"`. Coordinates use absolute byte offsets in
-the source snapshot, not decoded sample coordinates. Payloads carry
-`before_digest`, `after_digest`, `byte_start`, `byte_end`, and `byte_count`.
-Raw source bytes and bounded byte snippets are never serialized unless a later
-artifact/source-disclosure RFC explicitly authorizes them.
+the source snapshot, not decoded sample coordinates. Payloads carry digests;
+the byte interval is represented by `AudioCoordinate.byte_start` and
+`AudioCoordinate.byte_count`. Raw source bytes and bounded byte snippets are
+never serialized unless a later artifact/source-disclosure RFC explicitly
+authorizes them.
 
-`AudioChange` is a closed object with key order:
+`AudioChange` preserves the accepted RFC 0009 shape and is a closed object with
+key order:
 
 ```text
-kind, relation, operation, stream_index, coordinate, fact_name,
-before_digest, after_digest, before_value, after_value, byte_count,
-sample_count, truncated
+kind, relation, operation, before_coordinate, after_coordinate, channel,
+before_digest, after_digest, before_fact, after_fact
 ```
 
 Common invariants:
 
-- `kind` is always `"audio"`;
+- `kind` is always `"audio_change"`;
 - `relation` is one selected relation name;
-- `stream_index` is `0` for P7-A1 WAV;
-- `coordinate` is either an `AudioCoordinate` object or `null`;
-- `truncated` is boolean and appears on every change.
+- `before_coordinate` and `after_coordinate` are `AudioCoordinate` objects or
+  `null`;
+- detail truncation remains result/change-list metadata after total counts are
+  known; it is not a per-change field.
+
+This amendment extends the accepted operation set with
+`encoded_byte_update`, `encoded_byte_insert`, and `encoded_byte_delete`. It also
+extends `AudioCoordinate` for the `encoded_bytes` relation with `byte_start`
+and `byte_count`. For encoded-byte changes, sample and time coordinate fields
+are `null`.
 
 Operation-specific fields:
 
 | Operation | Required fields | Null fields |
 | --- | --- | --- |
-| `encoded_byte_update` | `coordinate.byte_start`, `coordinate.byte_end`, `before_digest`, `after_digest`, `byte_count` | `fact_name`, `before_value`, `after_value`, `sample_count` |
-| `encoded_byte_insert` | `coordinate.byte_start`, `coordinate.byte_end`, `after_digest`, `byte_count` | `fact_name`, `before_digest`, `before_value`, `after_value`, `sample_count` |
-| `encoded_byte_delete` | `coordinate.byte_start`, `coordinate.byte_end`, `before_digest`, `byte_count` | `fact_name`, `after_digest`, `before_value`, `after_value`, `sample_count` |
-| `sample_update` | `coordinate.sample_index`, `before_digest`, `after_digest`, `sample_count` | `fact_name`, `before_value`, `after_value`, `byte_count` |
-| `format_update`, `channel_update`, `timing_update`, `metadata_update` | `fact_name`, `before_value`, `after_value` | `before_digest`, `after_digest`, `byte_count`, `sample_count` |
+| `encoded_byte_update` | `before_coordinate.byte_start`, `before_coordinate.byte_count`, `after_coordinate.byte_start`, `after_coordinate.byte_count`, `before_digest`, `after_digest` | `before_fact`, `after_fact` |
+| `encoded_byte_insert` | `after_coordinate.byte_start`, `after_coordinate.byte_count`, `after_digest` | `before_coordinate`, `before_digest`, `before_fact`, `after_fact` |
+| `encoded_byte_delete` | `before_coordinate.byte_start`, `before_coordinate.byte_count`, `before_digest` | `after_coordinate`, `after_digest`, `before_fact`, `after_fact` |
+| `sample_update` | `before_coordinate.sample_start`, `after_coordinate.sample_start`, `before_digest`, `after_digest` | `before_fact`, `after_fact` |
+| `format_update`, `channel_update`, `timing_update`, `metadata_update` | `before_fact`, `after_fact` | digests unless the fact update also carries a bounded affected interval |
 
 The `ChangeSet` remains homogeneous: it contains `AudioChange` values only for
 audio results. Relation-level association is recorded in
@@ -207,9 +229,9 @@ code=capability_unavailable
 
 Malformed bytes that prevent opening or bounded snapshot reads fail at
 `sourcing`. Malformed RIFF/WAV headers or chunk structure proven by the
-resolving probe fail as `failed/resolving/media_header_invalid`. Malformed
-sample payload discovered only after decode starts fails as
-`failed/decoding/decode_error`.
+resolving probe fail as `failed/resolving/decode_error`; this uses the existing
+problem code at the stage that proved the malformed media. Malformed sample
+payload discovered only after decode starts fails as `failed/decoding/decode_error`.
 After decode starts, fallback to bytes, another backend, another profile, or a
 perceptual relation is forbidden.
 
@@ -232,10 +254,12 @@ treated as backend-only metadata.
 ## Grouping, coordinates, digests, facts, and IDs
 
 Changes are grouped by relation, stream index, operation, then coordinate.
-Ordering is stable and ascending. `AudioCoordinate.sample_index` is zero-based
-within the selected decoded stream after deinterleaving, before any alignment
-other than `sample_index`. `AudioCoordinate.byte_start` and `byte_end` are
-absolute half-open byte offsets in the immutable source snapshot.
+Ordering is stable and ascending. `AudioCoordinate.sample_start` is zero-based
+within the selected decoded stream after deinterleaving, and
+`AudioCoordinate.sample_count` records the interval length before any alignment
+other than `sample_index`. `AudioCoordinate.byte_start` and
+`AudioCoordinate.byte_count` identify absolute byte intervals in the immutable
+source snapshot.
 
 Digest algorithm is SHA-256. Digest inputs are byte-exact and use this framing:
 
@@ -275,6 +299,14 @@ Normative vectors:
 | `audio.decoded_samples.v1` | 8 kHz mono signed 16-bit little-endian, one zero sample | `571b0712e3cab0285232543121c61d8d79217483f7800e22636464f8be6641a2` |
 | `audio.fact_set.v1` | `facts=[]` | `a71820ac77a1695045cc22037a58821a619210cfaf2b8ea332a888b1ff276431` |
 
+Vector field order is normative. The encoded vectors use pairs
+`source_length`, then `ranges`; each range is `start`, `end`, `bytes`. The
+decoded vector uses pairs `stream_index=0`, `sample_rate=8000`,
+`channel_count=1`, `channel_labels=[N]`, `sample_format="pcm_s16le"`,
+`signedness="signed"`, `endianness="little"`, `container_bits=16`,
+`valid_bits=16`, `sample_count=1`, `samples=[0x0000]`. The fact vector uses
+only `facts=[]`.
+
 Required first-gate fact order is:
 
 1. `container.form` (unit `tag`)
@@ -305,6 +337,7 @@ Stable identifiers are lowercase ASCII dotted names. The complete P7-A1 set is:
   `audio.policy.encoded_bytes.v1`, `audio.policy.no_hidden_transforms.v1`,
   `audio.policy.no_fallback_after_backend_start.v1`
 - metrics: `audio.samples_changed`, `audio.bytes_changed`,
+  `audio.samples_compared`, `audio.channels_compared`,
   `audio.relation_facts_changed`, `audio.duration_delta`,
   `audio.duration_delta_abs`
 
@@ -323,19 +356,18 @@ invalid.
 P7-A1 reserves these CLI flags:
 
 ```text
-platydiff audio LEFT RIGHT
+platydiff compare --type audio LEFT RIGHT
   --audio-relation decoded_samples
   --audio-backend stdlib_wave_pcm
   --audio-profile p7_a1_wav_pcm
   --audio-stream-index 0
-  --audio-channel-mode all
-  --audio-channel-indices 0,1
-  --audio-output json
+  --format json
 ```
 
-`--audio-channel-indices` is legal only with `--audio-channel-mode indices`.
+`--audio-stream-index` maps to accepted `stream.index`; P7-A1 accepts only `0`.
 `encoded_bytes` is selected by `--audio-relation encoded_bytes`. Waveform,
-spectral, and perceptual relation flags remain rejected until their later gates.
+spectral, perceptual, channel-selection, and non-`sample_index` alignment flags
+remain rejected until their later gates.
 
 Any attempt to route audio through SDK v1.1 plugin comparator flags is rejected
 before plugin discovery or execution with `usage_error/plugin_sdk_modalities`.
@@ -357,7 +389,7 @@ type below explicitly allows null.
 | `relation` | selected relation string |
 | `backend` | backend string |
 | `profile` | profile string |
-| `path_label` | safe source label string |
+| `input_side` | `"before"`, `"after"`, or `"both"` |
 | `byte_offset` | non-negative integer |
 | `chunk_id` | four-byte ASCII chunk ID string |
 | `field` | schema or header field name |
@@ -366,8 +398,8 @@ type below explicitly allows null.
 | `limit_name` | resource limit name |
 | `limit_value` | non-negative integer |
 
-Backend stderr, exception classes, host paths, and arbitrary dictionaries must
-not enter problem details.
+Backend stderr, exception classes, host paths, source filenames, safe labels,
+and arbitrary dictionaries must not enter problem details.
 
 ## Migration and compatibility impact
 
@@ -403,8 +435,8 @@ duration determinism, CLI rejection, and stable problem detail objects.
 3. Should WAVE_FORMAT_EXTENSIBLE valid bits smaller than container bits compare
    stored container bits exactly, as proposed, or mask unused bits before sample
    comparison?
-4. Should the CLI command be `platydiff audio`, or should it remain under the
-   existing compare command with `--kind audio`?
+4. Should P7-A1 expose a dedicated convenience command later, or keep only the
+   repository convention `platydiff compare --type audio`?
 5. What schema successor number should the separate cross-RFC predecessor
    resolution assign to audio after reconciling RFC 0006, RFC 0008, and
    implemented schema-v3 closed unions?

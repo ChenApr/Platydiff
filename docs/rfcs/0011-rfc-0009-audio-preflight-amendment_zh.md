@@ -45,13 +45,13 @@ schema-v6 reader 在比较前插入 default；omitted field 只有在等同于�
 
 ### `AudioStreamSelection`
 
+本 amendment 收紧已接受的 RFC 0009 `AudioStreamSelection` shape；它不以另一组字段取代既有 shape。
+
 Key order 与 default：
 
 | Key | Type | Default | Rule |
 | --- | --- | --- | --- |
-| `stream_index` | 非负 integer | `0` | P7-A1 WAV 正好只有一个 stream；仅支持 `0`。非零值在 source inspection 前作为 invalid intent 拒绝。 |
-| `channel_mode` | `"all"` 或 `"indices"` | `"all"` | `"all"` 按文件顺序选择所有 decoded channel。 |
-| `channel_indices` | 非负 integer tuple | `[]` | `channel_mode="all"` 时必须为空；`"indices"` 时必须非空、唯一且升序。 |
+| `index` | integer 或 null | `null` | 保留 RFC 0009 `stream.index`。P7-A1 WAV 正好只有一个 stream；`null` 与 `0` 选择该 stream，非零值在 source inspection 前作为 invalid intent 拒绝。 |
 | `require_channel_labels` | boolean | `false` | 为 true 时，missing 或 unknown source channel label 在 header fact 可证明时于 `resolving` 失败；若只有 decode 开始后才能证明，则于 `decoding` 失败。 |
 
 ### `AudioDecodeOptions`
@@ -62,9 +62,21 @@ Key order 与 default：
 | --- | --- | --- | --- |
 | `backend` | string | `"stdlib_wave_pcm"` | P7-A1 唯一 backend。 |
 | `profile` | string | `"p7_a1_wav_pcm"` | 选择下文有界 WAV/PCM profile。 |
+| `sample_representation` | string | `"native_pcm_integer"` | 保留 RFC 0009 `decode.sample_representation`；exact equality 不包含 integer-to-float conversion。 |
 | `unsupported_profile` | `"unavailable"` | `"unavailable"` | valid-but-unsupported profile 产生 `unavailable/capability_unavailable`。 |
-| `preserve_integer_width` | boolean | `true` | Decoded sample 保留 signedness、container width 与 valid-bit fact。 |
 | `max_probe_bytes` | 非负 integer | `65536` | resolving-stage profile probe 的上限。 |
+
+### `AudioAlignmentOptions`
+
+本 amendment 保留 RFC 0009 独立的 `AudioAlignmentOptions` object。P7-A1 default 保持：
+
+| Key | Type | Default | Rule |
+| --- | --- | --- | --- |
+| `mode` | string | `"sample_index"` | P7-A1 只启用 `sample_index`。 |
+| `fixed_offset_samples` | integer | `0` | 保留到 P7-A2。 |
+| `max_search_offset_samples` | 非负 integer | `0` | 保留到 P7-A2。 |
+| `max_drift_ppm` | finite JSON number | `0.0` | 保留到 P7-A2。 |
+| `ambiguity_margin_samples` | 非负 integer | `0` | 保留到 P7-A2。 |
 
 ### `AudioWaveformOptions`
 
@@ -108,35 +120,37 @@ Key order 与 default：
 `encoded_bytes` 仍是 audio relation。它使用 homogeneous `AudioChange`，其中
 `operation="encoded_byte_update"`、`operation="encoded_byte_insert"` 或
 `operation="encoded_byte_delete"`。Coordinate 使用 source snapshot 中的 absolute byte offset，
-不是 decoded sample coordinate。Payload 携带 `before_digest`、`after_digest`、`byte_start`、
-`byte_end` 与 `byte_count`。除非后续 artifact/source-disclosure RFC 明确授权，否则绝不序列化 raw
-source byte 或 bounded byte snippet。
+不是 decoded sample coordinate。Payload 携带 digest；byte interval 由
+`AudioCoordinate.byte_start` 与 `AudioCoordinate.byte_count` 表示。除非后续
+artifact/source-disclosure RFC 明确授权，否则绝不序列化 raw source byte 或 bounded byte snippet。
 
-`AudioChange` 是 closed object，key order 为：
+`AudioChange` 保留已接受的 RFC 0009 shape，并且是 closed object，key order 为：
 
 ```text
-kind, relation, operation, stream_index, coordinate, fact_name,
-before_digest, after_digest, before_value, after_value, byte_count,
-sample_count, truncated
+kind, relation, operation, before_coordinate, after_coordinate, channel,
+before_digest, after_digest, before_fact, after_fact
 ```
 
 共同 invariant：
 
-- `kind` 始终为 `"audio"`；
+- `kind` 始终为 `"audio_change"`；
 - `relation` 是一个 selected relation name；
-- P7-A1 WAV 的 `stream_index` 为 `0`；
-- `coordinate` 是 `AudioCoordinate` object 或 `null`；
-- `truncated` 是 boolean，并出现在每个 change 上。
+- `before_coordinate` 与 `after_coordinate` 是 `AudioCoordinate` object 或 `null`；
+- detail truncation 仍是 total count 已知后的 result/change-list metadata；它不是 per-change field。
+
+本 amendment 将 `encoded_byte_update`、`encoded_byte_insert` 与 `encoded_byte_delete` 加入已接受的
+operation set。它还为 `encoded_bytes` relation 扩展 `AudioCoordinate`，加入 `byte_start` 与
+`byte_count`。对于 encoded-byte change，sample 与 time coordinate field 为 `null`。
 
 Operation-specific field：
 
 | Operation | Required fields | Null fields |
 | --- | --- | --- |
-| `encoded_byte_update` | `coordinate.byte_start`、`coordinate.byte_end`、`before_digest`、`after_digest`、`byte_count` | `fact_name`、`before_value`、`after_value`、`sample_count` |
-| `encoded_byte_insert` | `coordinate.byte_start`、`coordinate.byte_end`、`after_digest`、`byte_count` | `fact_name`、`before_digest`、`before_value`、`after_value`、`sample_count` |
-| `encoded_byte_delete` | `coordinate.byte_start`、`coordinate.byte_end`、`before_digest`、`byte_count` | `fact_name`、`after_digest`、`before_value`、`after_value`、`sample_count` |
-| `sample_update` | `coordinate.sample_index`、`before_digest`、`after_digest`、`sample_count` | `fact_name`、`before_value`、`after_value`、`byte_count` |
-| `format_update`、`channel_update`、`timing_update`、`metadata_update` | `fact_name`、`before_value`、`after_value` | `before_digest`、`after_digest`、`byte_count`、`sample_count` |
+| `encoded_byte_update` | `before_coordinate.byte_start`、`before_coordinate.byte_count`、`after_coordinate.byte_start`、`after_coordinate.byte_count`、`before_digest`、`after_digest` | `before_fact`、`after_fact` |
+| `encoded_byte_insert` | `after_coordinate.byte_start`、`after_coordinate.byte_count`、`after_digest` | `before_coordinate`、`before_digest`、`before_fact`、`after_fact` |
+| `encoded_byte_delete` | `before_coordinate.byte_start`、`before_coordinate.byte_count`、`before_digest` | `after_coordinate`、`after_digest`、`before_fact`、`after_fact` |
+| `sample_update` | `before_coordinate.sample_start`、`after_coordinate.sample_start`、`before_digest`、`after_digest` | `before_fact`、`after_fact` |
+| `format_update`、`channel_update`、`timing_update`、`metadata_update` | `before_fact`、`after_fact` | 除非该 fact update 也携带 bounded affected interval，否则 digest 为 null |
 
 `ChangeSet` 保持 homogeneous：audio result 只包含 `AudioChange`。Relation-level association 记录在
 `DiffResult.media_evaluations`：每个 `MediaViewEvaluation` 列出 relation、selector、
@@ -189,7 +203,8 @@ code=capability_unavailable
 
 无法打开 source 或有界 snapshot read 失败的 malformed byte 在 `sourcing` 失败。Resolving probe
 证明的 malformed RIFF/WAV header 或 chunk structure 返回
-`failed/resolving/media_header_invalid`。只有 decode 开始后才发现的 malformed sample payload 返回
+`failed/resolving/decode_error`，即在证明 malformed media 的真实 stage 使用既有 problem code。
+只有 decode 开始后才发现的 malformed sample payload 返回
 `failed/decoding/decode_error`。Decode 开始后，禁止 fallback 到 bytes、另一 backend、另一 profile
 或 perceptual relation。
 
@@ -209,9 +224,10 @@ Absence 不等于 zero。Unknown 不等于 absence。
 ## Grouping、coordinate、digest、fact 与 ID
 
 Change 按 relation、stream index、operation、coordinate 分组。Ordering 稳定且升序。
-`AudioCoordinate.sample_index` 是 selected decoded stream 中 deinterleave 后的 zero-based index，
-位于除 `sample_index` 外任何 alignment 之前。`AudioCoordinate.byte_start` 和 `byte_end` 是 immutable
-source snapshot 中的 absolute half-open byte offset。
+`AudioCoordinate.sample_start` 在 selected decoded stream 内、deinterleaving 后使用 zero-based
+index，`AudioCoordinate.sample_count` 记录任何非 `sample_index` alignment 前的 interval length。
+`AudioCoordinate.byte_start` 与 `AudioCoordinate.byte_count` 标识 immutable source snapshot
+中的 absolute byte interval。
 
 Digest algorithm 是 SHA-256。Digest input 是 byte-exact，并使用以下 framing：
 
@@ -248,6 +264,13 @@ Normative vector：
 | `audio.decoded_samples.v1` | 8 kHz mono signed 16-bit little-endian，one zero sample | `571b0712e3cab0285232543121c61d8d79217483f7800e22636464f8be6641a2` |
 | `audio.fact_set.v1` | `facts=[]` | `a71820ac77a1695045cc22037a58821a619210cfaf2b8ea332a888b1ff276431` |
 
+Vector field order 是 normative。Encoded vector 使用 pair 顺序 `source_length`，然后 `ranges`；
+每个 range 是 `start`、`end`、`bytes`。Decoded vector 使用 pair：
+`stream_index=0`、`sample_rate=8000`、`channel_count=1`、`channel_labels=[N]`、
+`sample_format="pcm_s16le"`、`signedness="signed"`、`endianness="little"`、
+`container_bits=16`、`valid_bits=16`、`sample_count=1`、`samples=[0x0000]`。
+Fact vector 只使用 `facts=[]`。
+
 首批门禁要求的 fact order 是：
 
 1. `container.form`（unit `tag`）
@@ -278,6 +301,7 @@ Stable identifier 使用 lowercase ASCII dotted name。完整 P7-A1 set 为：
   `audio.policy.encoded_bytes.v1`、`audio.policy.no_hidden_transforms.v1`、
   `audio.policy.no_fallback_after_backend_start.v1`
 - metrics：`audio.samples_changed`、`audio.bytes_changed`、
+  `audio.samples_compared`、`audio.channels_compared`、
   `audio.relation_facts_changed`、`audio.duration_delta`、
   `audio.duration_delta_abs`
 
@@ -294,19 +318,17 @@ platform-specific float string 都非法。
 P7-A1 预留以下 CLI flag：
 
 ```text
-platydiff audio LEFT RIGHT
+platydiff compare --type audio LEFT RIGHT
   --audio-relation decoded_samples
   --audio-backend stdlib_wave_pcm
   --audio-profile p7_a1_wav_pcm
   --audio-stream-index 0
-  --audio-channel-mode all
-  --audio-channel-indices 0,1
-  --audio-output json
+  --format json
 ```
 
-`--audio-channel-indices` 只有与 `--audio-channel-mode indices` 同时使用时合法。`encoded_bytes`
-通过 `--audio-relation encoded_bytes` 选择。Waveform、spectral 与 perceptual relation flag 在后续
-gate 前继续被拒绝。
+`--audio-stream-index` 映射到已接受的 `stream.index`；P7-A1 只接受 `0`。`encoded_bytes`
+通过 `--audio-relation encoded_bytes` 选择。Waveform、spectral、perceptual、channel-selection
+以及非 `sample_index` alignment flag 在后续 gate 前继续被拒绝。
 
 任何通过 SDK v1.1 plugin comparator flag 路由 audio 的尝试，都必须在 plugin discovery 或 execution
 前以 `usage_error/plugin_sdk_modalities` 拒绝。错误必须说明 SDK v1.1 只支持 text/binary，media plugin
@@ -326,7 +348,7 @@ type 明确允许 null，否则不得填入 `null`。
 | `relation` | selected relation string |
 | `backend` | backend string |
 | `profile` | profile string |
-| `path_label` | safe source label string |
+| `input_side` | `"before"`、`"after"` 或 `"both"` |
 | `byte_offset` | 非负 integer |
 | `chunk_id` | 四字节 ASCII chunk ID string |
 | `field` | schema 或 header field name |
@@ -335,7 +357,8 @@ type 明确允许 null，否则不得填入 `null`。
 | `limit_name` | resource limit name |
 | `limit_value` | 非负 integer |
 
-Backend stderr、exception class、host path 和 arbitrary dictionary 不得进入 problem detail。
+Backend stderr、exception class、host path、source filename、safe label 和 arbitrary dictionary
+不得进入 problem detail。
 
 ## Migration 与 compatibility impact
 
@@ -368,6 +391,7 @@ detail object。
    chunk-boundary fact？
 3. WAVE_FORMAT_EXTENSIBLE 的 valid bits 小于 container bits 时，是否如本文提议一样精确比较 stored
    container bit，还是在 sample comparison 前 mask unused bit？
-4. CLI command 应为 `platydiff audio`，还是保留在既有 compare command 下使用 `--kind audio`？
+4. P7-A1 后续是否需要专用 convenience command，还是只保留仓库约定
+   `platydiff compare --type audio`？
 5. 单独的 cross-RFC predecessor resolution 在协调 RFC 0006、RFC 0008 和已实现 schema-v3 closed
    union 后，应为 audio 分配哪个 schema successor number？
