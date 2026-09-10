@@ -7,22 +7,26 @@
 - Accepted: 2026-09-10
 - Amends: [RFC 0009](0009-audio-and-video-comparison.md)
 - Approved decisions: P7A-AM1 through P7A-AM10; P7A-W1 through P7A-W5
-- Prerequisites: accepted RFC 0010 Option A/SP1-SP6 and actual P4-C1 -> v4 -> v5 predecessor merges
+- Prerequisites: accepted RFC 0010 Option A/SP1-SP6 and actual P4-C1, P5-A1/schema-v4, P6-C0/schema-v5, and RFC 0011 merges
+- Conditional implementation authorization: recorded for coordinator dispatch only after all actual predecessors merge
 - Owners: Platydiff maintainers
-- Implementation owner: unassigned pending separate implementation authorization
+- Implementation owner: coordinator-dispatched after all actual predecessor merges
 
 ## Summary and authorization boundary
 
 This RFC accepts a contract amendment to RFC 0009 for P7-A1 audio
-implementation preflight blockers. Acceptance does not authorize code,
-dependency changes, FFmpeg, artifacts, UI, SDK v2, automatic media detection,
-video implementation, or independent schema renumbering.
+implementation preflight blockers. RFC acceptance itself does not start code;
+conditional human authorization is recorded for coordinator-dispatched P7-A1
+implementation after all actual predecessors merge. Acceptance does not
+authorize dependency changes, FFmpeg, artifacts, UI, SDK v2, automatic media
+detection, video implementation, or independent schema renumbering.
 
 The amendment preserves all RFC 0009 predecessor gates and defers global schema
 numbering to RFC 0010 Option A/SP1-SP6. Audio remains schema v6 only if RFC
-0010 Option A/SP1-SP6 is accepted first and the P4-C1 -> v4 -> v5 predecessors
-actually merge. P4-A1 JSON/schema-v3 must be revalidated from current `main`,
-and P7-A1 code remains blocked until the predecessor implementations and
+0010 Option A/SP1-SP6 is accepted first and the P4-C1, P5-A1/schema-v4,
+P6-C0/schema-v5, and RFC 0011 predecessors actually merge. P4-A1
+JSON/schema-v3 must be revalidated from current `main`, and P7-A1 remains
+gated until coordinator dispatch after the predecessor implementations and
 compatibility fixtures are available. Video remains roadmap-only and waits for
 a separate backend/worker amendment and the next schema successor.
 
@@ -42,12 +46,12 @@ and authorization boundary above.
 | P7A-AM7 | Freeze duration and timebase binary64 determinism while preserving exact rational facts. | Allow platform-dependent float formatting or extended precision. |
 | P7A-AM8 | Freeze first-gate CLI flags and require SDK-v1 plugin audio flags to be rejected before plugin execution. | Let generic plugin or media flags reach SDK v1.1 hosts. |
 | P7A-AM9 | Freeze stable problem detail keys, value types, ordering, and omission rules for P7-A1 failures. | Pass through backend-specific detail dictionaries. |
-| P7A-AM10 | Keep audio schema v6 conditional on approved RFC 0010 Option A/SP1-SP6 and the actual P4-C1 -> v4 -> v5 predecessor merges. | Resolve cross-RFC closed-union numbering inside this audio-specific amendment. |
+| P7A-AM10 | Keep audio schema v6 conditional on approved RFC 0010 Option A/SP1-SP6 and the actual P4-C1, P5-A1/schema-v4, P6-C0/schema-v5, and RFC 0011 predecessor merges. | Resolve cross-RFC closed-union numbering inside this audio-specific amendment. |
 | P7A-W1 | Keep classic PCM `fmt ` chunk size 16 as the only P7-A1 decodable classic PCM form; valid size-18 chunks with `cbSize=0` are valid but unsupported. | Accept size-18 classic PCM as equivalent to size 16. |
 | P7A-W2 | Keep multiple `data` chunks valid but unsupported for P7-A1. | Concatenate multiple `data` chunks and add explicit chunk-boundary facts. |
 | P7A-W3 | For WAVE_FORMAT_EXTENSIBLE with `valid_bits < container_bits`, require profile-mandated unused padding bits to be zero, retain valid-bits and container-bits facts, and compare the validated stored integer representation exactly with no hidden masking; non-zero padding bits are malformed. | Mask unused bits before sample comparison. |
 | P7A-W4 | Expose both `platydiff audio` and `platydiff compare --type audio`; both construct the same `CompareSpec` and execute the same comparison path, consistent with other built-ins. | Keep only the generic compare command. |
-| P7A-W5 | Retain audio schema v6 only if RFC 0010 Option A/SP1-SP6 is accepted and the P4-C1 to v4 to v5 predecessors actually merge. | Assign audio v6 independently inside this amendment. |
+| P7A-W5 | Retain audio schema v6 only if RFC 0010 Option A/SP1-SP6 is accepted and the P4-C1, P5-A1/schema-v4, P6-C0/schema-v5, and RFC 0011 predecessors actually merge. | Assign audio v6 independently inside this amendment. |
 
 ## Wire shapes and parsing rules
 
@@ -425,9 +429,11 @@ and arbitrary dictionaries must not enter problem details.
 This accepted amendment updates RFC 0009 before P7-A1 code starts. It does not
 change schema v1-v5 payloads, does not allocate video schema membership, does
 not independently choose the audio successor number, and does not authorize
-implementation. The eventual audio successor fixtures, using schema v6 only
-after RFC 0010 Option A/SP1-SP6 and the P4-C1 -> v4 -> v5 predecessors merge,
-must cover omitted defaults, explicit defaults, unknown-key rejection,
+implementation. RFC acceptance itself does not start code; conditional human
+authorization is recorded, and coordinator dispatch is still required after RFC
+0010, P4-C1, P5-A1/schema-v4, P6-C0/schema-v5, and RFC 0011 actually merge. The
+eventual audio successor fixtures, using schema v6 only after those predecessor
+merges, must cover omitted defaults, explicit defaults, unknown-key rejection,
 encoded-byte changes, unsupported valid WAV profiles, corrupt WAV inputs,
 absent versus unknown facts, duration determinism, CLI rejection, and stable
 problem detail objects.
@@ -449,6 +455,7 @@ problem detail objects.
 ## Human approval record
 
 Approved on 2026-09-10: P7A-AM1 through P7A-AM10 and P7A-W1 through P7A-W5.
-This approval does not start P7-A1 implementation and remains conditional on
-RFC 0010 merging first with Option A/SP1-SP6 plus the actual P4-C1 -> v4 -> v5
-predecessor merges.
+Conditional human authorization for P7-A1 implementation is recorded, but RFC
+acceptance itself does not start code. P7-A1 remains gated and requires
+coordinator dispatch after RFC 0010, P4-C1, P5-A1/schema-v4, P6-C0/schema-v5,
+and RFC 0011 actually merge.

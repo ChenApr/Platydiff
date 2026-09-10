@@ -25,6 +25,6 @@
 | [0007](0007-image-comparison_zh.md) | Accepted | 定义 schema v4 的显式静态 PNG decoded-sample 切片，并延后 perceptual、artifact、plugin 与 detection 工作 |
 | [0008](0008-source-code-and-pdf-comparison_zh.md) | Accepted | 定义显式 source-code 与 PDF 比较契约；仅 P6-C0 gate definition 已接受，P6-C0 实现和后续 gate 都需单独授权 |
 | [0009](0009-audio-and-video-comparison_zh.md) | Accepted | 接受显式 audio 契约和 audio-only schema-v6 allocation；video 契约仅作为 roadmap direction，等待后续 backend/worker amendment 与 successor schema |
-| [0011](0011-rfc-0009-audio-preflight-amendment_zh.md) | Accepted | 修订 RFC 0009，补齐 P7-A1 audio preflight wire contract、WAV/PCM profile rule、CLI/plugin rejection 与 stable failure detail；audio 只有在 RFC 0010 Option A/SP1-SP6 和 P4-C1 -> v4 -> v5 predecessors merge 后才保留 schema v6 |
+| [0011](0011-rfc-0009-audio-preflight-amendment_zh.md) | Accepted | 修订 RFC 0009，补齐 P7-A1 audio preflight wire contract、WAV/PCM profile rule、CLI/plugin rejection 与 stable failure detail；audio 只有在 RFC 0010 Option A/SP1-SP6 和 P4-C1、P5-A1/schema-v4、P6-C0/schema-v5、RFC 0011 predecessors merge 后才保留 schema v6 |
 
 计划中的行为在实现并完成验证前，必须继续明确标记为计划能力。
