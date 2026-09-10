@@ -222,8 +222,8 @@ DiffResult
 
 语法相同不等于运行语义相同。AST 比较需要明确其解析器版本、错误恢复策略和宏/预处理边界。
 
-[RFC 0008](rfcs/0008-source-code-and-pdf-comparison_zh.md) 提议显式源代码比较契约与
-独立授权的 Phase 6 门禁。它仍为 Proposed，不授权实现。
+[RFC 0008](rfcs/0008-source-code-and-pdf-comparison_zh.md) 接受显式源代码比较契约与
+独立授权的 Phase 6 门禁。它仍未实现，写代码前需要单独 gate authorization。
 
 ### 6.4 图片
 
@@ -231,10 +231,10 @@ DiffResult
 
 平移一个像素可能制造大面积差异，因此配准、裁剪和缩放属于独立的对齐阶段，不能隐藏在指标内部。
 
-[RFC 0007](rfcs/0007-image-comparison_zh.md) 提议更窄的首个图片切片：显式、内建地比较
+[RFC 0007](rfcs/0007-image-comparison_zh.md) 接受更窄的首个图片切片：显式、内建地比较
 static 8-bit PNG 的 decoded sample；encoded identity 继续由 binary comparator 负责，且不提供
 隐式 orientation、color、alpha、resize、crop、artifact、plugin 或 detection 行为。该 RFC
-仍为 Proposed，不授权实现。
+仍未实现，写代码前需要单独 gate authorization。
 
 ### 6.5 音频
 
@@ -257,9 +257,9 @@ successor。
 
 PDF 同时包含文本、绘制指令、字体、图片和页面布局。应提供三种可组合视角：提取文本比较、PDF 对象/元数据比较、页面渲染后的图片比较。不同生成器可能产生完全不同的内部对象但视觉页面一致，因此不能只做二进制 Diff。
 
-[RFC 0008](rfcs/0008-source-code-and-pdf-comparison_zh.md) 提议 PDF 的显式 view
-契约：binary、extracted text、objects/metadata 与 rendered pages。它仍为 Proposed，
-不授权实现。
+[RFC 0008](rfcs/0008-source-code-and-pdf-comparison_zh.md) 接受 PDF 的显式 view
+契约：binary、extracted text、objects/metadata 与 rendered pages。它仍未实现，写代码前需要
+单独 gate authorization。
 
 ### 6.8 表格、数组和统计数据
 
@@ -280,10 +280,10 @@ Phase 1 至 Phase 3 包含 Python 包、schema-v1/v2 契约、显式文本、有
 探测、精确二进制比较、CLI、terminal/JSON renderer 与显式 plugin boundary，且仍未
 发布。Phase 4 structured-data 契约已在
 [RFC 0006](rfcs/0006-structured-data-comparison_zh.md) 中接受，但仍未实现且需要单独门禁授权。
-Phase 5 图片契约已在 [RFC 0007](rfcs/0007-image-comparison_zh.md) 中提出；它不构成实现授权，
+Phase 5 图片契约已在 [RFC 0007](rfcs/0007-image-comparison_zh.md) 中接受；它不构成实现授权，
 且必须先重新验证实际合并的 schema-v3 前驱。下列其他模态与 renderer 仍是计划能力。
 Phase 6 source/PDF 契约已在 [RFC 0008](rfcs/0008-source-code-and-pdf-comparison_zh.md)
-中提出；schema-v5 reservation 取决于未来 RFC 0008 amendment 与 acceptance。Phase 7 audio
+中接受；schema-v5 allocation 已接受，但仍需要 implementation 与 compatibility fixture。Phase 7 audio
 契约和 video roadmap direction 已在 [RFC 0009](rfcs/0009-audio-and-video-comparison_zh.md) 中接受；
 它只为 audio 接受 schema v6，video 需等待后续 backend/worker amendment 与下一个 successor。
 它们尚未实现；即使 design 与 backend research 并发推进，public schema merge 也必须遵守前驱顺序。

@@ -227,9 +227,9 @@ plugin-SDK contracts or authorize an implementation gate.
 
 Syntactic equality does not imply runtime semantic equality. AST comparison must state its parser version, error-recovery behavior, and macro or preprocessing boundaries.
 
-[RFC 0008](rfcs/0008-source-code-and-pdf-comparison.md) proposes explicit
+[RFC 0008](rfcs/0008-source-code-and-pdf-comparison.md) accepts explicit
 source-code comparison contracts and independently authorized Phase 6 gates.
-It remains proposed and does not authorize implementation.
+It remains unimplemented and requires separate gate authorization before code.
 
 ### 6.4 Images
 
@@ -237,11 +237,11 @@ In exact mode, both images are decoded to an explicitly selected size, orientati
 
 A one-pixel translation can create a large apparent difference. Registration, cropping, and scaling therefore belong to a separate alignment stage and must never be hidden inside a metric implementation.
 
-[RFC 0007](rfcs/0007-image-comparison.md) proposes a narrower first image
+[RFC 0007](rfcs/0007-image-comparison.md) accepts a narrower first image
 slice: explicit built-in comparison of static 8-bit PNG decoded samples, with
 encoded identity left to the binary comparator and no implicit orientation,
 color, alpha, resize, crop, artifact, plugin, or detection behavior. It remains
-Proposed and does not authorize implementation.
+unimplemented and requires separate gate authorization before code.
 
 ### 6.5 Audio
 
@@ -266,9 +266,9 @@ schema successor before code.
 
 A PDF contains text, drawing instructions, fonts, images, and page layout. The system should provide three composable views: extracted-text comparison, PDF object and metadata comparison, and image comparison of rendered pages. Different generators can create radically different internal objects while producing visually identical pages, so binary diff alone is insufficient.
 
-[RFC 0008](rfcs/0008-source-code-and-pdf-comparison.md) proposes explicit PDF
+[RFC 0008](rfcs/0008-source-code-and-pdf-comparison.md) accepts explicit PDF
 view contracts for binary, extracted text, objects/metadata, and rendered pages.
-It remains proposed and does not authorize implementation.
+It remains unimplemented and requires separate gate authorization before code.
 
 ### 6.8 Tables, arrays, and statistical data
 
@@ -292,12 +292,12 @@ terminal/JSON renderers, and the explicit plugin boundary. They remain
 unreleased. Phase 4 structured-data contracts are accepted in
 [RFC 0006](rfcs/0006-structured-data-comparison.md) but remain unimplemented and
 require separate gate authorization. Every other modality and renderer below is
-planned. Phase 5 image contracts are proposed in
+planned. Phase 5 image contracts are accepted in
 [RFC 0007](rfcs/0007-image-comparison.md); they are not implementation
 authorization and require the actual merged schema-v3 predecessor to be
-revalidated first. Phase 6 source/PDF contracts are proposed in
-[RFC 0008](rfcs/0008-source-code-and-pdf-comparison.md); a schema-v5
-reservation depends on a future RFC 0008 amendment and acceptance. Phase 7
+revalidated first. Phase 6 source/PDF contracts are accepted in
+[RFC 0008](rfcs/0008-source-code-and-pdf-comparison.md); schema-v5 allocation
+is accepted but still requires implementation and compatibility fixtures. Phase 7
 audio contracts and video roadmap direction are accepted in
 [RFC 0009](rfcs/0009-audio-and-video-comparison.md); it accepts schema v6 for
 audio only, while video waits for a later backend/worker amendment and the next
