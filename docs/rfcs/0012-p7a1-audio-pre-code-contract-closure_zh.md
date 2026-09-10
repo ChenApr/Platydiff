@@ -121,16 +121,17 @@ DiffResult.media_evaluations
 DiffResult.audio_facts
 ```
 
-`DiffResult.audio_facts` 是 accepted `AudioFact` record 的 tuple，按以下顺序排序：
+`DiffResult.audio_facts` 出现在每个 schema-v6 completed result 中。它是 accepted
+`AudioFact` record 的 tuple，按以下顺序排序：
 
 ```text
 stream_index, coordinate, name, unit, value_type_rank, value
 ```
 
-它只出现在 schema-v6 audio result 中。Predecessor upgrader 将其设为空 tuple。它在 result level
-携带 relation-significant audio fact，使 equal decoded-sample result 可以暴露 complete fact，而不
-发明 metadata update change。它不得包含 renderer-only label、backend stderr、host path、source
-filename 或 explanatory prose。
+Audio result 用它在 result level 携带 relation-significant audio fact，使 equal decoded-sample
+result 可以暴露 complete fact，而不发明 metadata update change。Non-audio predecessor upgrade
+将其设为空 tuple。它不得包含 renderer-only label、backend stderr、host path、source filename 或
+explanatory prose。
 
 Complete decoded-audio fact 保留 accepted `AudioFact` closed object。RFC 0012 不向
 `AudioFact` 增加 `source`、array 或 nested object。Key order 保持：
@@ -153,17 +154,19 @@ Proposed 名称：`container.endianness`、`format.tag`、`format.extensible`、
 | 4 | `sample_rate` | integer | `Hz` | yes | no | no | `null` | once per selected stream |
 | 5 | `channel_count` | integer | `count` | yes | no | no | `null` | once per selected stream |
 | 6 | `channel_layout` | string | `name` | yes | no | `"unknown"` | `null` | once per selected stream |
-| 7 | `channel_mask` | integer or null | `bitmask` | yes | yes | `"unknown"` | `null` | once per selected stream |
+| 7 | `channel_mask` | integer or null | `bitmask` | yes | yes | no | `null` | once per selected stream |
 | 8 | `sample_format` | string | `name` | yes | no | no | `null` | once per selected stream |
 | 9 | `container_bits_per_sample` | integer | `bits` | yes | no | no | `null` | once per selected stream |
 | 10 | `valid_bits_per_sample` | integer | `bits` | yes | no | no | `null` | once per selected stream |
 | 11 | `sample_count_per_channel` | integer | `samples` | yes | no | no | `null` | once per selected stream |
-| 12 | `duration_seconds` | string rational or finite number | `s` | yes | no | no | `null` | once per selected stream |
-| 13 | `timestamp_status` | string | `name` | yes | no | `"unknown"` | `null` | once per selected stream |
-| 14 | `encoder_delay_status` | string | `name` | yes | no | `"unknown"` | `null` | once per selected stream |
-| 15 | `encoder_padding_status` | string | `name` | yes | no | `"unknown"` | `null` | once per selected stream |
+| 12 | `duration_numerator` | integer | `samples` | yes | no | no | `null` | once per selected stream |
+| 13 | `duration_denominator` | integer | `Hz` | yes | no | no | `null` | once per selected stream |
+| 14 | `duration_seconds` | finite number | `s` | yes | no | no | `null` | once per selected stream |
+| 15 | `timestamp_status` | string | `name` | yes | no | `"unknown"` | `null` | once per selected stream |
+| 16 | `encoder_delay_status` | string | `name` | yes | no | `"unknown"` | `null` | once per selected stream |
+| 17 | `encoder_padding_status` | string | `name` | yes | no | `"unknown"` | `null` | once per selected stream |
 
-Complete decoded-sample equality 必须为 selected stream 携带全部 15 条 record。`AudioFact`
+Complete decoded-sample equality 必须为 selected stream 携带全部 17 条 record。`AudioFact`
 仍是 accepted closed shape：`name`、`value`、`unit`、`stream_index` 和 `coordinate`；P7-A1
 fact 不允许 source field、array 或 nested value。Fact 由 `(stream_index, coordinate, name)`
 唯一标识。排序先按上表 registry order，再按 `stream_index`、coordinate、unit、value type
@@ -171,6 +174,11 @@ rank 与 value。Value ordering 在 accepted value type 之间是 total order：
 （`false` 在 `true` 前）、integer、finite number、非 `"unknown"` 的 string，最后是 string
 `"unknown"`。Integer 与 finite number 在各自 type 内按 exact numeric value 比较；string 使用
 Unicode scalar lexical order。该顺序只用于 deterministic serialization，不改变 relation semantic。
+
+RFC 0012 保留 RFC 0011 duration recording：`duration_numerator`、
+`duration_denominator` 与 binary64 `duration_seconds` 是分离 fact。`duration_seconds` 是
+`duration_numerator / duration_denominator` 的 IEEE-754 binary64 nearest-even 值，并序列化为可
+round-trip 到同一 binary64 的 shortest decimal。
 
 Predecessor v1-v5 upgrader 必须添加 `DiffResult.completeness`、
 `DiffResult.media_evaluations` 和 `DiffResult.audio_facts`。对于 non-audio 或 pre-media result，
@@ -213,8 +221,9 @@ completed/truncated result，`returned_count=0`、`omitted_count=total_count`；
 
 Canonical change payload byte 使用 UTF-8 JSON 计算：object key 排序、无 insignificant
 whitespace、digest 为 lowercase hex，并使用插入 null field 后的 wire-visible `AudioChange`
-object。Payload accounting 只统计 retained whole change object 及其 enclosing array separator；
-绝不在单个 change item 内截断。
+object。对于包含 `n` 个 complete change 的 retained prefix，且每个 encoded byte length 为 `b_i`，
+array payload byte count 为 `2 + sum(b_i) + max(n - 1, 0)`：`[` 与 `]` byte、每个 retained
+item，以及相邻 item 之间的一个 comma byte。Payload accounting 绝不在单个 change item 内截断。
 
 对于 `decoded_samples`，sample change 按以下字段相同的 maximal continuous run 分组：
 
@@ -304,8 +313,8 @@ object，除非后续 RFC 删除 field，否则以 accepted RFC 0009/RFC 0011 mo
 | `max_temp_bytes` | temporary file bytes | comparison | `536870912` |
 | `max_materialized_bytes` | host-owned snapshot and materialized bytes | comparison | `536870912` |
 | `max_compare_work` | abstract comparison work units | comparison | `10000000` |
-| `max_change_items` | producer-emitted change items | relation | `10000` |
-| `max_change_payload_bytes` | producer-emitted change payload bytes | relation | `4194304` |
+| `max_change_items` | producer-emitted change items across completed result | comparison | `10000` |
+| `max_change_payload_bytes` | producer-emitted change payload bytes across completed result | comparison | `4194304` |
 
 Deterministic counter rule：
 
@@ -323,13 +332,13 @@ Deterministic counter rule：
 | `max_metadata_entries` | 插入前统计单个 input retained metadata entry。 | `resolving` 或 `decoding` | `resource_limit_exceeded` | 任何 retained metadata entry 都失败 |
 | `max_metadata_value_bytes` | retain metadata value 前统计单个 metadata value 的 byte 数。 | `resolving` 或 `decoding` | `resource_limit_exceeded` | 任何 non-empty metadata value 都失败 |
 | `max_spectral_cells` | materialize spectral block 前累加 generated spectral cell。 | `normalizing` 或 `comparing` | `compare_resource_limit` | spectral relation 在生成 cell 前失败 |
-| `max_backend_seconds` | backend start 前与每次 bounded backend wait 后检查 monotonic elapsed backend seconds。 | backend execution stage | `resource_limit_exceeded` | 无 backend runtime budget；若需要 backend，则 backend start 前失败 |
+| `max_backend_seconds` | backend start 前与每次 bounded backend wait 后检查 monotonic elapsed backend nanoseconds；serialized seconds 为 elapsed nanoseconds 除以 1,000,000,000 后向上取整的 integer。 | backend execution stage | `resource_limit_exceeded` | 无 backend runtime budget；若需要 backend，则 backend start 前失败 |
 | `max_stdout_stderr_bytes` | append capture buffer 前累加 captured backend stdout/stderr bytes。 | backend execution stage | `resource_limit_exceeded` | 任何 captured byte 都失败 |
 | `max_temp_bytes` | create 或 extend temp data 前累加 temporary bytes。 | 创建 temp data 的任意 stage | `resource_limit_exceeded` | 任何 temp byte 都失败 |
 | `max_materialized_bytes` | retain materialized data 前累加 host-owned snapshot 与 materialized bytes。 | `sourcing` 或 materialization stage | `resource_limit_exceeded` | 任何 materialized byte 都失败 |
-| `max_compare_work` | 每个 comparison work batch 前累加 deterministic relation work units。 | `comparing` | `compare_resource_limit` | 只有 zero-work comparison 可以完成 |
-| `max_change_items` | relation 与 total count 已知后，统计 selected for result detail 的 grouped changes。 | `aggregating` | `compare_resource_limit` | 计算 relation 与 total count，然后 emit truncated empty change list |
-| `max_change_payload_bytes` | append complete change item 前统计 serialized built-in change payload bytes。 | `aggregating` | `compare_resource_limit` | relation 与 total count 已知后省略 payload-bearing change |
+| `max_compare_work` | 每个 comparison work batch 前累加 deterministic relation work unit。Encoded bytes 使用下文 byte-work table；decoded samples 每个 compared sample-channel position 为一个 work unit。 | `comparing` | `compare_resource_limit` | 只有 zero-work comparison 可以完成 |
+| `max_change_items` | 所有 selected relation count 已知后，统计 whole completed result 中的 grouped changes。 | `aggregating` | completed/truncated result, not a problem code | 计算 relation 与 total count；`total_count>0` 时 emit truncated empty change list；`total_count=0` 时保持 complete |
+| `max_change_payload_bytes` | append 每个 complete change item 前统计 canonical result `changes.items` JSON array payload bytes。 | `aggregating` | completed/truncated result, not a problem code | 计算 relation 与 total count；`total_count>0` 时省略 payload-bearing change；`total_count=0` 时保持 complete |
 
 `max_compare_work=0` 只允许可以用 zero relation work 完成的 comparison：identical empty encoded-byte
 input，或 relation work 开始前的 metadata-only failure。`max_packets=0` 禁止读取任何 packet 或
@@ -449,7 +458,6 @@ Optional key 在 unavailable 时省略；除非 type 明确包含 `null`，否�
 | --- | --- |
 | `stage` | canonical lifecycle stage string |
 | `code` | stable problem code string |
-| `message` | 仅当 outer problem model 为兼容性要求 mirror 时为 human-readable string；新的 schema-v6 details 省略它 |
 | `media_kind` | `"audio"` |
 | `relation` | selected relation string |
 | `backend` | backend string |
@@ -458,7 +466,7 @@ Optional key 在 unavailable 时省略；除非 type 明确包含 `null`，否�
 | `byte_offset` | non-negative integer |
 | `chunk_id` | four-byte ASCII chunk ID string |
 | `field` | schema 或 header field name |
-| `value_kind` | JSON value kind string |
+| `value_kind` | `"string"`、`"integer"`、`"finite_number"`、`"boolean"`、`"null"` 或 `"array"` |
 | `expected` | string、finite number、boolean，或这些 primitive value 的 array |
 | `actual` | string、finite number、boolean，或这些 primitive value 的 array |
 | `limit_name` | accepted resource limit name |
@@ -477,7 +485,7 @@ Detail value 不得包含 backend stderr、exception class name、host path、so
 这些 vector 是 acceptance test 的 normative example。它们是 default insertion 之后、任何
 producer-side result-detail truncation 之前的完整 schema-v6 outcome envelope。PC-F 是 explicit
 predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaulted media field，且
-不推断 audio fact。
+不推断 audio fact。PC-G 到 PC-I 冻结 canonical detail-limit truncation behavior。
 
 ### Vector PC-A： equal empty encoded bytes
 
@@ -550,11 +558,11 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
     "attempts": [
       {
         "capability_id": "builtin.audio",
-        "backend_id": "stdlib_wave_pcm",
+        "backend_id": null,
         "disposition": "selected",
         "reason_code": null,
         "capability_version": "1",
-        "backend_version": "stdlib_wave_pcm.p7_a1",
+        "backend_version": null,
         "provider": null
       }
     ],
@@ -738,7 +746,7 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
 }
 ```
 
-### Vector PC-B： one continuous sample update
+### Vector PC-B： one continuous sample update from real WAV payloads
 
 ```json
 {
@@ -856,8 +864,8 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
             "time_duration_seconds": null
           },
           "channel": 0,
-          "before_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-          "after_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
+          "before_digest": "sha256:e10fcab70a6455011b76f60e9774b33ed52c4aa9ef51e2c4a1cfcda3003c29f1",
+          "after_digest": "sha256:e493bc94d15fc37e05153d7b7649ab038d8e88a5e81e040c8878a36e11dc3b4f",
           "before_fact": null,
           "after_fact": null
         }
@@ -878,6 +886,26 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
         },
         "unit": "samples",
         "direction": "lower_is_better",
+        "aggregation": "count"
+      },
+      {
+        "name": "audio.samples_compared",
+        "value": {
+          "kind": "finite",
+          "value": 13
+        },
+        "unit": "samples",
+        "direction": "neutral",
+        "aggregation": "count"
+      },
+      {
+        "name": "audio.channels_compared",
+        "value": {
+          "kind": "finite",
+          "value": 1
+        },
+        "unit": "channels",
+        "direction": "neutral",
         "aggregation": "count"
       }
     ],
@@ -903,15 +931,15 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
         {
           "role": "before",
           "source_kind": "bytes",
-          "size_bytes": 52,
-          "sha256": "0000000000000000000000000000000000000000000000000000000000000101",
+          "size_bytes": 70,
+          "sha256": "832bba329af2eaf85edb3c0453e172af87c206d1cb956026b450bb8feb413481",
           "label": null
         },
         {
           "role": "after",
           "source_kind": "bytes",
-          "size_bytes": 52,
-          "sha256": "0000000000000000000000000000000000000000000000000000000000000102",
+          "size_bytes": 70,
+          "sha256": "dfd8c66124c26c5754bb84896fc764a21ab5d1aacd93c95eb1684943edd96c71",
           "label": null
         }
       ],
@@ -1005,9 +1033,14 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
       "seeds": [],
       "resources": [
         {
+          "name": "max_compare_work",
+          "limit": 10000000,
+          "used": 13
+        },
+        {
           "name": "max_total_decoded_bytes",
           "limit": 536870912,
-          "used": 6
+          "used": 52
         }
       ],
       "provider": null,
@@ -1023,12 +1056,17 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
         "fidelity": "full",
         "completeness": "complete",
         "metric_names": [
-          "audio.samples_changed"
+          "audio.channels_compared",
+          "audio.samples_changed",
+          "audio.samples_compared"
         ],
         "policy_rule_ids": [
           "audio.policy.exact_decoded_samples.v1"
         ],
-        "transformation_ids": [],
+        "transformation_ids": [
+          "audio.decode.stdlib_wave_pcm.v1",
+          "audio.align.sample_index.v1"
+        ],
         "warning_codes": [],
         "change_count": 1,
         "failure_stage": null,
@@ -1111,11 +1149,11 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
     "attempts": [
       {
         "capability_id": "builtin.audio",
-        "backend_id": "stdlib_wave_pcm",
+        "backend_id": null,
         "disposition": "selected",
         "reason_code": null,
         "capability_version": "1",
-        "backend_version": "stdlib_wave_pcm.p7_a1",
+        "backend_version": null,
         "provider": null
       }
     ],
@@ -1399,7 +1437,7 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
 }
 ```
 
-### Vector PC-E： equal decoded facts
+### Vector PC-E： equal decoded facts from one-sample WAV payloads
 
 ```json
 {
@@ -1556,14 +1594,14 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
           "role": "before",
           "source_kind": "bytes",
           "size_bytes": 46,
-          "sha256": "0000000000000000000000000000000000000000000000000000000000000301",
+          "sha256": "4aebda3a657a0d8f532d11ceacb1679081d7bdf7d7d301a53f1096af3580be91",
           "label": null
         },
         {
           "role": "after",
           "source_kind": "bytes",
           "size_bytes": 46,
-          "sha256": "0000000000000000000000000000000000000000000000000000000000000301",
+          "sha256": "4aebda3a657a0d8f532d11ceacb1679081d7bdf7d7d301a53f1096af3580be91",
           "label": null
         }
       ],
@@ -1657,9 +1695,14 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
       "seeds": [],
       "resources": [
         {
+          "name": "max_compare_work",
+          "limit": 10000000,
+          "used": 1
+        },
+        {
           "name": "max_total_decoded_bytes",
           "limit": 536870912,
-          "used": 2
+          "used": 4
         }
       ],
       "provider": null,
@@ -1682,7 +1725,10 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
         "policy_rule_ids": [
           "audio.policy.exact_decoded_samples.v1"
         ],
-        "transformation_ids": [],
+        "transformation_ids": [
+          "audio.decode.stdlib_wave_pcm.v1",
+          "audio.align.sample_index.v1"
+        ],
         "warning_codes": [],
         "change_count": 0,
         "failure_stage": null,
@@ -1768,8 +1814,22 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
         "coordinate": null
       },
       {
+        "name": "duration_numerator",
+        "value": 1,
+        "unit": "samples",
+        "stream_index": 0,
+        "coordinate": null
+      },
+      {
+        "name": "duration_denominator",
+        "value": 8000,
+        "unit": "Hz",
+        "stream_index": 0,
+        "coordinate": null
+      },
+      {
         "name": "duration_seconds",
-        "value": "1/8000",
+        "value": 0.000125,
         "unit": "s",
         "stream_index": 0,
         "coordinate": null
@@ -1946,6 +2006,874 @@ predecessor upgrade vector：它展示 v1-v5 upgrader 添加的 schema-v6 defaul
       "detector_provider": null
     },
     "media_evaluations": [],
+    "audio_facts": []
+  }
+}
+```
+
+### Vector PC-G： dual-relation item-limit truncation
+
+```json
+{
+  "schema_version": 6,
+  "kind": "completed",
+  "execution": {
+    "started_at": "2026-09-10T00:00:00Z",
+    "finished_at": "2026-09-10T00:00:00Z",
+    "duration_ns": 0,
+    "stages": [
+      {
+        "stage": "validating",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "sourcing",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "resolving",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "decoding",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "normalizing",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "aligning",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "comparing",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "aggregating",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      }
+    ],
+    "attempts": [
+      {
+        "capability_id": "builtin.audio",
+        "backend_id": "stdlib_wave_pcm",
+        "disposition": "selected",
+        "reason_code": null,
+        "capability_version": "1",
+        "backend_version": "stdlib_wave_pcm.p7_a1",
+        "provider": null
+      }
+    ],
+    "diagnostics": [
+      {
+        "code": "change_details_truncated",
+        "severity": "warning",
+        "stage": "aggregating",
+        "message": "Change details were truncated.",
+        "details": {
+          "limit_reason": "change_items"
+        }
+      }
+    ],
+    "last_completed_stage": "aggregating",
+    "plugin_host": null
+  },
+  "result": {
+    "relation": "different",
+    "verdict": "fail",
+    "fidelity": "full",
+    "completeness": "truncated",
+    "summary": {
+      "change_count": 2,
+      "counts": []
+    },
+    "changes": {
+      "completeness": "truncated",
+      "items": [
+        {
+          "kind": "audio_change",
+          "relation": "encoded_bytes",
+          "operation": "encoded_byte_insert",
+          "before_coordinate": null,
+          "after_coordinate": {
+            "stream_index": null,
+            "channel_index": null,
+            "channel_label": null,
+            "sample_start": null,
+            "sample_count": null,
+            "time_start_seconds": null,
+            "time_duration_seconds": null,
+            "byte_start": 4,
+            "byte_count": 2
+          },
+          "channel": null,
+          "before_digest": null,
+          "after_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000003",
+          "before_fact": null,
+          "after_fact": null
+        }
+      ],
+      "total_count": 2,
+      "returned_count": 1,
+      "omitted_count": 1,
+      "selection": "source_order_prefix",
+      "limit": 1,
+      "limit_reason": "change_items"
+    },
+    "metrics": [
+      {
+        "name": "audio.bytes_changed",
+        "value": {
+          "kind": "finite",
+          "value": 2
+        },
+        "unit": "bytes",
+        "direction": "lower_is_better",
+        "aggregation": "count"
+      },
+      {
+        "name": "audio.samples_changed",
+        "value": {
+          "kind": "finite",
+          "value": 3
+        },
+        "unit": "samples",
+        "direction": "lower_is_better",
+        "aggregation": "count"
+      }
+    ],
+    "evaluations": [
+      {
+        "rule_id": "audio.policy.encoded_bytes.v1",
+        "verdict": "fail",
+        "metric_name": "audio.bytes_changed",
+        "operator": "eq",
+        "threshold": {
+          "kind": "finite",
+          "value": 0
+        },
+        "observed": {
+          "kind": "finite",
+          "value": 2
+        }
+      },
+      {
+        "rule_id": "audio.policy.exact_decoded_samples.v1",
+        "verdict": "fail",
+        "metric_name": "audio.samples_changed",
+        "operator": "eq",
+        "threshold": {
+          "kind": "finite",
+          "value": 0
+        },
+        "observed": {
+          "kind": "finite",
+          "value": 3
+        }
+      }
+    ],
+    "artifacts": [],
+    "provenance": {
+      "inputs": [
+        {
+          "role": "before",
+          "source_kind": "bytes",
+          "size_bytes": 70,
+          "sha256": "832bba329af2eaf85edb3c0453e172af87c206d1cb956026b450bb8feb413481",
+          "label": null
+        },
+        {
+          "role": "after",
+          "source_kind": "bytes",
+          "size_bytes": 72,
+          "sha256": "b33d2b6174518c106ffecb640edd4eac74a67203ed70088953fd91ee4e431fd7",
+          "label": null
+        }
+      ],
+      "spec": {
+        "kind": "audio",
+        "relations": [
+          "encoded_bytes",
+          "decoded_samples"
+        ],
+        "stream": {
+          "index": null,
+          "require_channel_labels": false
+        },
+        "decode": {
+          "backend": "stdlib_wave_pcm",
+          "profile": "p7_a1_wav_pcm",
+          "sample_representation": "native_pcm_integer",
+          "unsupported_profile": "unavailable",
+          "max_probe_bytes": 65536
+        },
+        "alignment": {
+          "mode": "sample_index",
+          "fixed_offset_samples": 0,
+          "max_search_offset_samples": 0,
+          "max_drift_ppm": 0.0,
+          "ambiguity_margin_samples": 0
+        },
+        "waveform": {
+          "enabled": false,
+          "sample_metric": "absolute_error",
+          "atol": 0.0,
+          "rtol": 0.0,
+          "alignment_mode": "sample_index"
+        },
+        "spectral": {
+          "enabled": false,
+          "window_function": "hann",
+          "window_size": 2048,
+          "hop_size": 512,
+          "fft_size": 2048,
+          "power_scale": "power"
+        },
+        "perceptual": {
+          "enabled": false,
+          "backend": null,
+          "model": null,
+          "score_name": null,
+          "license_acknowledged": false
+        },
+        "artifact_policy": "none",
+        "limits": {
+          "max_input_bytes": 268435456,
+          "max_streams": 32,
+          "max_duration_seconds": 3600,
+          "max_sample_rate_hz": 384000,
+          "max_channels": 64,
+          "max_decoded_samples_per_channel": 50000000,
+          "max_total_decoded_bytes": 536870912,
+          "max_resident_buffer_bytes": 134217728,
+          "max_packets": 1000000,
+          "max_metadata_entries": 10000,
+          "max_metadata_value_bytes": 1048576,
+          "max_spectral_cells": 20000000,
+          "max_backend_seconds": 30,
+          "max_stdout_stderr_bytes": 4194304,
+          "max_temp_bytes": 536870912,
+          "max_materialized_bytes": 536870912,
+          "max_compare_work": 10000000,
+          "max_change_items": 1,
+          "max_change_payload_bytes": 4194304
+        }
+      },
+      "transformations": [],
+      "comparator_id": "builtin.audio",
+      "comparator_version": "1",
+      "algorithm_id": "audio.encoded_bytes.exact.v1",
+      "implementation_version": "p7-a1-proposed",
+      "seeds": [],
+      "resources": [
+        {
+          "name": "max_change_items",
+          "limit": 1,
+          "used": 2
+        }
+      ],
+      "provider": null,
+      "detector_provider": null
+    },
+    "media_evaluations": [
+      {
+        "kind": "media_view_evaluation",
+        "media_kind": "audio",
+        "selector": "encoded_bytes",
+        "relation": "different",
+        "verdict": "fail",
+        "fidelity": "full",
+        "completeness": "complete",
+        "metric_names": [
+          "audio.bytes_changed"
+        ],
+        "policy_rule_ids": [
+          "audio.policy.encoded_bytes.v1"
+        ],
+        "transformation_ids": [],
+        "warning_codes": [],
+        "change_count": 1,
+        "failure_stage": null,
+        "failure_code": null
+      },
+      {
+        "kind": "media_view_evaluation",
+        "media_kind": "audio",
+        "selector": "decoded_samples",
+        "relation": "different",
+        "verdict": "fail",
+        "fidelity": "full",
+        "completeness": "complete",
+        "metric_names": [
+          "audio.samples_changed"
+        ],
+        "policy_rule_ids": [
+          "audio.policy.exact_decoded_samples.v1"
+        ],
+        "transformation_ids": [
+          "audio.decode.stdlib_wave_pcm.v1",
+          "audio.align.sample_index.v1"
+        ],
+        "warning_codes": [],
+        "change_count": 1,
+        "failure_stage": null,
+        "failure_code": null
+      }
+    ],
+    "audio_facts": []
+  }
+}
+```
+
+### Vector PC-H： payload-limit zero truncation
+
+```json
+{
+  "schema_version": 6,
+  "kind": "completed",
+  "execution": {
+    "started_at": "2026-09-10T00:00:00Z",
+    "finished_at": "2026-09-10T00:00:00Z",
+    "duration_ns": 0,
+    "stages": [
+      {
+        "stage": "validating",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "sourcing",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "resolving",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "decoding",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "normalizing",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "aligning",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "comparing",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "aggregating",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      }
+    ],
+    "attempts": [
+      {
+        "capability_id": "builtin.audio",
+        "backend_id": null,
+        "disposition": "selected",
+        "reason_code": null,
+        "capability_version": "1",
+        "backend_version": null,
+        "provider": null
+      }
+    ],
+    "diagnostics": [
+      {
+        "code": "change_details_truncated",
+        "severity": "warning",
+        "stage": "aggregating",
+        "message": "Change details were truncated.",
+        "details": {
+          "limit_reason": "change_payload_bytes"
+        }
+      }
+    ],
+    "last_completed_stage": "aggregating",
+    "plugin_host": null
+  },
+  "result": {
+    "relation": "different",
+    "verdict": "fail",
+    "fidelity": "full",
+    "completeness": "truncated",
+    "summary": {
+      "change_count": 1,
+      "counts": []
+    },
+    "changes": {
+      "completeness": "truncated",
+      "items": [],
+      "total_count": 1,
+      "returned_count": 0,
+      "omitted_count": 1,
+      "selection": "source_order_prefix",
+      "limit": 0,
+      "limit_reason": "change_payload_bytes"
+    },
+    "metrics": [
+      {
+        "name": "audio.bytes_changed",
+        "value": {
+          "kind": "finite",
+          "value": 2
+        },
+        "unit": "bytes",
+        "direction": "lower_is_better",
+        "aggregation": "count"
+      }
+    ],
+    "evaluations": [
+      {
+        "rule_id": "audio.policy.encoded_bytes.v1",
+        "verdict": "fail",
+        "metric_name": "audio.bytes_changed",
+        "operator": "eq",
+        "threshold": {
+          "kind": "finite",
+          "value": 0
+        },
+        "observed": {
+          "kind": "finite",
+          "value": 2
+        }
+      }
+    ],
+    "artifacts": [],
+    "provenance": {
+      "inputs": [
+        {
+          "role": "before",
+          "source_kind": "bytes",
+          "size_bytes": 4,
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000201",
+          "label": null
+        },
+        {
+          "role": "after",
+          "source_kind": "bytes",
+          "size_bytes": 6,
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000202",
+          "label": null
+        }
+      ],
+      "spec": {
+        "kind": "audio",
+        "relations": [
+          "encoded_bytes"
+        ],
+        "stream": {
+          "index": null,
+          "require_channel_labels": false
+        },
+        "decode": {
+          "backend": "stdlib_wave_pcm",
+          "profile": "p7_a1_wav_pcm",
+          "sample_representation": "native_pcm_integer",
+          "unsupported_profile": "unavailable",
+          "max_probe_bytes": 65536
+        },
+        "alignment": {
+          "mode": "sample_index",
+          "fixed_offset_samples": 0,
+          "max_search_offset_samples": 0,
+          "max_drift_ppm": 0.0,
+          "ambiguity_margin_samples": 0
+        },
+        "waveform": {
+          "enabled": false,
+          "sample_metric": "absolute_error",
+          "atol": 0.0,
+          "rtol": 0.0,
+          "alignment_mode": "sample_index"
+        },
+        "spectral": {
+          "enabled": false,
+          "window_function": "hann",
+          "window_size": 2048,
+          "hop_size": 512,
+          "fft_size": 2048,
+          "power_scale": "power"
+        },
+        "perceptual": {
+          "enabled": false,
+          "backend": null,
+          "model": null,
+          "score_name": null,
+          "license_acknowledged": false
+        },
+        "artifact_policy": "none",
+        "limits": {
+          "max_input_bytes": 268435456,
+          "max_streams": 32,
+          "max_duration_seconds": 3600,
+          "max_sample_rate_hz": 384000,
+          "max_channels": 64,
+          "max_decoded_samples_per_channel": 50000000,
+          "max_total_decoded_bytes": 536870912,
+          "max_resident_buffer_bytes": 134217728,
+          "max_packets": 1000000,
+          "max_metadata_entries": 10000,
+          "max_metadata_value_bytes": 1048576,
+          "max_spectral_cells": 20000000,
+          "max_backend_seconds": 30,
+          "max_stdout_stderr_bytes": 4194304,
+          "max_temp_bytes": 536870912,
+          "max_materialized_bytes": 536870912,
+          "max_compare_work": 10000000,
+          "max_change_items": 10000,
+          "max_change_payload_bytes": 0
+        }
+      },
+      "transformations": [],
+      "comparator_id": "builtin.audio",
+      "comparator_version": "1",
+      "algorithm_id": "audio.encoded_bytes.exact.v1",
+      "implementation_version": "p7-a1-proposed",
+      "seeds": [],
+      "resources": [
+        {
+          "name": "max_change_payload_bytes",
+          "limit": 0,
+          "used": 2
+        }
+      ],
+      "provider": null,
+      "detector_provider": null
+    },
+    "media_evaluations": [
+      {
+        "kind": "media_view_evaluation",
+        "media_kind": "audio",
+        "selector": "encoded_bytes",
+        "relation": "different",
+        "verdict": "fail",
+        "fidelity": "full",
+        "completeness": "complete",
+        "metric_names": [
+          "audio.bytes_changed"
+        ],
+        "policy_rule_ids": [
+          "audio.policy.encoded_bytes.v1"
+        ],
+        "transformation_ids": [],
+        "warning_codes": [],
+        "change_count": 1,
+        "failure_stage": null,
+        "failure_code": null
+      }
+    ],
+    "audio_facts": []
+  }
+}
+```
+
+### Vector PC-I： item-limit zero with zero total remains complete
+
+```json
+{
+  "schema_version": 6,
+  "kind": "completed",
+  "execution": {
+    "started_at": "2026-09-10T00:00:00Z",
+    "finished_at": "2026-09-10T00:00:00Z",
+    "duration_ns": 0,
+    "stages": [
+      {
+        "stage": "validating",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "sourcing",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "resolving",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "decoding",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "normalizing",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "aligning",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "comparing",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "aggregating",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      }
+    ],
+    "attempts": [
+      {
+        "capability_id": "builtin.audio",
+        "backend_id": null,
+        "disposition": "selected",
+        "reason_code": null,
+        "capability_version": "1",
+        "backend_version": null,
+        "provider": null
+      }
+    ],
+    "diagnostics": [],
+    "last_completed_stage": "aggregating",
+    "plugin_host": null
+  },
+  "result": {
+    "relation": "equal",
+    "verdict": "pass",
+    "fidelity": "full",
+    "completeness": "complete",
+    "summary": {
+      "change_count": 0,
+      "counts": []
+    },
+    "changes": {
+      "completeness": "complete",
+      "items": [],
+      "total_count": 0,
+      "returned_count": 0,
+      "omitted_count": 0,
+      "selection": "all",
+      "limit": null,
+      "limit_reason": null
+    },
+    "metrics": [
+      {
+        "name": "audio.bytes_changed",
+        "value": {
+          "kind": "finite",
+          "value": 0
+        },
+        "unit": "bytes",
+        "direction": "lower_is_better",
+        "aggregation": "count"
+      }
+    ],
+    "evaluations": [
+      {
+        "rule_id": "audio.policy.encoded_bytes.v1",
+        "verdict": "pass",
+        "metric_name": "audio.bytes_changed",
+        "operator": "eq",
+        "threshold": {
+          "kind": "finite",
+          "value": 0
+        },
+        "observed": {
+          "kind": "finite",
+          "value": 0
+        }
+      }
+    ],
+    "artifacts": [],
+    "provenance": {
+      "inputs": [
+        {
+          "role": "before",
+          "source_kind": "bytes",
+          "size_bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "label": null
+        },
+        {
+          "role": "after",
+          "source_kind": "bytes",
+          "size_bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "label": null
+        }
+      ],
+      "spec": {
+        "kind": "audio",
+        "relations": [
+          "encoded_bytes"
+        ],
+        "stream": {
+          "index": null,
+          "require_channel_labels": false
+        },
+        "decode": {
+          "backend": "stdlib_wave_pcm",
+          "profile": "p7_a1_wav_pcm",
+          "sample_representation": "native_pcm_integer",
+          "unsupported_profile": "unavailable",
+          "max_probe_bytes": 65536
+        },
+        "alignment": {
+          "mode": "sample_index",
+          "fixed_offset_samples": 0,
+          "max_search_offset_samples": 0,
+          "max_drift_ppm": 0.0,
+          "ambiguity_margin_samples": 0
+        },
+        "waveform": {
+          "enabled": false,
+          "sample_metric": "absolute_error",
+          "atol": 0.0,
+          "rtol": 0.0,
+          "alignment_mode": "sample_index"
+        },
+        "spectral": {
+          "enabled": false,
+          "window_function": "hann",
+          "window_size": 2048,
+          "hop_size": 512,
+          "fft_size": 2048,
+          "power_scale": "power"
+        },
+        "perceptual": {
+          "enabled": false,
+          "backend": null,
+          "model": null,
+          "score_name": null,
+          "license_acknowledged": false
+        },
+        "artifact_policy": "none",
+        "limits": {
+          "max_input_bytes": 268435456,
+          "max_streams": 32,
+          "max_duration_seconds": 3600,
+          "max_sample_rate_hz": 384000,
+          "max_channels": 64,
+          "max_decoded_samples_per_channel": 50000000,
+          "max_total_decoded_bytes": 536870912,
+          "max_resident_buffer_bytes": 134217728,
+          "max_packets": 1000000,
+          "max_metadata_entries": 10000,
+          "max_metadata_value_bytes": 1048576,
+          "max_spectral_cells": 20000000,
+          "max_backend_seconds": 30,
+          "max_stdout_stderr_bytes": 4194304,
+          "max_temp_bytes": 536870912,
+          "max_materialized_bytes": 536870912,
+          "max_compare_work": 10000000,
+          "max_change_items": 0,
+          "max_change_payload_bytes": 4194304
+        }
+      },
+      "transformations": [],
+      "comparator_id": "builtin.audio",
+      "comparator_version": "1",
+      "algorithm_id": "audio.encoded_bytes.exact.v1",
+      "implementation_version": "p7-a1-proposed",
+      "seeds": [],
+      "resources": [
+        {
+          "name": "max_change_items",
+          "limit": 0,
+          "used": 0
+        }
+      ],
+      "provider": null,
+      "detector_provider": null
+    },
+    "media_evaluations": [
+      {
+        "kind": "media_view_evaluation",
+        "media_kind": "audio",
+        "selector": "encoded_bytes",
+        "relation": "equal",
+        "verdict": "pass",
+        "fidelity": "full",
+        "completeness": "complete",
+        "metric_names": [
+          "audio.bytes_changed"
+        ],
+        "policy_rule_ids": [
+          "audio.policy.encoded_bytes.v1"
+        ],
+        "transformation_ids": [],
+        "warning_codes": [],
+        "change_count": 0,
+        "failure_stage": null,
+        "failure_code": null
+      }
+    ],
     "audio_facts": []
   }
 }
