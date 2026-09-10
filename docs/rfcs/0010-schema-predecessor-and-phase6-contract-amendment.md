@@ -517,19 +517,33 @@ RFC 0010 accepts only these missing stable IDs beyond RFC 0008:
 
 New schema-v5 problem codes are registered under a scoped registry key
 `schema-v5/<code>` while the serialized `problem.code` remains the short stable
-code. The accepted baseline reserves `schema-v5/pdf_encrypted` and the PDF
-worker problem families required by P6C0-8: timeout, stderr overflow, temp
-overflow, decoded-output overflow, RSS overflow, concurrency overflow, spawn
-overflow, crash, protocol violation, and invalid output. The exact source/PDF
-problem rows, inherited problem mappings, canonical problem field order, safe
-message requirement, rendered-pages worker stage, and detail key order remain
-Proposed in [RFC 0014](0014-phase6-source-pdf-contract-closure-amendment.md).
+code. P6-C0 reserves:
+
+| Registry ID | Serialized status/code | Stage | Detail keys |
+| --- | --- | --- | --- |
+| `schema-v5/pdf_encrypted` | `failed/pdf_encrypted` | `decoding` | `input_side`, `view`, `encryption_detected=true` |
+| `schema-v5/pdf_worker_timeout` | `failed/pdf_worker_timeout` | `decoding` | `view`, `limit_seconds`, `elapsed_seconds` |
+| `schema-v5/pdf_worker_resource_exhausted` | `failed/pdf_worker_resource_exhausted` | `decoding` | `view`, `resource`, `limit`, `actual` |
+| `schema-v5/pdf_worker_crash` | `failed/pdf_worker_crash` | `decoding` | `view`, `exit_status` |
+| `schema-v5/pdf_worker_protocol_violation` | `failed/pdf_worker_protocol_violation` | `decoding` | `view`, `message_kind` |
+| `schema-v5/pdf_worker_invalid_output` | `failed/pdf_worker_invalid_output` | `decoding` | `view`, `field` |
 
 `pdf_encrypted` is not used for pure binary view. Any selected nonbinary view on
 either encrypted input fails the whole all-or-nothing PDF invocation with no
-`DiffResult` and no fallback to binary. Invalid wire coordinates, unknown
-problem registry IDs, and malformed tagged payloads raise `SerializationError`;
-they do not fabricate runtime failed outcomes.
+`DiffResult` and no fallback to binary.
+
+Problem detail value types are closed: `input_side` is `before` or `after`;
+`view` is one of the canonical PDF view names; `encryption_detected` is boolean
+`true`; `limit_seconds`, `elapsed_seconds`, `limit`, and `actual` are
+non-negative JSON numbers; `resource`, `message_kind`, and `field` are stable
+lowercase ASCII identifiers; `exit_status` is a signed integer or null when the
+process was terminated without an exit status. Invalid wire coordinates,
+unknown problem registry IDs, and malformed tagged payloads raise
+`SerializationError`; they do not fabricate runtime failed outcomes.
+
+[RFC 0014](0014-phase6-source-pdf-contract-closure-amendment.md) is a Proposed
+amendment that may supersede or close these accepted problem details after
+approval.
 
 ### Fact presence and ordering
 

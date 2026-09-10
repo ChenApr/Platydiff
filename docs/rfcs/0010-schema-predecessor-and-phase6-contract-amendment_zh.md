@@ -443,17 +443,29 @@ RFC 0010 只接受下列超出 RFC 0008 的缺失 stable ID：
 ### Problem registry
 
 新的 schema-v5 problem code 使用 scoped registry key `schema-v5/<code>` 注册，而 serialized
-`problem.code` 保持短 stable code。已接受 baseline 预留 `schema-v5/pdf_encrypted`，以及
-P6C0-8 要求的 PDF worker problem family：timeout、stderr overflow、temp overflow、
-decoded-output overflow、RSS overflow、concurrency overflow、spawn overflow、crash、protocol
-violation 与 invalid output。精确 source/PDF problem row、inherited problem mapping、canonical
-problem field order、safe message requirement、rendered-pages worker stage 与 detail key order
-仍属于 [RFC 0014](0014-phase6-source-pdf-contract-closure-amendment_zh.md) 的 Proposed 内容。
+`problem.code` 保持短 stable code。P6-C0 预留：
+
+| Registry ID | Serialized status/code | Stage | Detail keys |
+| --- | --- | --- | --- |
+| `schema-v5/pdf_encrypted` | `failed/pdf_encrypted` | `decoding` | `input_side`, `view`, `encryption_detected=true` |
+| `schema-v5/pdf_worker_timeout` | `failed/pdf_worker_timeout` | `decoding` | `view`, `limit_seconds`, `elapsed_seconds` |
+| `schema-v5/pdf_worker_resource_exhausted` | `failed/pdf_worker_resource_exhausted` | `decoding` | `view`, `resource`, `limit`, `actual` |
+| `schema-v5/pdf_worker_crash` | `failed/pdf_worker_crash` | `decoding` | `view`, `exit_status` |
+| `schema-v5/pdf_worker_protocol_violation` | `failed/pdf_worker_protocol_violation` | `decoding` | `view`, `message_kind` |
+| `schema-v5/pdf_worker_invalid_output` | `failed/pdf_worker_invalid_output` | `decoding` | `view`, `field` |
 
 `pdf_encrypted` 不用于 pure binary view。任一 selected nonbinary view 遇到任一 encrypted input
 时，整个 all-or-nothing PDF invocation failed，不产生 `DiffResult`，也不 fallback 到 binary。
-Invalid wire coordinate、unknown problem registry ID 与 malformed tagged payload 都会 raise
-`SerializationError`；它们不制造 runtime failed outcome。
+
+Problem detail value type 是 closed：`input_side` 是 `before` 或 `after`；`view` 是 canonical PDF
+view name 之一；`encryption_detected` 是 boolean `true`；`limit_seconds`、`elapsed_seconds`、
+`limit`、`actual` 是 non-negative JSON number；`resource`、`message_kind`、`field` 是 stable
+lowercase ASCII identifier；`exit_status` 是 signed integer，或在 process 被终止且无 exit status
+时为 null。Invalid wire coordinate、unknown problem registry ID 与 malformed tagged payload
+都会 raise `SerializationError`；它们不制造 runtime failed outcome。
+
+[RFC 0014](0014-phase6-source-pdf-contract-closure-amendment_zh.md) 是 Proposed amendment，获批后
+可以 supersede 或关闭这些已接受 problem detail。
 
 ### Fact presence 与 ordering
 

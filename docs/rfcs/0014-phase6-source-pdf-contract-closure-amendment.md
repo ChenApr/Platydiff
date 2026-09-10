@@ -46,18 +46,27 @@ serialized `code` remains the short stable code.
 
 Canonical JSON emits `details` keys in the order listed below. Readers reject
 missing keys, extra keys, wrong types, and noncanonical key order in canonical
-fixtures.
+fixtures. Detail keys listed as `none` mean the canonical `details` value is an
+empty object. Retryability listed as raised value preserves the retryability
+flag carried by the originating domain error.
 
 | Registry ID | Problem class and outer outcome | Status code | Stage | Retryable | Detail keys |
 | --- | --- | ---: | --- | --- | --- |
 | inherited `invalid_spec` | `ExecutionProblem` / `failed` | `400` | `validating` | `false` | `spec_field`, `reason_code` |
-| inherited `source_type_unsupported` | `ExecutionProblem` / `failed` | `415` | `resolving` | `false` | `source_kind`, `spec_kind`, `reason_code` |
+| inherited `permission_denied` | `ExecutionProblem` / `failed` | `403` | `sourcing` | `false` | `input_side`, `source_kind`, `source_ref`, `operation`, `reason_code` |
+| inherited `source_not_found` | `ExecutionProblem` / `failed` | `404` | `sourcing` | `false` | `input_side`, `source_kind`, `source_ref`, `operation`, `reason_code` |
+| inherited `source_changed` | `ExecutionProblem` / `failed` | `409` | observing stage | `false` | `input_side`, `source_kind`, `source_ref`, `observed_stage`, `reason_code` |
 | inherited `capability_unavailable` | `CapabilityProblem` / `unavailable` | `501` | `resolving` | `true` | `capability_id`, `relation_or_view`, `reason_code` |
 | inherited `backend_unavailable` | `CapabilityProblem` / `unavailable` | `503` | `resolving` | `true` | `backend_role`, `backend_id`, `relation_or_view`, `reason_code` |
 | inherited `resource_limit_exceeded` | `ExecutionProblem` / `failed` | `413` | action stage | `false` | `resource`, `limit`, `actual`, `limit_scope`, `relation_or_view` |
-| inherited `compare_resource_limit` | `ExecutionProblem` / `failed` | `413` | `comparing` | `false` | `resource`, `limit`, `actual`, `relation_or_view` |
+| inherited `compare_resource_limit` | `ExecutionProblem` / `failed` | `413` | `comparing` | `false` | `used`, `limit` |
+| inherited `unsupported_encoding` | `ExecutionProblem` / `failed` | `415` | `decoding` | `false` | `input_side`, `encoding`, `supported_encodings`, `reason_code` |
+| inherited `source_type_unsupported` | `ExecutionProblem` / `failed` | `415` | `sourcing` | `false` | `input_side`, `actual_source_type`, `supported_source_types`, `spec_kind`, `reason_code` |
 | `schema-v5/alignment_failed` | `ExecutionProblem` / `failed` | `409` | `aligning` | `false` | `relation_or_view`, `reason_code`, `before_coordinate`, `after_coordinate` |
 | inherited `decode_error` | `ExecutionProblem` / `failed` | `422` | `decoding` | `false` | `input_side`, `relation_or_view`, `message_code`, `line`, `column` |
+| inherited `internal_error` | `ExecutionProblem` / `failed` | `500` | `validating` | `false` | none |
+| inherited `io_error` | `ExecutionProblem` / `failed` | `500` | action stage | raised value | `input_side`, `source_kind`, `operation`, `reason_code` |
+| inherited `comparator_failure` | `ExecutionProblem` / `failed` | `502` | `comparing` | `false` | `relation_or_view`, `backend_role`, `backend_id`, `reason_code` |
 | `schema-v5/source_backend_unavailable` | `CapabilityProblem` / `unavailable` | `503` | `resolving` | `true` | `source_relation`, `language`, `backend_id`, `reason_code` |
 | `schema-v5/source_compare_timeout` | `ExecutionProblem` / `failed` | `504` | `comparing` | `false` | `source_relation`, `limit_seconds`, `elapsed_seconds` |
 | `schema-v5/pdf_encrypted` | `ExecutionProblem` / `failed` | `422` | `decoding` | `false` | `input_side`, `view`, `encryption_detected` |
@@ -73,15 +82,17 @@ fixtures.
 | `schema-v5/pdf_worker_protocol_violation` | `ExecutionProblem` / `failed` | `502` | view worker stage | `false` | `view`, `message_kind` |
 | `schema-v5/pdf_worker_invalid_output` | `ExecutionProblem` / `failed` | `502` | view worker stage | `false` | `view`, `field` |
 
-For rows with action stage, `stage` is selected by the exceeded resource:
+For rows with observing stage, `stage` is where the stable snapshot detects the
+change: `detecting`, `decoding`, `comparing`, or `aggregating`. For rows with
+action stage, `stage` is selected by the failed action or exceeded resource:
 source or PDF input bytes fail at `sourcing`; decoded source chars, source
 fact text bytes, parser node counts, PDF decoded streams, PDF text runs, PDF
 object entries, and nonrender worker output fail at `decoding`; rendered page
 counts, rendered pixels, rendered-page worker output, rendered-page temp bytes,
-and rendered-page RSS fail at `rendering`. For rows with view worker stage,
-`stage` is `rendering` when `view="rendered_pages"` and `decoding` for
-`extracted_text` and `objects_metadata`; the pure `binary` view has no worker
-stage.
+and rendered-page RSS fail at `decoding`; comparator-local I/O fails at
+`comparing`. For rows with view worker stage, `stage` is `decoding` for
+`extracted_text`, `objects_metadata`, and `rendered_pages`; the pure `binary`
+view has no worker stage.
 
 Closed detail value types are:
 
@@ -91,12 +102,22 @@ Closed detail value types are:
 - `relation_or_view`: one source relation or PDF view name;
 - `input_side`: `before` or `after`;
 - `source_kind`: `path`, `bytes`, or `text`;
+- `source_ref`: a bounded safe source label or null;
+- `actual_source_type`: a stable source type identifier; built-ins are `path`,
+  `bytes`, and `text`, and extensions must use namespaced identifiers;
+- `supported_source_types`: a non-empty array of stable source type
+  identifiers;
 - `spec_kind`: the stable spec discriminator;
 - `backend_role`: `parser`, `text_extractor`, `object_reader`, or `renderer`;
+- `operation`: `stat`, `open`, `read`, `decode`, `snapshot_check`, or
+  `compare`;
+- `encoding`: a stable encoding label or null when no label is available;
+- `supported_encodings`: a non-empty array of stable encoding labels;
+- `observed_stage`: `detecting`, `decoding`, `comparing`, or `aggregating`;
 - `language`, `backend_id`, `capability_id`, `reason_code`, `message_code`,
   `resource`, `stream`, and `message_kind`: stable lowercase ASCII identifiers
   or null only where the table names a nullable field;
-- `line`, `column`, `limit`, `actual`, `limit_bytes`, `actual_bytes`,
+- `line`, `column`, `used`, `limit`, `actual`, `limit_bytes`, `actual_bytes`,
   `limit_processes`, and `actual_processes`: non-negative JSON integers or
   null only for `line` and `column` when no source coordinate is available;
 - `limit_seconds` and `elapsed_seconds`: finite non-negative JSON numbers;
@@ -158,9 +179,9 @@ after_fact
 payload_digest
 ```
 
-`operation` is `equal`, `insert`, `delete`, `update`, or `move`. `insert` has null
+`operation` is `equal`, `insert`, `delete`, or `update`. `insert` has null
 `before_range` and `before_fact`; `delete` has null `after_range` and
-`after_fact`; `update` and `move` have both sides; `equal` has both sides and is allowed
+`after_fact`; `update` has both sides; `equal` has both sides and is allowed
 only in canonical fact and migration fixtures, not as a reported difference.
 Byte offsets are zero-based half-open offsets in decoded UTF-8 bytes before
 newline normalization. Line and column coordinates are over the normalized
@@ -232,7 +253,11 @@ payload_digest
 array of objects with exact order `side`, `start_byte`, `end_byte`. `side` is
 `before` or `after`; offsets are original PDF bytes before parsing, decryption,
 repair, or decompression; each range is zero-based, half-open, non-overlapping
-within its side, and sorted by `(side, start_byte, end_byte)`. Binary facts are
+within its side, and sorted by `(side, start_byte, end_byte)`. `insert` ranges
+all have side `after`; `delete` ranges all have side `before`; `update` ranges
+include at least one `before` range and at least one `after` range; `equal`
+fixture ranges contain exactly one `before` range and one `after` range with
+equal byte length and equal range digest. Binary facts are
 non-parsing facts with exact order `byte_length`, `header_prefix`,
 `content_digest`. `header_prefix` is either null or the bounded ASCII prefix
 obtained by byte-sniffing `%PDF-` at offset zero; binary facts do not include
@@ -260,8 +285,13 @@ and `after_run` are null or objects with exact order `page`, `run`,
 `run` is zero-based in canonical extraction order, and offsets are zero-based
 half-open Unicode scalar offsets within the extracted run text. `text` is null
 in `digest_only` mode or an object with `before_text` and `after_text` bounded
-by `max_fact_text_bytes`. Extracted-text facts have `page_count`, `run_count`,
-`char_count`, `extraction_digest`, and `backend_id`.
+by `max_fact_text_bytes`. In facts mode, `before_text` is null exactly when
+`before_run` is null, and `after_text` is null exactly when `after_run` is
+null. `insert` has null `before_run`; `delete` has null `after_run`; `update`
+has both runs at an aligned text coordinate and unequal text digest; `move` has
+both runs, equal text digest, and changed `(page, run, start_text_offset)`.
+Extracted-text facts have `page_count`, `run_count`, `char_count`,
+`extraction_digest`, and `backend_id`.
 
 PDF objects-metadata changes have stable top-level field order:
 
@@ -269,8 +299,10 @@ PDF objects-metadata changes have stable top-level field order:
 kind
 view
 operation
-object_ref
-key_path
+before_object_ref
+before_key_path
+after_object_ref
+after_key_path
 before_entry
 after_entry
 before_fact
@@ -278,14 +310,25 @@ after_fact
 payload_digest
 ```
 
-`operation` is `equal`, `insert`, `delete`, `update`, or `move`. `object_ref`
-is null only for document-level metadata; otherwise it has exact order
-`object_number`, `generation` and serializes as `pdf-object(obj,generation)`.
-`key_path` is an RFC 6901 JSON Pointer over the canonical metadata object.
-`before_entry` and `after_entry` are null or objects with exact order
-`entry_kind`, `type_name`, `value`, `value_digest`, `byte_length`. `value` is
-bounded JSON or null in `digest_only` mode. Move is legal only when both entries
-have equal `value_digest` and different object or key coordinates.
+`operation` is `equal`, `insert`, `delete`, `update`, or `move`. Object
+reference fields are null only for document-level metadata; otherwise they
+have exact order `object_number`, `generation` and serialize as
+`pdf-object(obj,generation)`. Key paths are RFC 6901 JSON Pointers over the
+canonical metadata object. `before_entry` and `after_entry` are null or objects
+with exact order `entry_kind`, `type_name`, `value`, `value_digest`,
+`byte_length`. `entry_kind` is `dictionary_entry`, `array_item`,
+`stream_dictionary_entry`, or `document_metadata_entry`; `type_name` is
+`null`, `boolean`, `integer`, `real`, `name`, `string`, `array`,
+`dictionary`, or `stream`. `value` is canonical bounded JSON, with object keys
+sorted, arrays ordered as in the PDF fact domain, maximum nesting depth 16, no
+non-finite numbers, and no backend-private objects. In `digest_only` mode
+`value` is null and `value_digest` is required. When `value` is not null,
+`value_digest` must equal the digest of that canonical value and `byte_length`
+must equal the original encoded value byte length when one is available.
+`insert` has null before object/key/entry fields; `delete` has null after
+object/key/entry fields; `update` has both coordinates at an aligned entry and
+unequal `value_digest`; `move` has both before and after object/key
+coordinates, equal `value_digest`, and changed object or key coordinate.
 Objects-metadata facts have `object_count`, `metadata_entry_count`,
 `stream_count`, `trailer_digest`, and `object_digest`.
 
@@ -311,8 +354,16 @@ payload_digest
 `colorspace`, `alpha_mode`, `antialiasing`, `background`. `x`, `y`, `width`,
 and `height` are zero-based pixel integers in the declared rendered page
 raster; `width` and `height` are positive, and the rectangle must be in bounds.
-Rendered-page facts have `page`, `width_px`, `height_px`, `dpi`, `colorspace`,
-`alpha_mode`, `render_backend_id`, and `raster_digest`.
+When `rect` is not null, top-level `page`, `rect.page`, and each side's
+rendered-page fact `page` are equal. `page_box` is `media` or `crop`;
+`rotation_degrees` is `0`, `90`, `180`, or `270`; `dpi` is a positive integer;
+`colorspace` is `srgb`, `gray`, or `display_p3`; `alpha_mode` is `opaque` or
+`premultiplied`; `antialiasing` is `none`, `grayscale`, or `subpixel`; and
+`background` is a six-digit lowercase hex RGB string or null. Rendered-page
+facts have `page`, `width_px`, `height_px`, `dpi`, `colorspace`, `alpha_mode`,
+`render_backend_id`, and `raster_digest`. Their `dpi`, `colorspace`, and
+`alpha_mode` must match `raster_space`, and `raster_digest` must be the digest
+of the declared raster-space pixels for that side.
 
 For every variant, operation-side rules are closed:
 
@@ -338,7 +389,7 @@ Additional proposed canonical vectors are:
 
 | Domain | Tagged fields | Payload hex | SHA-256 |
 | --- | --- | --- | --- |
-| `source/node` | `kind=source_code_change`, `change_variant=syntax_tree`, `operation=update`, `language=python`, `before_path=/root/module#0`, `after_path=/root/module#0` | `000000000000000600000000000000046b696e640000000000000012736f757263655f636f64655f6368616e6765000000000000000e6368616e67655f76617269616e74000000000000000b73796e7461785f7472656500000000000000096f7065726174696f6e000000000000000675706461746500000000000000086c616e67756167650000000000000006707974686f6e000000000000000b6265666f72655f70617468000000000000000e2f726f6f742f6d6f64756c652330000000000000000a61667465725f70617468000000000000000e2f726f6f742f6d6f64756c652330` | `f3fdad01158fddcac7cc22eb103d0a8f27c91bbe4363209867a5656c9e2e6e9b` |
-| `pdf/text/run` | `kind=pdf_change`, `view=extracted_text`, `operation=update`, `page=1`, `run=1` | `000000000000000500000000000000046b696e64000000000000000a7064665f6368616e6765000000000000000476696577000000000000000e6578747261637465645f7465787400000000000000096f7065726174696f6e0000000000000006757064617465000000000000000470616765000000000000000131000000000000000372756e000000000000000131` | `8a0e8e2e5d20577c69a226ee0f29f61b89959cd8f1034e7d138e87888d5780cb` |
-| `pdf/object/entry` | `kind=pdf_change`, `view=objects_metadata`, `operation=update`, `object_ref=1 0`, `key_path=/Type` | `000000000000000500000000000000046b696e64000000000000000a7064665f6368616e676500000000000000047669657700000000000000106f626a656374735f6d6574616461746100000000000000096f7065726174696f6e0000000000000006757064617465000000000000000a6f626a6563745f726566000000000000000331203000000000000000086b65795f7061746800000000000000052f54797065` | `bca6551004edcbdbb5daf3fefb02916ffb4b3e89afc2af08c2b3514cbfb56c6b` |
-| `pdf/render/region` | `kind=pdf_change`, `view=rendered_pages`, `operation=update`, `page=1`, `x=0`, `y=0`, `width=1`, `height=1` | `000000000000000800000000000000046b696e64000000000000000a7064665f6368616e6765000000000000000476696577000000000000000e72656e64657265645f706167657300000000000000096f7065726174696f6e0000000000000006757064617465000000000000000470616765000000000000000131000000000000000178000000000000000130000000000000000179000000000000000130000000000000000577696474680000000000000001310000000000000006686569676874000000000000000131` | `fc8cb8dce91350fd39803dab87bfa9971e4341df5889a6749e5964907d4727d8` |
+| `source/node` | `language=python`, `parser_id=tree_sitter_python`, `parser_version=0.23.6`, `node_path=/root/module#0`, `node_kind=module`, `named=true`, `start_byte=0`, `end_byte=4`, `start_line=1`, `start_column=1`, `end_line=1`, `end_column=5`, `child_count=1`, `subtree_digest=sha256:0000000000000000000000000000000000000000000000000000000000000000` | `000000000000000e00000000000000086c616e67756167650000000000000006707974686f6e00000000000000097061727365725f69640000000000000012747265655f7369747465725f707974686f6e000000000000000e7061727365725f76657273696f6e0000000000000006302e32332e3600000000000000096e6f64655f70617468000000000000000e2f726f6f742f6d6f64756c65233000000000000000096e6f64655f6b696e6400000000000000066d6f64756c6500000000000000056e616d6564000000000000000474727565000000000000000a73746172745f627974650000000000000001300000000000000008656e645f62797465000000000000000134000000000000000a73746172745f6c696e65000000000000000131000000000000000c73746172745f636f6c756d6e0000000000000001310000000000000008656e645f6c696e65000000000000000131000000000000000a656e645f636f6c756d6e000000000000000135000000000000000b6368696c645f636f756e74000000000000000131000000000000000e737562747265655f64696765737400000000000000477368613235363a30303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030` | `dd424e69dcad9c41863933a4edf7183655eeac1e890cac58a7b5ec86693ab14e` |
+| `pdf/text/run` | `page=1`, `run=0`, `start_text_offset=0`, `text_length=4`, `text=Test`, `backend_id=pdf_text_fixture`, `extraction_digest=sha256:1111111111111111111111111111111111111111111111111111111111111111` | `0000000000000007000000000000000470616765000000000000000131000000000000000372756e000000000000000130000000000000001173746172745f746578745f6f6666736574000000000000000130000000000000000b746578745f6c656e677468000000000000000134000000000000000474657874000000000000000454657374000000000000000a6261636b656e645f696400000000000000107064665f746578745f66697874757265000000000000001165787472616374696f6e5f64696765737400000000000000477368613235363a31313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131` | `48aa640b4e92540e92abe8bbba0fcd4d34d0eebf6db811648d7116896fa67b4f` |
+| `pdf/object/entry` | `object_ref=1 0`, `key_path=/Type`, `entry_kind=dictionary_entry`, `type_name=name`, `value=/Catalog`, `value_digest=sha256:2222222222222222222222222222222222222222222222222222222222222222`, `byte_length=8` | `0000000000000007000000000000000a6f626a6563745f726566000000000000000331203000000000000000086b65795f7061746800000000000000052f54797065000000000000000a656e7472795f6b696e64000000000000001064696374696f6e6172795f656e7472790000000000000009747970655f6e616d6500000000000000046e616d65000000000000000576616c756500000000000000082f436174616c6f67000000000000000c76616c75655f64696765737400000000000000477368613235363a32323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232000000000000000b627974655f6c656e677468000000000000000138` | `3e440214ba61af15350f671705579a7b07cc4bf338ccafc514eb8bcf2ce04bd5` |
+| `pdf/render/region` | `page=1`, `x=0`, `y=0`, `width=1`, `height=1`, `dpi=72`, `colorspace=srgb`, `alpha_mode=opaque`, `changed_pixels=1`, `raster_digest=sha256:3333333333333333333333333333333333333333333333333333333333333333` | `000000000000000a000000000000000470616765000000000000000131000000000000000178000000000000000130000000000000000179000000000000000130000000000000000577696474680000000000000001310000000000000006686569676874000000000000000131000000000000000364706900000000000000023732000000000000000a636f6c6f727370616365000000000000000473726762000000000000000a616c7068615f6d6f646500000000000000066f7061717565000000000000000e6368616e6765645f706978656c73000000000000000131000000000000000d7261737465725f64696765737400000000000000477368613235363a33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333` | `e0e9f8ad9969b6e288ac03c90df56c7562ebcd2f3579127238083c5bdc083bca` |
