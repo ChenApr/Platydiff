@@ -45,9 +45,10 @@ carrier 是 accepted RFC 0009/RFC 0011 envelope：
 | `relation` | `"equal"` |
 | `verdict` | `"pass"` |
 | `fidelity` | `"full"` |
-| `completeness` | full count 已知后的 producer-side serialization truncation 未发生时为 `"complete"` |
+| `completeness` | full count 已知后的 producer-side result-detail truncation 未发生时为 `"complete"` |
 | `media_evaluations` | selected audio relation evaluation 的有序 list |
-| `changes.change_count` | `0` |
+| `summary.change_count` | `0` |
+| `changes.total_count` | `0` |
 | `changes.items` | empty list |
 | `metrics` | 包含每个 selected relation 的 comparison total |
 | `provenance` | 包含 selected comparator、backend、profile、resource limit、normalization、alignment 和 input digest |
@@ -100,7 +101,7 @@ DiffResult.audio_facts
 `DiffResult.audio_facts` 是 accepted `AudioFact` record 的 tuple，按以下顺序排序：
 
 ```text
-stream_index, coordinate, name, unit, value
+stream_index, coordinate, name, unit, value_type_rank, value
 ```
 
 它只出现在 schema-v6 audio result 中。Predecessor upgrader 将其设为空 tuple。它在 result level
@@ -144,12 +145,21 @@ Absent optional timing fact 在 P7-A1 规定 absence 时使用 value `null` 和 
 Recognized but unsupported metadata 使用 value `"unknown"` 和该 fact 文档化的 unit。Fact
 provenance 保留在 result provenance 中，不进入 `AudioFact`。
 
+Fact registry 完全等于 RFC 0009/RFC 0011 accepted `AudioFact` shape：
+`name`、`value`、`unit`、`stream_index` 和 `coordinate`；P7-A1 fact 不允许
+source field、array 或 nested value。排序先使用 stable serialized coordinate tuple，
+再按 fact name 和 unit，最后按 value。Value ordering 在 accepted value type 之间是 total
+order：`null`、boolean（`false` 在 `true` 前）、integer、finite number、非 `"unknown"` 的
+string，最后是 string `"unknown"`。Integer 与 finite number 在各自 type 内按 exact numeric
+value 比较；string 使用 Unicode scalar lexical order。该顺序只用于 deterministic
+serialization，不改变 relation semantic。
+
 ## Change grouping and counts
 
-`ChangeSet.change_count` 是连续分组之后、producer-side serialization truncation 之前 emitted
-`AudioChange` item 的数量。Renderer 绝不得缩短 `changes.items`、mutate `change_count`，或 mutate
-overall relation/verdict/fidelity/completeness。Truncation 只是 producer serialization policy，并且在
-full count 已知后通过 accepted completeness/truncation metadata 体现。
+`DiffSummary.change_count` 是连续分组之后、producer-side result-detail truncation 之前 grouped
+`AudioChange` item 的数量。Renderer 绝不得缩短 `changes.items`、mutate summary 或 change-set
+count，或 mutate overall relation/verdict/fidelity/completeness。Truncation 只是 producer
+result-detail policy，并且在 full count 已知后通过 accepted completeness/truncation metadata 体现。
 
 Count binding 是精确的：
 
@@ -157,7 +167,7 @@ Count binding 是精确的：
 | --- | --- |
 | `DiffSummary.change_count` | 非 null 时等于 `ChangeSet.total_count` |
 | `ChangeSet.total_count` | 所有 selected audio relation 的 grouped `AudioChange` 总数 |
-| `ChangeSet.returned_count` | producer-side serialization limit 之后的 `ChangeSet.items` 长度 |
+| `ChangeSet.returned_count` | producer-side result-detail limit 之后的 `ChangeSet.items` 长度 |
 | `ChangeSet.omitted_count` | 对 `complete` 或 `truncated` change set，为 `total_count - returned_count` |
 | `MediaViewEvaluation.change_count` | 该 evaluation 的 `selector` 对应 grouped `AudioChange` 总数 |
 
@@ -188,6 +198,12 @@ relation, operation, before_step, after_step
 `encoded_byte_update` 每一步使用一个 before byte 和一个 after byte。`encoded_byte_delete` 使用一个
 before byte 且无 after byte。`encoded_byte_insert` 无 before byte 且使用一个 after byte。
 
+`AudioChange` output ordering 冻结。Producer 先按 canonical relation order 排序，再按 operation
+order 排序。对于 `encoded_bytes`，same-offset deletion 排在 same-offset insertion 之前，以便
+middle length 不等的 replacement 保持稳定。剩余 tie-break 依次是 before coordinate、after
+coordinate、channel（`null` 在具体 channel 前）、before digest、after digest、before fact 和
+after fact。只有在该顺序确定后，才对相邻 compatible operation 做 grouping。
+
 Metric 计数规则：
 
 | Metric | Count rule |
@@ -203,6 +219,9 @@ Metric 计数规则：
 所有 resource limit 都是 non-negative integer。Unknown limit name 非法。Default value 由 schema-v6
 reader 在 comparison 前插入。RFC 0012 不 rename、remove 或 narrow 任何 accepted
 `AudioResourceLimits` field；它只澄清 accepted object 的 accounting scope 与 unit。
+`accounting_scope` detail value 是单一 closed enum：
+`"single_input"`、`"dual_input_sum"`、`"relation"`、`"comparison"`、
+`"comparison_peak"` 和 `"backend_execution"`。
 
 | Limit | Unit | Accounting scope | P7-A1 default |
 | --- | --- | --- | --- |
@@ -217,38 +236,38 @@ reader 在 comparison 前插入。RFC 0012 不 rename、remove 或 narrow 任何
 | `max_packets` | packet or chunk records read across both inputs | dual-input sum | `1000000` |
 | `max_metadata_entries` | metadata entries per input | single input | `10000` |
 | `max_metadata_value_bytes` | bytes per metadata value | single input | `1048576` |
-| `max_spectral_cells` | spectral cells per selected relation | relation scope | `20000000` |
-| `max_backend_seconds` | wall-clock backend seconds | comparison scope | `30` |
-| `max_stdout_stderr_bytes` | captured backend output bytes | comparison scope | `4194304` |
-| `max_temp_bytes` | temporary file bytes | comparison scope | `536870912` |
-| `max_materialized_bytes` | host-owned snapshot and materialized bytes | comparison scope | `536870912` |
-| `max_compare_work` | abstract comparison work units | comparison scope | `10000000` |
-| `max_change_items` | producer-emitted change items | relation scope | `10000` |
-| `max_change_payload_bytes` | producer-emitted change payload bytes | relation scope | `4194304` |
+| `max_spectral_cells` | spectral cells per selected relation | relation | `20000000` |
+| `max_backend_seconds` | wall-clock backend seconds | backend_execution | `30` |
+| `max_stdout_stderr_bytes` | captured backend output bytes | backend_execution | `4194304` |
+| `max_temp_bytes` | temporary file bytes | comparison | `536870912` |
+| `max_materialized_bytes` | host-owned snapshot and materialized bytes | comparison | `536870912` |
+| `max_compare_work` | abstract comparison work units | comparison | `10000000` |
+| `max_change_items` | producer-emitted change items | relation | `10000` |
+| `max_change_payload_bytes` | producer-emitted change payload bytes | relation | `4194304` |
 
 Deterministic counter rule：
 
-| Limit | Increment | Check stage | Zero behavior |
-| --- | --- | --- | --- |
-| `max_input_bytes` | 单个 input acquired immutable source bytes | `sourcing` | 只允许 zero-byte source |
-| `max_streams` | 单个 input discovered stream 数量 | `resolving` | 任何 discovered stream 都失败 |
-| `max_duration_seconds` | exact decoded duration 向上取整到 whole seconds | `resolving` 或 `decoding` | 只允许 zero-duration decoded stream |
-| `max_sample_rate_hz` | declared 或 decoded sample rate | `resolving` 或 `decoding` | 任何 positive sample rate 都失败 |
-| `max_channels` | 单个 stream decoded channel count | `resolving` 或 `decoding` | 任何 channel 都失败 |
-| `max_decoded_samples_per_channel` | 每个 channel decoded sample count | `decoding` | 每个 channel 只允许 zero decoded sample |
-| `max_total_decoded_bytes` | 两个 input 的 materialized decoded PCM bytes | `decoding` | decoded-sample relation 在 payload decode 前失败，除非不需要 decoded byte |
-| `max_resident_buffer_bytes` | live decoded/sample comparison buffer byte peak | `normalizing`、`aligning` 或 `comparing` | 分配 comparison buffer 前失败 |
-| `max_packets` | 两个 input 读取的 packet 或 chunk record | `resolving` 或 `decoding` | 读取任何 packet 或 chunk record 前失败 |
-| `max_metadata_entries` | 单个 input retained metadata entry | `resolving` 或 `decoding` | 任何 retained metadata entry 都失败 |
-| `max_metadata_value_bytes` | 单个 metadata value 的 byte 数 | `resolving` 或 `decoding` | 任何 non-empty metadata value 都失败 |
-| `max_spectral_cells` | generated spectral cell | `normalizing` 或 `comparing` | spectral relation 在生成 cell 前失败 |
-| `max_backend_seconds` | monotonic elapsed backend seconds | backend execution stage | 无 backend runtime budget；若需要 backend，则 backend start 前失败 |
-| `max_stdout_stderr_bytes` | captured backend stdout/stderr bytes | backend execution stage | 任何 captured byte 都失败 |
-| `max_temp_bytes` | comparison 创建的 temporary bytes | 创建 temp data 的任意 stage | 任何 temp byte 都失败 |
-| `max_materialized_bytes` | host-owned snapshot 与 materialized bytes | `sourcing` 或 materialization stage | 任何 materialized byte 都失败 |
-| `max_compare_work` | deterministic relation work units | `comparing` | 只有 zero-work comparison 可以完成 |
-| `max_change_items` | grouped changes selected for serialization | `aggregating` | 计算 relation 与 total count，然后 emit truncated empty change list |
-| `max_change_payload_bytes` | serialized change payload bytes | `aggregating` | relation 与 total count 已知后省略 payload-bearing change |
+| Limit | Increment/checkpoint | Stage | Code | Zero behavior |
+| --- | --- | --- | --- | --- |
+| `max_input_bytes` | bounded snapshot 已知后、retain 前，统计单个 input acquired immutable source bytes。 | `sourcing` | `resource_limit_exceeded` | 只允许 zero-byte source |
+| `max_streams` | stream identity 被证明时统计单个 input discovered stream 数量。 | `resolving` | `resource_limit_exceeded` | 任何 discovered stream 都失败 |
+| `max_duration_seconds` | header duration 被证明或 payload duration decode 出来时，统计 exact decoded duration 向上取整到 whole seconds。 | `resolving` 或 `decoding` | `resource_limit_exceeded` | 只允许 zero-duration decoded stream |
+| `max_sample_rate_hz` | 接受 stream 前统计 declared 或 decoded sample rate。 | `resolving` 或 `decoding` | `resource_limit_exceeded` | 任何 positive sample rate 都失败 |
+| `max_channels` | 分配 channel buffer 前统计单个 stream decoded channel count。 | `resolving` 或 `decoding` | `resource_limit_exceeded` | 任何 channel 都失败 |
+| `max_decoded_samples_per_channel` | 接受 decoded payload 前统计每个 channel decoded sample count。 | `decoding` | `resource_limit_exceeded` | 每个 channel 只允许 zero decoded sample |
+| `max_total_decoded_bytes` | 每次 commit decode buffer 前，累加两个 input 的 materialized decoded PCM bytes。 | `decoding` | `resource_limit_exceeded` | decoded-sample relation 在 payload decode 前失败，除非不需要 decoded byte |
+| `max_resident_buffer_bytes` | 分配前记录 live decoded/sample comparison buffer byte peak。 | `normalizing`、`aligning` 或 `comparing` | `compare_resource_limit` | 分配 comparison buffer 前失败 |
+| `max_packets` | retain 每个 record 前，累加两个 input 读取的 packet 或 chunk record。 | `resolving` 或 `decoding` | `resource_limit_exceeded` | 读取任何 packet 或 chunk record 前失败 |
+| `max_metadata_entries` | 插入前统计单个 input retained metadata entry。 | `resolving` 或 `decoding` | `resource_limit_exceeded` | 任何 retained metadata entry 都失败 |
+| `max_metadata_value_bytes` | retain metadata value 前统计单个 metadata value 的 byte 数。 | `resolving` 或 `decoding` | `resource_limit_exceeded` | 任何 non-empty metadata value 都失败 |
+| `max_spectral_cells` | materialize spectral block 前累加 generated spectral cell。 | `normalizing` 或 `comparing` | `compare_resource_limit` | spectral relation 在生成 cell 前失败 |
+| `max_backend_seconds` | backend start 前与每次 bounded backend wait 后检查 monotonic elapsed backend seconds。 | backend execution stage | `resource_limit_exceeded` | 无 backend runtime budget；若需要 backend，则 backend start 前失败 |
+| `max_stdout_stderr_bytes` | append capture buffer 前累加 captured backend stdout/stderr bytes。 | backend execution stage | `resource_limit_exceeded` | 任何 captured byte 都失败 |
+| `max_temp_bytes` | create 或 extend temp data 前累加 temporary bytes。 | 创建 temp data 的任意 stage | `resource_limit_exceeded` | 任何 temp byte 都失败 |
+| `max_materialized_bytes` | retain materialized data 前累加 host-owned snapshot 与 materialized bytes。 | `sourcing` 或 materialization stage | `resource_limit_exceeded` | 任何 materialized byte 都失败 |
+| `max_compare_work` | 每个 comparison work batch 前累加 deterministic relation work units。 | `comparing` | `compare_resource_limit` | 只有 zero-work comparison 可以完成 |
+| `max_change_items` | relation 与 total count 已知后，统计 selected for result detail 的 grouped changes。 | `aggregating` | `compare_resource_limit` | 计算 relation 与 total count，然后 emit truncated empty change list |
+| `max_change_payload_bytes` | append complete change item 前统计 serialized built-in change payload bytes。 | `aggregating` | `compare_resource_limit` | relation 与 total count 已知后省略 payload-bearing change |
 
 `max_compare_work=0` 只允许可以用 zero relation work 完成的 comparison：identical empty encoded-byte
 input，或 relation work 开始前的 metadata-only failure。`max_packets=0` 禁止读取任何 packet 或
@@ -262,7 +281,7 @@ Limit failure 的 problem detail 使用：
 | `limit_name` | 上表中的 name |
 | `limit_value` | configured integer |
 | `limit_unit` | 上表中的 exact unit string |
-| `accounting_scope` | `"single_input"`、`"dual_input_sum"` 或 `"comparison_peak"` |
+| `accounting_scope` | 上文 closed enum 中的一个值 |
 | `measured_value` | 同一 unit 中的 integer |
 | `input_side` | `"before"`、`"after"` 或 `"both"` |
 
@@ -308,8 +327,9 @@ P7-A1 只识别以下 timing、delay 与 padding fact，并在 core format fact 
 
 | Fact name | Value type | Unit | Absence value | Unknown value | Recognized source |
 | --- | --- | --- | --- | --- | --- |
-| `timestamp_origin` | string 或 null | `null` | `null` | `"unknown"` | no source、`bext.time_reference`、`smpl.sample_period` |
-| `timestamp_value` | integer、finite number、string 或 null | `samples`、`seconds` 或 `null` | `null` | `"unknown"` | `bext.time_reference` sample count 或 `smpl.sample_period` exact rational seconds |
+| `timestamp_origin` | string 或 null | `null` | `null` | `"unknown"` | no source 或 `bext.time_reference` |
+| `timestamp_value` | integer、finite number、string 或 null | `samples`、`seconds` 或 `null` | `null` | `"unknown"` | `bext.time_reference` sample count |
+| `sample_period_seconds_exact` | string 或 null | `seconds` 或 `null` | `null` | `"unknown"` | `smpl.sample_period` exact rational seconds |
 | `encoder_delay_samples` | integer、string 或 null | `samples` 或 `null` | `null` | `"unknown"` | recognized delay metadata |
 | `encoder_padding_samples` | integer、string 或 null | `samples` 或 `null` | `null` | `"unknown"` | recognized padding metadata |
 
@@ -320,14 +340,18 @@ Status semantic：
 - recognized but unsupported metadata 记录 `"unknown"`，unit 使用已知的 documented unit，否则为 `null`；
 - malformed recognized metadata 在证明 malformed 的 stage 失败，不变成 `"unknown"` fact。
 
+`smpl.sample_period` 只是 sample-period scale fact。它不得填充 `timestamp_origin`、移动 sample
+coordinate，或建立 timestamp epoch。
+
 所有其他 chunk 只有在 RFC 0011 已允许它们作为 bounded chunk fact 时才是 metadata fact。它们不得静默影响
 sample coordinate、duration、alignment 或 equality。
 
 ## Problem message and details
 
 `problem.message` 是用户可见解释性 prose 的唯一位置。`problem.details` 是 structured value 的唯一位置。
-Detail value 必须是 string、integer、finite JSON number、boolean 或 `null`；array 与 object 仍非法，
-除非后续 schema revision 明确允许。
+Detail value 必须是 string、integer、finite JSON number、boolean、`null`，或 RFC 0011
+`expected`/`actual` array，且 array element 只能是 string、integer、finite JSON number 或 boolean。
+其他 array 与所有 object 仍非法，除非后续 schema revision 明确允许。
 
 RFC 0012 保留 RFC 0011 problem-details allowlist，并只增加上文所需的 resource accounting key。
 本 amendment 允许的 detail key 为：
@@ -335,6 +359,7 @@ RFC 0012 保留 RFC 0011 problem-details allowlist，并只增加上文所需的
 ```text
 stage
 code
+media_kind
 relation
 backend
 profile
@@ -343,6 +368,8 @@ byte_offset
 chunk_id
 field
 value_kind
+expected
+actual
 limit_name
 limit_value
 limit_unit
@@ -357,19 +384,97 @@ Detail value 不得包含 backend stderr、exception class name、host path、so
 
 ## Canonical vectors
 
-这些 vector 是 acceptance test 的 normative example。它们表示 default insertion 后、任何
-producer-side serialization truncation 前的 schema-v6 envelope 或 complete accepted-shape fragment。
+这些 vector 是 acceptance test 的 normative example。它们是 default insertion 之后、任何
+producer-side result-detail truncation 之前的完整 schema-v6 outcome envelope。
 
 ### Vector PC-A：equal empty encoded bytes
 
 ```json
 {
+  "schema_version": 6,
   "kind": "completed",
+  "execution": {
+    "started_at": "2026-09-10T00:00:00Z",
+    "finished_at": "2026-09-10T00:00:00Z",
+    "duration_ns": 0,
+    "stages": [
+      {
+        "stage": "validating",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "sourcing",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "resolving",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "decoding",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "normalizing",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "aligning",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "comparing",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "aggregating",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      }
+    ],
+    "attempts": [
+      {
+        "capability_id": "audio.comparator.stdlib_wave_pcm.v1",
+        "backend_id": "stdlib_wave_pcm",
+        "disposition": "selected",
+        "reason_code": null,
+        "capability_version": "1",
+        "backend_version": "stdlib_wave_pcm.p7_a1",
+        "provider": null
+      }
+    ],
+    "diagnostics": [],
+    "last_completed_stage": "aggregating",
+    "plugin_host": null
+  },
   "result": {
-    "schema_version": 6,
     "relation": "equal",
     "verdict": "pass",
     "fidelity": "full",
+    "completeness": "complete",
     "summary": {
       "change_count": 0,
       "counts": []
@@ -399,7 +504,55 @@ producer-side serialization truncation 前的 schema-v6 envelope 或 complete ac
     "evaluations": [],
     "artifacts": [],
     "provenance": {
-      "comparator_id": "audio.comparator.stdlib_wave_pcm.v1"
+      "inputs": [
+        {
+          "role": "before",
+          "source_kind": "bytes",
+          "size_bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "label": null
+        },
+        {
+          "role": "after",
+          "source_kind": "bytes",
+          "size_bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "label": null
+        }
+      ],
+      "spec": {
+        "kind": "audio",
+        "relations": [
+          "encoded_bytes"
+        ],
+        "stream": {
+          "index": null
+        },
+        "decode": {
+          "backend": "stdlib_wave_pcm",
+          "sample_representation": "native_pcm_integer"
+        },
+        "alignment": {
+          "mode": "sample_index"
+        },
+        "artifact_policy": "none",
+        "limits": {
+          "max_compare_work": 10000000
+        }
+      },
+      "transformations": [],
+      "comparator_id": "audio.comparator.stdlib_wave_pcm.v1",
+      "comparator_version": "1",
+      "algorithm_id": "audio.encoded_bytes.prefix_suffix.v1",
+      "implementation_version": "p7-a1-proposed",
+      "seeds": [],
+      "resources": [
+        {
+          "name": "max_compare_work",
+          "limit": 10000000,
+          "used": 0
+        }
+      ]
     },
     "media_evaluations": [
       {
@@ -432,12 +585,90 @@ producer-side serialization truncation 前的 schema-v6 envelope 或 complete ac
 
 ```json
 {
+  "schema_version": 6,
   "kind": "completed",
+  "execution": {
+    "started_at": "2026-09-10T00:00:00Z",
+    "finished_at": "2026-09-10T00:00:00Z",
+    "duration_ns": 0,
+    "stages": [
+      {
+        "stage": "validating",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "sourcing",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "resolving",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "decoding",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "normalizing",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "aligning",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "comparing",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "aggregating",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      }
+    ],
+    "attempts": [
+      {
+        "capability_id": "audio.comparator.stdlib_wave_pcm.v1",
+        "backend_id": "stdlib_wave_pcm",
+        "disposition": "selected",
+        "reason_code": null,
+        "capability_version": "1",
+        "backend_version": "stdlib_wave_pcm.p7_a1",
+        "provider": null
+      }
+    ],
+    "diagnostics": [],
+    "last_completed_stage": "aggregating",
+    "plugin_host": null
+  },
   "result": {
-    "schema_version": 6,
     "relation": "different",
     "verdict": "fail",
     "fidelity": "full",
+    "completeness": "complete",
     "summary": {
       "change_count": 1,
       "counts": []
@@ -496,7 +727,69 @@ producer-side serialization truncation 前的 schema-v6 envelope 或 complete ac
     "evaluations": [],
     "artifacts": [],
     "provenance": {
-      "comparator_id": "audio.comparator.stdlib_wave_pcm.v1"
+      "inputs": [
+        {
+          "role": "before",
+          "source_kind": "bytes",
+          "size_bytes": 52,
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000101",
+          "label": null
+        },
+        {
+          "role": "after",
+          "source_kind": "bytes",
+          "size_bytes": 52,
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000102",
+          "label": null
+        }
+      ],
+      "spec": {
+        "kind": "audio",
+        "relations": [
+          "decoded_samples"
+        ],
+        "stream": {
+          "index": 0
+        },
+        "decode": {
+          "backend": "stdlib_wave_pcm",
+          "sample_representation": "native_pcm_integer"
+        },
+        "alignment": {
+          "mode": "sample_index"
+        },
+        "artifact_policy": "none",
+        "limits": {
+          "max_total_decoded_bytes": 536870912
+        }
+      },
+      "transformations": [
+        {
+          "stage": "decoding",
+          "transformation_id": "audio.decode.stdlib_wave_pcm.p7_a1",
+          "parameters": {
+            "backend": "stdlib_wave_pcm",
+            "profile": "p7_a1_wav_pcm"
+          }
+        },
+        {
+          "stage": "aligning",
+          "transformation_id": "audio.align.sample_index.v1",
+          "parameters": {}
+        }
+      ],
+      "comparator_id": "audio.comparator.stdlib_wave_pcm.v1",
+      "comparator_version": "1",
+      "algorithm_id": "audio.decoded_samples.exact_grouped.v1",
+      "implementation_version": "p7-a1-proposed",
+      "seeds": [],
+      "resources": [
+        {
+          "name": "max_total_decoded_bytes",
+          "limit": 536870912,
+          "used": 6
+        }
+      ]
     },
     "media_evaluations": [
       {
@@ -529,12 +822,90 @@ producer-side serialization truncation 前的 schema-v6 envelope 或 complete ac
 
 ```json
 {
+  "schema_version": 6,
   "kind": "completed",
+  "execution": {
+    "started_at": "2026-09-10T00:00:00Z",
+    "finished_at": "2026-09-10T00:00:00Z",
+    "duration_ns": 0,
+    "stages": [
+      {
+        "stage": "validating",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "sourcing",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "resolving",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "decoding",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "normalizing",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "aligning",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "comparing",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "aggregating",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      }
+    ],
+    "attempts": [
+      {
+        "capability_id": "audio.comparator.stdlib_wave_pcm.v1",
+        "backend_id": "stdlib_wave_pcm",
+        "disposition": "selected",
+        "reason_code": null,
+        "capability_version": "1",
+        "backend_version": "stdlib_wave_pcm.p7_a1",
+        "provider": null
+      }
+    ],
+    "diagnostics": [],
+    "last_completed_stage": "aggregating",
+    "plugin_host": null
+  },
   "result": {
-    "schema_version": 6,
     "relation": "different",
     "verdict": "fail",
     "fidelity": "full",
+    "completeness": "complete",
     "summary": {
       "change_count": 1,
       "counts": []
@@ -587,7 +958,55 @@ producer-side serialization truncation 前的 schema-v6 envelope 或 complete ac
     "evaluations": [],
     "artifacts": [],
     "provenance": {
-      "comparator_id": "audio.comparator.stdlib_wave_pcm.v1"
+      "inputs": [
+        {
+          "role": "before",
+          "source_kind": "bytes",
+          "size_bytes": 4,
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000201",
+          "label": null
+        },
+        {
+          "role": "after",
+          "source_kind": "bytes",
+          "size_bytes": 6,
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000202",
+          "label": null
+        }
+      ],
+      "spec": {
+        "kind": "audio",
+        "relations": [
+          "encoded_bytes"
+        ],
+        "stream": {
+          "index": null
+        },
+        "decode": {
+          "backend": "stdlib_wave_pcm",
+          "sample_representation": "native_pcm_integer"
+        },
+        "alignment": {
+          "mode": "sample_index"
+        },
+        "artifact_policy": "none",
+        "limits": {
+          "max_compare_work": 10000000
+        }
+      },
+      "transformations": [],
+      "comparator_id": "audio.comparator.stdlib_wave_pcm.v1",
+      "comparator_version": "1",
+      "algorithm_id": "audio.encoded_bytes.prefix_suffix.v1",
+      "implementation_version": "p7-a1-proposed",
+      "seeds": [],
+      "resources": [
+        {
+          "name": "max_compare_work",
+          "limit": 10000000,
+          "used": 6
+        }
+      ]
     },
     "media_evaluations": [
       {
@@ -620,16 +1039,75 @@ producer-side serialization truncation 前的 schema-v6 envelope 或 complete ac
 
 ```json
 {
-  "stage": "comparing",
-  "code": "compare_resource_limit",
-  "message": "audio comparison exceeded max_total_decoded_bytes",
-  "details": {
-    "limit_name": "max_total_decoded_bytes",
-    "limit_value": 0,
-    "limit_unit": "decoded PCM bytes",
-    "accounting_scope": "dual_input_sum",
-    "measured_value": 2,
-    "input_side": "both"
+  "schema_version": 6,
+  "kind": "failed",
+  "execution": {
+    "started_at": "2026-09-10T00:00:00Z",
+    "finished_at": "2026-09-10T00:00:00Z",
+    "duration_ns": 0,
+    "stages": [
+      {
+        "stage": "validating",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "sourcing",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "resolving",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "completed"
+      },
+      {
+        "stage": "decoding",
+        "started_at": "2026-09-10T00:00:00Z",
+        "finished_at": "2026-09-10T00:00:00Z",
+        "duration_ns": 0,
+        "disposition": "failed"
+      }
+    ],
+    "attempts": [
+      {
+        "capability_id": "audio.comparator.stdlib_wave_pcm.v1",
+        "backend_id": "stdlib_wave_pcm",
+        "disposition": "failed",
+        "reason_code": "resource_limit_exceeded",
+        "capability_version": "1",
+        "backend_version": "stdlib_wave_pcm.p7_a1",
+        "provider": null
+      }
+    ],
+    "diagnostics": [],
+    "last_completed_stage": "resolving",
+    "plugin_host": null
+  },
+  "problem": {
+    "code": "resource_limit_exceeded",
+    "status_code": 413,
+    "stage": "decoding",
+    "message": "audio decoding exceeded max_total_decoded_bytes",
+    "details": {
+      "media_kind": "audio",
+      "relation": "decoded_samples",
+      "backend": "stdlib_wave_pcm",
+      "profile": "p7_a1_wav_pcm",
+      "limit_name": "max_total_decoded_bytes",
+      "limit_value": 0,
+      "limit_unit": "decoded PCM bytes across both inputs",
+      "accounting_scope": "dual_input_sum",
+      "measured_value": 2,
+      "input_side": "both"
+    },
+    "retryable": false
   }
 }
 ```
@@ -645,7 +1123,7 @@ producer-side serialization truncation 前的 schema-v6 envelope 或 complete ac
 4. `encoded_bytes` 绕过 WAV probe/decode，并接受任意 byte stream。
 5. Equal result carrier 与 complete decoded-audio fact carrier 使用 accepted schema-v6、
    `MediaViewEvaluation` 和 `AudioFact` shape。
-6. Continuous grouping 和 metric count 是 deterministic，且不受 producer-side serialization
+6. Continuous grouping 和 metric count 是 deterministic，且不受 producer-side result-detail
    truncation 影响。
 7. Accepted `AudioResourceLimits` object 保持完整；本 amendment 只增加 scope 与 unit clarification。
 8. Problem prose 只在 `problem.message`；structured data 只在 `problem.details`。
