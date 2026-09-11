@@ -8,6 +8,8 @@
 - 负责人：Platydiff maintainers
 - 修订：[RFC 0007](0007-image-comparison_zh.md)
 - 前驱：[RFC 0010](0010-schema-predecessor-and-phase6-contract-amendment_zh.md)
+- 后续修订：[RFC 0015](0015-schema-v4-backend-version-evidence-amendment_zh.md)
+  （Proposed；仅在接受后生效，问题解决前阻塞 P5-A1 合并）
 - 实现授权：无
 
 ## 摘要

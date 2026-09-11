@@ -31,5 +31,6 @@
 | 0012 | Reserved | Phase 7 contract closure |
 | [0013](0013-p5a1-image-wire-contract-amendment_zh.md) | Accepted | 在不授权实现的前提下，闭合 contract-only P5-A1 的 enum、transformation、fixture provenance、serializer-version、problem、terminal 与 downgrade wire decisions |
 | [0014](0014-phase6-source-pdf-contract-closure-amendment_zh.md) | Accepted | 在不授权实现的前提下，接受 P6-C0 source/PDF problem-registry 与 closed-union closure |
+| [0015](0015-schema-v4-backend-version-evidence-amendment_zh.md) | Proposed | 在保持 native-v4 backend evidence 严格的同时，显式保留 schema v4 中 unpaired predecessor backend fact |
 
 计划中的行为在实现并完成验证前，必须继续明确标记为计划能力。

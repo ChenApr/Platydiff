@@ -8,6 +8,8 @@
 - Owners: Platydiff maintainers
 - Amends: [RFC 0007](0007-image-comparison.md)
 - Predecessor: [RFC 0010](0010-schema-predecessor-and-phase6-contract-amendment.md)
+- Amended by: [RFC 0015](0015-schema-v4-backend-version-evidence-amendment.md)
+  (Proposed; effective only if accepted and blocking P5-A1 merge until resolved)
 - Implementation authorization: none
 
 ## Summary

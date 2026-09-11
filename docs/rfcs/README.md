@@ -32,5 +32,6 @@ This directory contains accepted and proposed design decisions for Platydiff. En
 | 0012 | Reserved | Phase 7 contract closure |
 | [0013](0013-p5a1-image-wire-contract-amendment.md) | Accepted | Close the contract-only P5-A1 enum, transformation, fixture provenance, serializer-version, problem, terminal, and downgrade wire decisions without authorizing implementation |
 | [0014](0014-phase6-source-pdf-contract-closure-amendment.md) | Accepted | Accept P6-C0 source/PDF problem-registry and closed-union closure without authorizing implementation |
+| [0015](0015-schema-v4-backend-version-evidence-amendment.md) | Proposed | Preserve unpaired predecessor backend facts explicitly in schema v4 while keeping native-v4 backend evidence strict |
 
 Planned behavior must remain explicitly marked as planned until implementation and verification are complete.
