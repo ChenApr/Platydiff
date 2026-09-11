@@ -12,6 +12,12 @@
 - Predecessor amendment：RFC 0010 记录 P7-A1 的条件授权；只有 RFC 0010、P4-C1/schema-v3、
   P5-A1/schema-v4、P6-C0/schema-v5 与 compatibility fixture 都合并到 `main` 后才能派发；
   P7-A1 不会自动启动
+- Audio preflight amendment：[RFC 0011](0011-rfc-0009-audio-preflight-amendment_zh.md)
+  冻结 P7-A1 preflight wire contract、WAV/PCM profile rule、CLI/plugin rejection 与
+  stable failure detail
+- Audio closure amendment：[RFC 0012](0012-p7a1-audio-pre-code-contract-closure_zh.md)
+  冻结 P7-A1 equality carrier、change grouping/count、resource limit、encoded-byte
+  bypass behavior、timing fact 和 problem detail boundary
 
 ## 摘要与授权边界
 
@@ -29,6 +35,10 @@ UI 工作、artifact 生成、新媒体模态插件执行或任何后端集成�
 所有行为保持显式启用。调用者必须直接选择 `AudioCompareSpec` 或 `VideoCompareSpec`。
 既有 `AutoCompareSpec` 在 RFC 0003 的后继 RFC 定义媒体探测、歧义、成对选择和 provenance
 之前，仍只支持 text/binary。
+
+已接受的 RFC 0011 与 RFC 0012 闭合 P7-A1 audio pre-code contract，但不授权实现。
+P7-A1 仍必须等待实际前驱 implementation 和 compatibility-fixture merge gate 通过，并由
+coordinator 基于更新后的 `main` 派发。
 
 ## P7-S0 review-revision gate
 

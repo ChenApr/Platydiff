@@ -2,32 +2,34 @@
 
 [Chinese documentation](0012-p7a1-audio-pre-code-contract-closure_zh.md)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-10
+- Accepted: 2026-09-10
+- Approved decisions: P7A-PC1 through P7A-PC6
 - Amends: [RFC 0009](0009-audio-and-video-comparison.md) and
   [RFC 0011](0011-rfc-0009-audio-preflight-amendment.md)
 - Owners: Platydiff maintainers
-- Implementation owner: none; this proposal does not start code
+- Implementation owner: none; this accepted amendment does not start code
 
 ## Summary and authorization boundary
 
-This Proposed amendment closes remaining P7-A1 pre-code audio contract gaps. It
+This accepted amendment closes remaining P7-A1 pre-code audio contract gaps. It
 does not authorize implementation, video, UI, FFmpeg, new dependencies,
 automatic media detection, SDK v2, or any schema successor outside audio
 schema-v6.
 
-The proposal preserves RFC 0009 and RFC 0011 direction: P7-A1 is audio-only,
+This amendment preserves RFC 0009 and RFC 0011 direction: P7-A1 is audio-only,
 uses the stdlib WAV/PCM profile for decoded-sample relations, and remains gated
 by accepted RFC 0010 Option A/SP1-SP6 plus actual P4-C1, P5-A1/schema-v4, and
-P6-C0/schema-v5 merges. P7-A1 dispatch also requires RFC 0011 and this
-amendment, if accepted, to have merged.
+P6-C0/schema-v5 merges. P7-A1 dispatch also requires RFC 0011 and RFC 0012 to
+have merged and still needs an independent human dispatch from updated `main`.
 
-## Proposed decisions
+## Approved decisions
 
-These IDs are proposed decisions. They are not implementation contracts until
-this amendment is explicitly accepted.
+These IDs are accepted closure decisions. They freeze pre-code P7-A1 audio
+contracts but do not authorize implementation.
 
-| ID | Proposed decision | Alternative not selected |
+| ID | Approved decision | Alternative not selected |
 | --- | --- | --- |
 | P7A-PC1 | Freeze the public carrier fields for equal results and complete decoded-audio facts. | Let renderers infer equal audio identity from backend-local metadata. |
 | P7A-PC2 | Freeze continuous grouping for sample and encoded-byte changes, including `change_count`, `samples_changed`, and `bytes_changed` counting. | Emit one change per sample or byte run without stable aggregation rules. |
@@ -943,7 +945,7 @@ producer-side truncation results after comparison and aggregation.
       "comparator_id": "builtin.audio",
       "comparator_version": "1",
       "algorithm_id": "audio.encoded_bytes.exact.v1",
-      "implementation_version": "p7-a1-proposed",
+      "implementation_version": "p7-a1-accepted",
       "seeds": [],
       "resources": [
         {
@@ -1266,7 +1268,7 @@ producer-side truncation results after comparison and aggregation.
       "comparator_id": "builtin.audio",
       "comparator_version": "1",
       "algorithm_id": "audio.decoded_samples.exact.v1",
-      "implementation_version": "p7-a1-proposed",
+      "implementation_version": "p7-a1-accepted",
       "seeds": [],
       "resources": [
         {
@@ -1559,7 +1561,7 @@ producer-side truncation results after comparison and aggregation.
       "comparator_id": "builtin.audio",
       "comparator_version": "1",
       "algorithm_id": "audio.encoded_bytes.exact.v1",
-      "implementation_version": "p7-a1-proposed",
+      "implementation_version": "p7-a1-accepted",
       "seeds": [],
       "resources": [
         {
@@ -1930,7 +1932,7 @@ producer-side truncation results after comparison and aggregation.
       "comparator_id": "builtin.audio",
       "comparator_version": "1",
       "algorithm_id": "audio.decoded_samples.exact.v1",
-      "implementation_version": "p7-a1-proposed",
+      "implementation_version": "p7-a1-accepted",
       "seeds": [],
       "resources": [
         {
@@ -2553,7 +2555,7 @@ producer-side truncation results after comparison and aggregation.
       "comparator_id": "builtin.audio",
       "comparator_version": "1",
       "algorithm_id": "audio.aggregate.selected_relations.v1",
-      "implementation_version": "p7-a1-proposed",
+      "implementation_version": "p7-a1-accepted",
       "seeds": [],
       "resources": [
         {
@@ -2857,7 +2859,7 @@ producer-side truncation results after comparison and aggregation.
       "comparator_id": "builtin.audio",
       "comparator_version": "1",
       "algorithm_id": "audio.encoded_bytes.exact.v1",
-      "implementation_version": "p7-a1-proposed",
+      "implementation_version": "p7-a1-accepted",
       "seeds": [],
       "resources": [
         {
@@ -3117,7 +3119,7 @@ producer-side truncation results after comparison and aggregation.
       "comparator_id": "builtin.audio",
       "comparator_version": "1",
       "algorithm_id": "audio.encoded_bytes.exact.v1",
-      "implementation_version": "p7-a1-proposed",
+      "implementation_version": "p7-a1-accepted",
       "seeds": [],
       "resources": [
         {
@@ -3157,10 +3159,9 @@ producer-side truncation results after comparison and aggregation.
 }
 ```
 
-## Acceptance conditions
+## Acceptance record
 
-This amendment can be accepted only when reviewers confirm all of the
-following:
+Reviewers confirmed all of the following on 2026-09-10:
 
 1. RFC 0010 Option A/SP1-SP6 and the actual P4-C1, P5-A1/schema-v4, and
    P6-C0/schema-v5 predecessor gates remain required.
@@ -3178,4 +3179,4 @@ following:
    `problem.details`.
 9. English and Chinese texts are aligned.
 10. No P7-A1 implementation, video, UI, FFmpeg, dependency, or PR work starts
-    from this Proposed amendment.
+    from this accepted amendment.

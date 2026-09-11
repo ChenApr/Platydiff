@@ -15,6 +15,9 @@
   P6C0-1-P6C0-10; P6-C0 has recorded conditional authorization, but
   coordinator dispatch waits for RFC 0010, P4-C1, P5-A1/schema-v4, and
   compatibility fixtures to merge to `main`
+- Closure amendment: [RFC 0014](0014-phase6-source-pdf-contract-closure-amendment.md)
+  accepts P6C0A-1-P6C0A-2 for P6-C0 problem-registry and closed-union closure
+  without authorizing implementation
 
 ## Summary and authorization boundary
 
@@ -33,6 +36,9 @@ RFC splits them into independently authorized delivery gates. Human approval on
 contract gate definition. It authorizes this documentation PR only. P6-C0
 has recorded conditional authorization, but coordinator dispatch waits for RFC
 0010, P4-C1, P5-A1/schema-v4, and compatibility fixtures to merge to `main`.
+[RFC 0014](0014-phase6-source-pdf-contract-closure-amendment.md) accepts
+P6C0A-1 and P6C0A-2 closure amendments for P6-C0 problem-registry and
+closed-union closure; acceptance does not start code.
 Every later source/PDF code gate still requires explicit dispatch from updated
 `main`.
 
@@ -1174,9 +1180,11 @@ writers, and migration fixtures pass; schema v5 freezes `SourceCodeCompareSpec`,
 `PdfCompareSpec`, `SourceCodeChange`, and `PdfChange` in one closed union; all
 source relations and PDF views are represented even when initially unavailable;
 canonical facts, digest domains, option serialization, resource-limit shapes,
-problem codes, and spec validation are frozen; no source/PDF comparator,
-backend, or CLI behavior is implemented. P6-C0 must merge before P6-S1,
-P6-P1a, or any later Phase 6 comparator/backend gate starts.
+problem codes, and spec validation are frozen, including accepted RFC 0014
+P6C0A-1 and P6C0A-2 closure rules; no source/PDF comparator, backend, or CLI
+behavior is implemented. P6-C0 must
+merge before P6-S1, P6-P1a, or any later Phase 6 comparator/backend gate
+starts.
 
 ### P6-S1: source-code lexical relation
 

@@ -20,6 +20,7 @@ from platydiff.core._capabilities import (
 from platydiff.core._detection import detect_pair
 from platydiff.core._sources import SourceSnapshot, open_source_snapshot
 from platydiff.core.models import (
+    ArrayCompareSpec,
     AutoCompareSpec,
     BinaryCompareSpec,
     BytesSource,
@@ -48,10 +49,12 @@ from platydiff.core.models import (
     SourceKind,
     StageDisposition,
     StageRecord,
+    TableCompareSpec,
     TextCompareSpec,
     TextSource,
     UnavailableOutcome,
     UnavailableOutcomeV3,
+    YamlCompareSpec,
 )
 from platydiff.core.problems import (
     CapabilityUnavailableError,
@@ -502,24 +505,30 @@ def run_json_comparison(
     )
 
 
-def reject_json_plugin_comparison(
+def reject_phase4_plugin_comparison(
     before: Source,
     after: Source,
-    spec: JsonCompareSpec,
+    spec: JsonCompareSpec | YamlCompareSpec | TableCompareSpec | ArrayCompareSpec,
     *,
     clock: Clock = _system_clock,
 ) -> CompareOutcomeV3:
-    """Reject schema-v3 intent at the SDK-v1 plugin boundary after sourcing."""
+    """Reject schema-v3 intent at the SDK-v1 plugin boundary before execution."""
     stages = StageRunner(clock)
     with ExitStack() as stack:
         try:
             stages.run(PipelineStage.VALIDATING, lambda: None)
-            stages.run(
-                PipelineStage.SOURCING,
-                lambda: _snapshot_pair(
-                    stack, before, after, spec.limits.max_input_bytes
-                ),
-            )
+            if isinstance(spec, ArrayCompareSpec):
+                stages.run(
+                    PipelineStage.SOURCING,
+                    lambda: _validate_source_pair_types(before, after),
+                )
+            else:
+                stages.run(
+                    PipelineStage.SOURCING,
+                    lambda: _snapshot_pair(
+                        stack, before, after, spec.limits.max_input_bytes
+                    ),
+                )
             stages.run(
                 PipelineStage.RESOLVING,
                 lambda: _raise_capability_unavailable(()),
@@ -548,7 +557,13 @@ def reject_json_plugin_comparison(
                     error.retryable,
                 ),
             )
-    raise RuntimeError("unsupported structured plugin comparison unexpectedly ran")
+    raise RuntimeError("unsupported Phase 4 plugin comparison unexpectedly ran")
+
+
+def _validate_source_pair_types(before: Source, after: Source) -> None:
+    source_types = (PathSource, BytesSource, TextSource)
+    if not isinstance(before, source_types) or not isinstance(after, source_types):
+        raise SourceTypeUnsupportedError()
 
 
 def _snapshot_pair(

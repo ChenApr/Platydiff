@@ -15,8 +15,8 @@
 
 ## 摘要与授权边界
 
-本 RFC 提议为 RFC 0009 增加 P7-A1 audio implementation preflight blocker
-修订，且本修订已被 Accepted。RFC acceptance 本身不启动代码；conditional human authorization
+本 RFC 记录为 RFC 0009 增加 P7-A1 audio implementation preflight blocker
+的已接受修订。RFC acceptance 本身不启动代码；conditional human authorization
 已记录，但 P7-A1 implementation 只能在 schema prerequisite 与 RFC 0011 itself merge 后由
 coordinator dispatch。Acceptance 不授权依赖变更、FFmpeg、artifact、UI、SDK v2、自动媒体探测、
 video implementation，或独立 schema renumbering。

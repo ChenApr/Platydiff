@@ -12,7 +12,7 @@ from platydiff.core.models import (
     AutoResourceLimits,
     BinaryCompareSpec,
     BinaryResourceLimits,
-    CompareSpecV3,
+    CompareSpec,
     JsonCompareSpec,
     JsonNumberMode,
     NewlinePolicy,
@@ -23,6 +23,8 @@ from platydiff.core.models import (
     TextEncoding,
 )
 from platydiff.plugin_sdk import RendererPresentationOptionsV1
+
+type CliCompareSpec = CompareSpec | JsonCompareSpec
 
 _PLUGIN_ID = re.compile(r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$")
 _CAPABILITY_ID = re.compile(r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$")
@@ -228,7 +230,7 @@ class ParsedCommand:
     before: str
     after: str
     output_format: str
-    spec: CompareSpecV3
+    spec: CliCompareSpec
     enabled_plugin_ids: tuple[str, ...]
     detector_id: str | None
     comparator_id: str | None
@@ -339,7 +341,7 @@ def parse_command(argv: list[str] | None = None) -> ParsedCommand:
         max_change_payload_bytes=int(values["max_change_payload_bytes"]),
     )
     if kind == "text":
-        spec: CompareSpecV3 = TextCompareSpec(
+        spec: CliCompareSpec = TextCompareSpec(
             encoding=TextEncoding(str(values["encoding"])),
             newline=NewlinePolicy(str(values["newline"])),
             context_lines=int(values["context_lines"]),

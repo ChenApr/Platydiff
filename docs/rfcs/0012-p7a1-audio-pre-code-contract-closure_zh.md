@@ -2,29 +2,31 @@
 
 [English documentation](0012-p7a1-audio-pre-code-contract-closure.md)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-10
+- Accepted: 2026-09-10
+- 已批准决策：P7A-PC1 至 P7A-PC6
 - Amends: [RFC 0009](0009-audio-and-video-comparison_zh.md) 和
   [RFC 0011](0011-rfc-0009-audio-preflight-amendment_zh.md)
 - Owners: Platydiff 维护者
-- Implementation owner: 无；本 proposal 不启动代码
+- Implementation owner: 无；本 accepted amendment 不启动代码
 
 ## 摘要与授权边界
 
-本 Proposed amendment 补齐 P7-A1 pre-code audio contract 的剩余缺口。它不授权
+本 accepted amendment 补齐 P7-A1 pre-code audio contract 的剩余缺口。它不授权
 implementation、video、UI、FFmpeg、新依赖、automatic media detection、SDK v2，或 audio
 schema-v6 之外的任何 schema successor。
 
-本 proposal 保留 RFC 0009 与 RFC 0011 的方向：P7-A1 仅限 audio；decoded-sample relation
+本 amendment 保留 RFC 0009 与 RFC 0011 的方向：P7-A1 仅限 audio；decoded-sample relation
 使用 stdlib WAV/PCM profile；并且仍受 accepted RFC 0010 Option A/SP1-SP6，以及实际 P4-C1、
 P5-A1/schema-v4、P6-C0/schema-v5 merge 的门禁约束。P7-A1 dispatch 还要求 RFC 0011 与本
-amendment 在被接受后均已 merge。
+RFC 0012 均已 merge，并仍需要基于更新后 `main` 的独立人工派发。
 
-## Proposed decisions
+## Approved decisions
 
-这些 ID 是 proposed decision。只有本 amendment 被明确 accepted 后，它们才成为实现契约。
+这些 ID 是 accepted closure decision。它们冻结 pre-code P7-A1 audio contract，但不授权实现。
 
-| ID | Proposed decision | 未选择的替代方案 |
+| ID | Approved decision | 未选择的替代方案 |
 | --- | --- | --- |
 | P7A-PC1 | 冻结 equal result 与 complete decoded-audio fact 的 public carrier field。 | 让 renderer 从 backend-local metadata 推断 equal audio identity。 |
 | P7A-PC2 | 冻结 sample 与 encoded-byte change 的连续分组规则，包括 `change_count`、`samples_changed` 与 `bytes_changed` 计数。 | 在没有稳定 aggregation rule 的情况下逐 sample 或逐 byte run 发出 change。 |
@@ -870,7 +872,7 @@ completed producer-side truncation result。
       "comparator_id": "builtin.audio",
       "comparator_version": "1",
       "algorithm_id": "audio.encoded_bytes.exact.v1",
-      "implementation_version": "p7-a1-proposed",
+      "implementation_version": "p7-a1-accepted",
       "seeds": [],
       "resources": [
         {
@@ -1193,7 +1195,7 @@ completed producer-side truncation result。
       "comparator_id": "builtin.audio",
       "comparator_version": "1",
       "algorithm_id": "audio.decoded_samples.exact.v1",
-      "implementation_version": "p7-a1-proposed",
+      "implementation_version": "p7-a1-accepted",
       "seeds": [],
       "resources": [
         {
@@ -1486,7 +1488,7 @@ completed producer-side truncation result。
       "comparator_id": "builtin.audio",
       "comparator_version": "1",
       "algorithm_id": "audio.encoded_bytes.exact.v1",
-      "implementation_version": "p7-a1-proposed",
+      "implementation_version": "p7-a1-accepted",
       "seeds": [],
       "resources": [
         {
@@ -1857,7 +1859,7 @@ completed producer-side truncation result。
       "comparator_id": "builtin.audio",
       "comparator_version": "1",
       "algorithm_id": "audio.decoded_samples.exact.v1",
-      "implementation_version": "p7-a1-proposed",
+      "implementation_version": "p7-a1-accepted",
       "seeds": [],
       "resources": [
         {
@@ -2480,7 +2482,7 @@ completed producer-side truncation result。
       "comparator_id": "builtin.audio",
       "comparator_version": "1",
       "algorithm_id": "audio.aggregate.selected_relations.v1",
-      "implementation_version": "p7-a1-proposed",
+      "implementation_version": "p7-a1-accepted",
       "seeds": [],
       "resources": [
         {
@@ -2784,7 +2786,7 @@ completed producer-side truncation result。
       "comparator_id": "builtin.audio",
       "comparator_version": "1",
       "algorithm_id": "audio.encoded_bytes.exact.v1",
-      "implementation_version": "p7-a1-proposed",
+      "implementation_version": "p7-a1-accepted",
       "seeds": [],
       "resources": [
         {
@@ -3044,7 +3046,7 @@ completed producer-side truncation result。
       "comparator_id": "builtin.audio",
       "comparator_version": "1",
       "algorithm_id": "audio.encoded_bytes.exact.v1",
-      "implementation_version": "p7-a1-proposed",
+      "implementation_version": "p7-a1-accepted",
       "seeds": [],
       "resources": [
         {
@@ -3084,9 +3086,9 @@ completed producer-side truncation result。
 }
 ```
 
-## Acceptance conditions
+## Acceptance record
 
-只有 reviewers 确认以下全部事项后，本 amendment 才可 accepted：
+Reviewers 已于 2026-09-10 确认以下全部事项：
 
 1. RFC 0010 Option A/SP1-SP6，以及实际 P4-C1、P5-A1/schema-v4、P6-C0/schema-v5 predecessor
    gate 仍为必要条件。
@@ -3100,4 +3102,4 @@ completed producer-side truncation result。
 7. Accepted `AudioResourceLimits` object 保持完整；本 amendment 只增加 scope 与 unit clarification。
 8. Problem prose 只在 `problem.message`；structured data 只在 `problem.details`。
 9. 英文与中文文本保持一致。
-10. 本 Proposed amendment 不启动 P7-A1 implementation、video、UI、FFmpeg、dependency 或 PR 工作。
+10. 本 accepted amendment 不启动 P7-A1 implementation、video、UI、FFmpeg、dependency 或 PR 工作。

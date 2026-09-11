@@ -13,6 +13,12 @@
   dispatch only after RFC 0010, P4-C1/schema-v3, P5-A1/schema-v4,
   P6-C0/schema-v5, and compatibility fixtures merge to `main`; P7-A1 does not
   start automatically
+- Audio preflight amendment: [RFC 0011](0011-rfc-0009-audio-preflight-amendment.md)
+  freezes P7-A1 preflight wire contracts, WAV/PCM profile rules, CLI/plugin
+  rejection, and stable failure details
+- Audio closure amendment: [RFC 0012](0012-p7a1-audio-pre-code-contract-closure.md)
+  freezes P7-A1 equality carriers, change grouping/counts, resource limits,
+  encoded-byte bypass behavior, timing facts, and problem detail boundaries
 
 ## Summary and authorization boundary
 
@@ -36,6 +42,11 @@ All behavior remains explicit-only. A caller must choose `AudioCompareSpec` or
 `VideoCompareSpec` directly. Existing `AutoCompareSpec` remains text/binary-only
 until a successor to RFC 0003 defines media probing, ambiguity, pair selection,
 and provenance.
+
+Accepted RFC 0011 and RFC 0012 close P7-A1 audio pre-code contracts, but they
+do not authorize implementation. P7-A1 remains blocked until the actual
+predecessor implementation and compatibility-fixture merge gates pass and a
+coordinator dispatches implementation from updated `main`.
 
 ## P7-S0 review-revision gate
 

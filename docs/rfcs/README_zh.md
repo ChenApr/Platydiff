@@ -11,6 +11,7 @@
 - **Implemented**：已进入默认分支、与文档一致，并由要求的兼容性测试覆盖；
   发布状态另行记录。
 - **Superseded**：已被其他 RFC 取代；必须链接替代它的 RFC。
+- **Reserved**：RFC 编号已分配给计划中的 review；不表示任何 design 已被接受。
 
 ## 索引
 
@@ -25,8 +26,10 @@
 | [0007](0007-image-comparison_zh.md) | Accepted | 定义 schema v4 的显式静态 PNG decoded-sample 切片，并延后 perceptual、artifact、plugin 与 detection 工作 |
 | [0008](0008-source-code-and-pdf-comparison_zh.md) | Accepted | 定义显式 source-code 与 PDF 比较契约；RFC 0010 记录 P6-C0 的条件授权，并受 predecessor merge gate 约束 |
 | [0009](0009-audio-and-video-comparison_zh.md) | Accepted | 接受显式 audio 契约和 audio-only schema-v6 allocation；video 契约仅作为 roadmap direction，等待后续 backend/worker amendment 与 successor schema |
-| [0010](0010-schema-predecessor-and-phase6-contract-amendment_zh.md) | Accepted | 选择 Option A/P4-C1、接受 P6-C0 契约缺口决策，并批准 P4C1-1-P4C1-5 reader/fixture clarification |
-| [0011](0011-rfc-0009-audio-preflight-amendment_zh.md) | Accepted | 修订 RFC 0009，补齐 P7-A1 audio preflight wire contract、WAV/PCM profile rule、CLI/plugin rejection 与 stable failure detail；audio 只有在 RFC 0010 Option A/SP1-SP6 和 P4-C1、P5-A1/schema-v4、P6-C0/schema-v5 merge 后才保留 schema v6 |
-| [0012](0012-p7a1-audio-pre-code-contract-closure_zh.md) | Proposed | 补齐 P7-A1 pre-code audio contract：equality carrier、change grouping/count、resource limit、encoded-byte bypass behavior、timing fact 和 problem detail boundary |
+| [0010](0010-schema-predecessor-and-phase6-contract-amendment_zh.md) | Accepted | 选择 Option A/P4-C1、接受 P6-C0 契约缺口决策、批准 P4C1-1-P4C1-5 reader/fixture clarification，并指向已接受的 RFC 0014 closure |
+| [0011](0011-rfc-0009-audio-preflight-amendment_zh.md) | Accepted | 修订 RFC 0009，补齐 P7-A1 audio preflight wire contract、WAV/PCM profile rule、CLI/plugin rejection、stable failure detail，并记录已批准的 P7A-AM1-P7A-AM10/P7A-W1-P7A-W5 决策 |
+| [0012](0012-p7a1-audio-pre-code-contract-closure_zh.md) | Accepted | 补齐 P7-A1 pre-code audio contract：equality carrier、change grouping/count、resource limit、encoded-byte bypass behavior、timing fact、problem detail boundary，并记录已批准的 P7A-PC1-P7A-PC6 决策 |
+| [0013](0013-p5a1-image-wire-contract-amendment_zh.md) | Accepted | 在不授权实现的前提下，闭合 contract-only P5-A1 的 enum、transformation、fixture provenance、serializer-version、problem、terminal 与 downgrade wire decisions |
+| [0014](0014-phase6-source-pdf-contract-closure-amendment_zh.md) | Accepted | 在不授权实现的前提下，接受 P6-C0 source/PDF problem-registry 与 closed-union closure |
 
 计划中的行为在实现并完成验证前，必须继续明确标记为计划能力。
